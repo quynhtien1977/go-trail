@@ -1,26 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Livvic:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600;1,700&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@font-face {
+  font-family: 'Tharon';
+  src: url('/ref/fonts/Tharon.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
+  --brand-yellow: #FEBB02;
+  --brand-yellow-hover: #E5A800;
+  --brand-yellow-light: #FFF8E1;
+  --forest-green: #4CA62F;
+  --forest-dark: #186734;
+  --trailbus-bg: #9ACE7D;
+  --faq-bg: #EEEEEE;
+  --footer-bg: #111111;
+  
+  --surface: #ffffff;
+  --surface-border: #E2E8F0;
+  --muted: #F5F6F8;
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #212529;
+  --card: #ffffff;
+  --card-foreground: #212529;
+  --popover: #ffffff;
+  --popover-foreground: #212529;
+  --primary: #FEBB02;
+  --primary-foreground: #000000;
+  --secondary: #F5F6F8;
+  --secondary-foreground: #212529;
+  --muted-foreground: #6C757D;
+  --accent: #F5F6F8;
+  --accent-foreground: #212529;
+  --destructive: #DC2626;
+  --border: #E5E7EB;
+  --input: #E5E7EB;
+  --ring: #FEBB02;
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-yellow-hover: var(--brand-yellow-hover);
+  --color-brand-yellow-light: var(--brand-yellow-light);
+  --color-forest: var(--forest-green);
+  --color-forest-dark: var(--forest-dark);
+  --color-trailbus-bg: var(--trailbus-bg);
+  --color-faq-bg: var(--faq-bg);
+  --color-footer-bg: var(--footer-bg);
+  --color-surface: var(--surface);
+  --color-surface-border: var(--surface-border);
+  --color-muted: var(--muted);
+  --font-sans: 'Livvic', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-tharon: 'Tharon', cursive, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Livvic', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  background-color: #ffffff;
+  color: #212529;
+}
+
+.font-tharon {
+  font-family: 'Tharon', cursive, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }
