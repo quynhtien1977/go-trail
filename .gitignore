@@ -44,3 +44,7 @@ next-env.d.ts
 .agents/
 
 docs/
+
+# Private agent instructions and generated/local files
+/src/generated/prisma/
+/scratch/

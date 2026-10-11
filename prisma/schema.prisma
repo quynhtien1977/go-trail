@@ -1,0 +1,462 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  Customer
+  Leader
+  RouteMgr
+  HRMgr
+  Accountant
+  Admin
+}
+
+enum UserStatus {
+  Active
+  Locked
+}
+
+enum StaffType {
+  Driver
+  Assistant
+  Leader
+}
+
+enum StaffStatus {
+  Active
+  Inactive
+}
+
+enum VehicleStatus {
+  Ready
+  Maintenance
+  Inactive
+}
+
+enum DepartureStatus {
+  Draft
+  Open
+  Closed
+  Confirmed
+  Running
+  Ended
+  Cancelled
+  Rescheduled
+}
+
+enum SeatStatus {
+  Available
+  Locked
+  Sold
+}
+
+enum CostType {
+  Fuel
+  Toll
+  Staff
+  Other
+}
+
+enum InvoiceStatus {
+  Pending
+  Paid
+  Expired
+  Cancelled
+}
+
+enum TicketStatus {
+  Pending
+  Valid
+  Cancelled
+}
+
+enum CheckInStatus {
+  Pending
+  CheckedIn
+  Absent
+}
+
+enum PaymentMethod {
+  BankTransfer
+}
+
+enum PaymentStatus {
+  Success
+  NeedsReview
+}
+
+enum RefundType {
+  CustomerCancel
+  TripCancelled
+  PaymentIssue
+}
+
+enum RefundMethod {
+  Manual
+  SePayApi
+}
+
+enum RefundStatus {
+  Pending
+  Approved
+  Rejected
+  Completed
+  Failed
+}
+
+model User {
+  user_id       Int        @id @default(autoincrement())
+  email         String     @unique
+  password_hash String
+  full_name     String
+  phone         String
+  role          UserRole   @default(Customer)
+  status        UserStatus @default(Active)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  staff         Staff?
+  audit_logs    AuditLog[]
+  invoices      Invoice[]
+  reviews       Review[]
+  requests      Refund[]   @relation("RefundRequester")
+  approvals     Refund[]   @relation("RefundApprover")
+
+  @@map("users")
+}
+
+model SystemSetting {
+  setting_key   String @id
+  setting_value String
+  description   String
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  log_id      Int      @id @default(autoincrement())
+  user_id     Int
+  action      String
+  table_name  String
+  record_id   String
+  description String
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  user        User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@index([table_name, record_id, created_at])
+  @@map("audit_logs")
+}
+
+model Staff {
+  staff_id       Int              @id @default(autoincrement())
+  user_id        Int?             @unique
+  full_name      String
+  phone          String
+  staff_type     StaffType
+  license_number String?
+  license_class  String?
+  license_expiry DateTime?        @db.Date
+  status         StaffStatus      @default(Active)
+  user           User?            @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  assignments    DepartureStaff[]
+
+  @@map("staff")
+}
+
+model Vehicle {
+  vehicle_id   Int                  @id @default(autoincrement())
+  plate_number String               @unique
+  vehicle_type String
+  seat_count   Int
+  status       VehicleStatus        @default(Ready)
+  seats        VehicleSeat[]
+  maintenance  VehicleMaintenance[]
+  assignments  DepartureVehicle[]
+
+  @@map("vehicles")
+}
+
+model VehicleSeat {
+  seat_id     Int             @id @default(autoincrement())
+  vehicle_id  Int
+  seat_name   String
+  floor_level Int
+  x_position  Int
+  y_position  Int
+  is_active   Boolean         @default(true)
+  vehicle     Vehicle         @relation(fields: [vehicle_id], references: [vehicle_id], onDelete: Restrict)
+  departures  DepartureSeat[]
+
+  @@unique([vehicle_id, seat_name])
+  @@map("vehicle_seats")
+}
+
+model VehicleMaintenance {
+  maintenance_id Int      @id @default(autoincrement())
+  vehicle_id     Int
+  start_date     DateTime @db.Date
+  end_date       DateTime @db.Date
+  description    String
+  cost           Decimal  @db.Decimal(14, 0)
+  vehicle        Vehicle  @relation(fields: [vehicle_id], references: [vehicle_id], onDelete: Restrict)
+
+  @@index([vehicle_id, start_date])
+  @@map("vehicle_maintenance")
+}
+
+model Trip {
+  trip_id          Int           @id @default(autoincrement())
+  name             String
+  city             String
+  district         String?
+  location_name    String
+  difficulty_level String?
+  length_km        Decimal       @db.Decimal(8, 2)
+  peak_height_m    Int?
+  base_price       Decimal       @db.Decimal(14, 0)
+  description      String
+  schedule_content String
+  source_url       String?       @unique
+  source_fetched_at DateTime?     @db.Timestamptz(6)
+  pickups          PickupPoint[]
+  departures       Departure[]
+
+  @@map("trips")
+}
+
+model PickupPoint {
+  pickup_id Int               @id @default(autoincrement())
+  trip_id   Int
+  name      String
+  address   String
+  is_active Boolean @default(true)
+  trip      Trip              @relation(fields: [trip_id], references: [trip_id], onDelete: Restrict)
+  schedules DeparturePickup[]
+
+  @@index([trip_id])
+  @@map("pickup_points")
+}
+
+model Departure {
+  departure_id     Int                @id @default(autoincrement())
+  trip_id          Int
+  departure_date   DateTime           @db.Timestamptz(6)
+  min_passengers   Int
+  booking_deadline DateTime           @db.Timestamptz(6)
+  price_override   Decimal?           @db.Decimal(14, 0)
+  status           DepartureStatus    @default(Draft)
+  is_demo          Boolean            @default(false)
+  trip             Trip               @relation(fields: [trip_id], references: [trip_id], onDelete: Restrict)
+  pickups          DeparturePickup[]
+  vehicles         DepartureVehicle[]
+  staff            DepartureStaff[]
+  costs            DepartureCost[]
+  invoices         Invoice[]
+
+  @@index([trip_id, departure_date])
+  @@index([status, departure_date])
+  @@map("departures")
+}
+
+model DeparturePickup {
+  dep_pickup_id Int             @id @default(autoincrement())
+  departure_id  Int
+  pickup_id     Int
+  pickup_time   DateTime        @db.Timestamptz(6)
+  departure     Departure       @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+  pickup        PickupPoint     @relation(fields: [pickup_id], references: [pickup_id], onDelete: Restrict)
+  tickets       InvoiceDetail[]
+
+  @@unique([departure_id, pickup_id])
+  @@index([pickup_id])
+  @@map("departure_pickups")
+}
+
+model DepartureVehicle {
+  dep_vehicle_id Int              @id @default(autoincrement())
+  departure_id   Int
+  vehicle_id     Int
+  departure      Departure        @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+  vehicle        Vehicle          @relation(fields: [vehicle_id], references: [vehicle_id], onDelete: Restrict)
+  seats          DepartureSeat[]
+  staff          DepartureStaff[]
+
+  @@unique([departure_id, vehicle_id])
+  @@index([vehicle_id])
+  @@map("departure_vehicles")
+}
+
+model DepartureSeat {
+  dep_seat_id    Int              @id @default(autoincrement())
+  dep_vehicle_id Int
+  seat_id        Int
+  status         SeatStatus       @default(Available)
+  locked_until   DateTime?        @db.Timestamptz(6)
+  invoice_id     Int?
+  vehicle        DepartureVehicle @relation(fields: [dep_vehicle_id], references: [dep_vehicle_id], onDelete: Restrict)
+  seat           VehicleSeat      @relation(fields: [seat_id], references: [seat_id], onDelete: Restrict)
+  invoice        Invoice?         @relation(fields: [invoice_id], references: [invoice_id], onDelete: Restrict)
+  // Active-ticket uniqueness lives in the SQL migration; cancelled history is retained.
+  tickets        InvoiceDetail[]
+
+  @@unique([dep_vehicle_id, seat_id])
+  @@index([seat_id])
+  @@index([invoice_id])
+  @@index([status, locked_until])
+  @@map("departure_seats")
+}
+
+model DepartureStaff {
+  dep_staff_id   Int              @id @default(autoincrement())
+  departure_id   Int
+  staff_id       Int
+  role_in_trip   StaffType
+  dep_vehicle_id Int
+  departure      Departure        @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+  staff          Staff            @relation(fields: [staff_id], references: [staff_id], onDelete: Restrict)
+  vehicle        DepartureVehicle @relation(fields: [dep_vehicle_id], references: [dep_vehicle_id], onDelete: Restrict)
+
+  @@unique([departure_id, staff_id, role_in_trip])
+  @@index([staff_id])
+  @@index([dep_vehicle_id])
+  @@map("departure_staff")
+}
+
+model DepartureCost {
+  cost_id      Int       @id @default(autoincrement())
+  departure_id Int
+  cost_type    CostType
+  amount       Decimal   @db.Decimal(14, 0)
+  description  String
+  departure    Departure @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+
+  @@index([departure_id])
+  @@map("departure_costs")
+}
+
+model Invoice {
+  invoice_id   Int             @id @default(autoincrement())
+  customer_id  Int
+  departure_id Int
+  payment_code String          @unique
+  total_amount Decimal         @db.Decimal(14, 0)
+  status       InvoiceStatus   @default(Pending)
+  expires_at   DateTime        @db.Timestamptz(6)
+  created_at   DateTime        @default(now()) @db.Timestamptz(6)
+  customer     User            @relation(fields: [customer_id], references: [user_id], onDelete: Restrict)
+  departure    Departure       @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+  details      InvoiceDetail[]
+  seats        DepartureSeat[]
+  payments     Payment[]
+  refunds      Refund[]
+
+  @@index([customer_id, created_at])
+  @@index([departure_id])
+  @@index([status, expires_at])
+  @@map("invoices")
+}
+
+model InvoiceDetail {
+  detail_id          Int             @id @default(autoincrement())
+  invoice_id         Int
+  dep_seat_id        Int
+  dep_pickup_id      Int
+  refund_id          Int?
+  passenger_name     String
+  passenger_phone    String
+  emergency_contact  String
+  health_declaration Boolean
+  unit_price         Decimal         @db.Decimal(14, 0)
+  ticket_code        String?         @unique
+  status             TicketStatus    @default(Pending)
+  check_in_status    CheckInStatus   @default(Pending)
+  check_in_time      DateTime?       @db.Timestamptz(6)
+  invoice            Invoice         @relation(fields: [invoice_id], references: [invoice_id], onDelete: Restrict)
+  seat               DepartureSeat   @relation(fields: [dep_seat_id], references: [dep_seat_id], onDelete: Restrict)
+  pickup             DeparturePickup @relation(fields: [dep_pickup_id], references: [dep_pickup_id], onDelete: Restrict)
+  refund             Refund?         @relation(fields: [refund_id], references: [refund_id], onDelete: Restrict)
+  review             Review?
+
+  @@index([invoice_id])
+  @@index([dep_seat_id])
+  @@index([dep_pickup_id])
+  @@index([refund_id])
+  @@map("invoice_details")
+}
+
+model Payment {
+  payment_id     Int           @id @default(autoincrement())
+  invoice_id     Int?
+  amount         Decimal       @db.Decimal(14, 0)
+  payment_method PaymentMethod @default(BankTransfer)
+  transaction_id String        @unique
+  reference_code String
+  status         PaymentStatus
+  raw_payload    String
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  invoice        Invoice?      @relation(fields: [invoice_id], references: [invoice_id], onDelete: Restrict)
+  refunds        Refund[]
+
+  @@index([invoice_id])
+  @@index([status, created_at])
+  @@map("payments")
+}
+
+model RefundPolicyRule {
+  rule_id                Int @id @default(autoincrement())
+  hours_before_departure Int @unique
+  refund_percentage      Int
+
+  @@map("refund_policy_rules")
+}
+
+model Refund {
+  refund_id           Int             @id @default(autoincrement())
+  invoice_id          Int
+  payment_id          Int
+  amount              Decimal         @db.Decimal(14, 0)
+  refund_type         RefundType
+  method              RefundMethod    @default(Manual)
+  status              RefundStatus    @default(Pending)
+  reason              String
+  bank_name           String?
+  bank_account_number String?
+  bank_account_holder String?
+  idempotency_key     String          @unique
+  provider_refund_id  String?
+  payout_reference    String?
+  requested_by        Int?
+  approved_by         Int?
+  created_at          DateTime        @default(now()) @db.Timestamptz(6)
+  completed_at        DateTime?       @db.Timestamptz(6)
+  invoice             Invoice         @relation(fields: [invoice_id], references: [invoice_id], onDelete: Restrict)
+  payment             Payment         @relation(fields: [payment_id], references: [payment_id], onDelete: Restrict)
+  requester           User?           @relation("RefundRequester", fields: [requested_by], references: [user_id], onDelete: Restrict)
+  approver            User?           @relation("RefundApprover", fields: [approved_by], references: [user_id], onDelete: Restrict)
+  tickets             InvoiceDetail[]
+
+  @@index([invoice_id])
+  @@index([payment_id])
+  @@index([requested_by])
+  @@index([approved_by])
+  @@index([status, created_at])
+  @@map("refunds")
+}
+
+model Review {
+  review_id   Int           @id @default(autoincrement())
+  detail_id   Int           @unique
+  customer_id Int
+  rating      Int
+  comment     String
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  detail      InvoiceDetail @relation(fields: [detail_id], references: [detail_id], onDelete: Restrict)
+  customer    User          @relation(fields: [customer_id], references: [user_id], onDelete: Restrict)
+
+  @@index([customer_id])
+  @@map("reviews")
+}

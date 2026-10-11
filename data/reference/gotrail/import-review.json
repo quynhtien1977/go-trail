@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "catalog_sha256": "6fbd5b93280cb073b0d4d8c7fa91adae38ccc1a437bf93432fcff7e18c210a9e",
+  "reviewed_at": "2026-10-11",
+  "price_policy": "Bus + Leader package; ticket selector amount takes precedence over rounded cost headings. Reference snapshot only, not live selling prices.",
+  "departure_policy": "No source departure dates. Preserve existing 2030 fixtures as is_demo=true; create no public departures.",
+  "items": [
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "base_price": "493000",
+      "bus_pickup_indexes": [
+        0
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "base_price": "419000",
+      "schedule_content": "04:30 đón khách tại Phan Chu Trinh → 04:45 đón Sala → 06:30 đến quán chị Yến → 07:30 bắt đầu trekking → 12:30 xuống bằng đường chùa → 15:00 xe đón về TP.HCM. Nguồn có thông báo thi công gần đỉnh: đường đi có thay đổi, cần xác nhận lại với đơn vị vận hành trước khi mở bán chuyến.",
+      "bus_pickup_indexes": [
+        0,
+        1
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "base_price": "372000",
+      "bus_pickup_indexes": [
+        0,
+        1
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "base_price": "354000",
+      "bus_pickup_indexes": [
+        0,
+        1
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "base_price": "726000",
+      "schedule_content": "04:30 khởi hành tại Phan Chu Trinh → 04:45 đón Sala → 07:00 dừng ăn sáng tự túc → 08:00 trekking Tà Cú, thăm chùa và tượng Phật → 11:00 xuống núi, di chuyển đến Kê Gà → 12:30 ăn trưa tại bãi biển; cano ra hải đăng là lựa chọn tự túc → 17:30 về TP.HCM, dự kiến đến 20:00. Lịch trình tham khảo.",
+      "bus_pickup_indexes": [
+        0,
+        1
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "base_price": "706000",
+      "bus_pickup_indexes": [
+        0,
+        1
+      ],
+      "decision": "Exclude Nhập Hội / activity meeting points from bus pickup choices."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "base_price": "1479000",
+      "schedule_content": "Ngày 0: tập trung tại Bến xe Mỹ Đình, giờ đón cụ thể được gửi qua email trước chuyến đi; có đón sân bay Nội Bài theo hướng dẫn riêng. Ngày 1: 04:00 đến Lào Cai và trung chuyển lên Y Tý → 06:00 ăn sáng → 07:00 đến chân núi → 07:30 trekking, ăn trưa trên đường → 14:00 lên đỉnh Lảo Thẩn → 15:00 xuống núi → 19:30 trung chuyển về Lào Cai → 00:00 lên xe về Hà Nội, dự kiến đến 05:00 hôm sau. Lịch trình tham khảo, chưa phải lịch khởi hành được mở bán.",
+      "bus_pickup_indexes": [
+        0
+      ],
+      "decision": "My Dinh address only; 22:00 and Lao Cai 04:30 are unverified. No timed departure import."
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "base_price": "1385999",
+      "bus_pickup_indexes": [
+        0
+      ],
+      "decision": "Ticket selector displays 1385999; exclude unverified Sala 23:30 pickup."
+    }
+  ]
+}
