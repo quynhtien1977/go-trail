@@ -1,0 +1,55 @@
+{
+  "version": "1.0.0",
+  "reviewDeadline": "2026-10-18T23:59:59Z",
+  "notes": "Prisma CLI and ESLint tooling baseline dependencies from initial scaffold. Re-evaluate before production launch.",
+  "exceptions": [
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "chain": [
+        "eslint-config-next",
+        "@next/eslint-plugin-next",
+        "fast-glob",
+        "micromatch",
+        "braces"
+      ],
+      "reachability": "Build/lint dev tooling only; not executed in runtime production server.",
+      "expiresAt": "2026-10-18T23:59:59Z"
+    },
+    {
+      "id": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "severity": "high",
+      "chain": [
+        "prisma",
+        "@prisma/config",
+        "deepmerge-ts"
+      ],
+      "reachability": "Prisma CLI dev tooling only; not executed in runtime production server.",
+      "expiresAt": "2026-10-18T23:59:59Z"
+    },
+    {
+      "id": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "severity": "high",
+      "chain": [
+        "prisma",
+        "mysql2"
+      ],
+      "reachability": "Prisma CLI internal driver bundle for MySQL; Go-Trail uses PostgreSQL via pg adapter.",
+      "expiresAt": "2026-10-18T23:59:59Z"
+    },
+    {
+      "id": "GHSA-rgwj-5xj2-c3m3",
+      "package": "mysql2",
+      "severity": "moderate",
+      "chain": [
+        "prisma",
+        "mysql2"
+      ],
+      "reachability": "Prisma CLI internal driver bundle for MySQL; Go-Trail uses PostgreSQL via pg adapter.",
+      "expiresAt": "2026-10-18T23:59:59Z"
+    }
+  ]
+}

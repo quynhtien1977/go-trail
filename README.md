@@ -70,7 +70,21 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run audit:check
 ```
+
+### Quy trình CI tự động
+
+Repository sử dụng GitHub Actions workflow (`.github/workflows/ci.yml`) để tự động kiểm tra chất lượng trên các Pull Request và khi push vào nhánh `main`, `develop`.
+
+Các bước kiểm tra trong job `quality`:
+1. Cài đặt dependencies sạch: `npm ci --ignore-scripts`
+2. Tạo Prisma Client: `npm run db:generate`
+3. Kiểm tra cú pháp và quy chuẩn: `npm run lint`
+4. Kiểm tra kiểu dữ liệu: `npm run typecheck`
+5. Chạy unit & integration tests: `npm test` (48 tests trên PGlite và Redis test double, không dùng secret)
+6. Kiểm tra biên dịch production: `npm run build`
+7. Kiểm tra bảo mật dependency: `npm run audit:check` (đối chiếu baseline `.github/security-audit-baseline.json` hạn 18/10/2026; cảnh báo và dừng nếu có lỗ hổng mới hoặc quá hạn)
 
 Sau khi build, chạy `npm run start` để mở production server. Auth trên production yêu cầu `NEXTAUTH_URL` là URL HTTPS canonical; dùng `npm run dev` khi chạy Auth local qua HTTP.
 
