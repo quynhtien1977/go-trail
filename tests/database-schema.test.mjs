@@ -22,9 +22,10 @@ before(async () => {
 });
 after(async () => { await db?.close(); });
 
-test("creates all 21 business tables and enables RLS on every table", async () => {
+test("creates 21 business tables with RLS; rate counters stay outside PostgreSQL", async () => {
   const { rows } = await db.query("SELECT relname, relrowsecurity FROM pg_class JOIN pg_namespace n ON n.oid = relnamespace WHERE n.nspname = 'public' AND relkind = 'r' AND relname <> '_prisma_migrations'");
   assert.equal(rows.length, 21);
+  assert.ok(!rows.some((row) => row.relname === "auth_rate_limits"));
   assert.ok(rows.every((row) => row.relrowsecurity));
 });
 
@@ -48,6 +49,12 @@ test("Supabase API roles cannot read user accounts or insert invoices", async ()
     assert.equal(rows[0].read, false);
     assert.equal(rows[0].write, false);
   }
+});
+
+test("auth versions default to zero and cannot become negative", async () => {
+  const { rows } = await db.query("INSERT INTO users (email, password_hash, full_name, phone) VALUES ('version@example.test', 'hash', 'Test', '000') RETURNING auth_version");
+  assert.equal(rows[0].auth_version, 0);
+  await assert.rejects(db.query("INSERT INTO users (email, password_hash, full_name, phone, auth_version) VALUES ('bad-version@example.test', 'hash', 'Test', '000', -1)"), { code: "23514" });
 });
 
 test("API roles cannot access sequences or Prisma migration logs", async () => {
