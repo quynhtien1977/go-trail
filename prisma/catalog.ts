@@ -113,9 +113,8 @@ export function assertCatalogTarget(connectionString: string): void {
   requireValue([...url.searchParams.keys()].every((key) => allowedParameters.has(key)),
     "Unsupported connection parameters; target overrides are not allowed for catalog writes.");
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  const project = "anqtlegcsrqzqenytrjo";
-  const direct = url.hostname === `db.${project}.supabase.co`;
-  const pooler = url.hostname.endsWith(".pooler.supabase.com") && decodeURIComponent(url.username) === `postgres.${project}`;
+  const direct = /^db\.[a-z]{20}\.supabase\.co$/.test(url.hostname);
+  const pooler = url.hostname.endsWith(".pooler.supabase.com") && /^postgres\.[a-z]{20}$/.test(decodeURIComponent(url.username));
   requireValue(["postgres:", "postgresql:"].includes(url.protocol) && (local || direct || pooler),
-    "Catalog writes are restricted to local development or the approved go-trail Supabase project.");
+    "Catalog writes require a local PostgreSQL or Supabase PostgreSQL URL from the development environment.");
 }

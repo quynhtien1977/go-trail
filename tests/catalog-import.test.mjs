@@ -90,9 +90,17 @@ test("source edits invalidate the review; duplicate URLs and invalid money fail 
   }
 });
 
-test("write target accepts local/go-trail and rejects another Supabase project or deceptive hostname", () => {
-  for (const target of ["postgresql://postgres@localhost:5432/postgres", "postgresql://postgres@db.anqtlegcsrqzqenytrjo.supabase.co/postgres", "postgresql://postgres.anqtlegcsrqzqenytrjo@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"]) assert.doesNotThrow(() => assertCatalogTarget(target));
+test("write target accepts local PostgreSQL and each member's Supabase URL without a separate project variable", () => {
+  for (const target of ["postgresql://postgres@localhost:5432/postgres", "postgresql://postgres@db.anqtlegcsrqzqenytrjo.supabase.co/postgres", "postgresql://postgres.anqtlegcsrqzqenytrjo@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres@db.abcdefghijklmnopqrst.supabase.co/postgres",
+    "postgresql://postgres.abcdefghijklmnopqrst@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require",
+  ]) assert.doesNotThrow(() => assertCatalogTarget(target));
+});
+
+test("write target rejects malformed Supabase refs, deceptive hosts and connection overrides", () => {
   for (const target of ["postgresql://postgres@db.otherproject.supabase.co/postgres", "postgresql://postgres.otherproject@aws-0-ap-southeast-1.pooler.supabase.com/postgres", "postgresql://postgres@db.anqtlegcsrqzqenytrjo.supabase.co.attacker.test/postgres", "https://localhost/postgres",
+    "postgresql://postgres.abcdefghijklmnopqrst@aws-0.pooler.supabase.com.attacker.test/postgres",
+    "postgresql://postgres@database.attacker.test/postgres",
     "postgresql://postgres@db.anqtlegcsrqzqenytrjo.supabase.co/postgres?host=db.otherproject.supabase.co",
     "postgresql://postgres@localhost/postgres?user=postgres.otherproject&host=aws-0.pooler.supabase.com",
   ]) assert.throws(() => assertCatalogTarget(target));
