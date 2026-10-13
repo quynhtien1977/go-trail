@@ -36,16 +36,16 @@ export default async function AccountPage() {
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-[126px] sm:pt-[134px] pb-8 sm:pb-12 space-y-8">
         {/* Welcome Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <div className="w-16 h-16 rounded-2xl bg-[#febb02] text-zinc-950 flex items-center justify-center font-black text-2xl shadow-md shrink-0">
               {user.full_name.charAt(0).toUpperCase()}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white">
+                <h1 className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white break-words">
                   Xin chào, {user.full_name}
                 </h1>
                 <RoleBadge role={user.role} />
@@ -61,7 +61,7 @@ export default async function AccountPage() {
 
           <div className="flex items-center gap-2">
             <Link
-              href="/#routes"
+              href="/#system-trailbus"
               className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-bold bg-[#febb02] hover:bg-[#e5a800] text-zinc-950 text-sm shadow-sm transition-all"
             >
               Đặt chuyến mới
@@ -96,7 +96,7 @@ export default async function AccountPage() {
               <div>
                 <span className="block text-xs text-zinc-400">Ngày tham gia</span>
                 <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  {new Date(user.created_at).toLocaleDateString("vi-VN")}
+                  {new Date(user.created_at).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}
                 </span>
               </div>
             </div>
@@ -130,7 +130,7 @@ export default async function AccountPage() {
                 </p>
               </div>
               <Link
-                href="/#routes"
+                href="/#system-trailbus"
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-[#d97706] dark:text-[#febb02] hover:underline pt-2"
               >
                 Khám phá danh sách chuyến xe →

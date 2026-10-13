@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
 import type { Role } from "@/schemas/auth";
+import { getSafeAuthCallback } from "@/lib/auth-redirect";
 
 function LoginForm() {
   const router = useRouter();
@@ -58,8 +59,9 @@ function LoginForm() {
         }
 
         if (res.ok) {
-          if (callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")) {
-            router.push(callbackUrl);
+          const destination = getSafeAuthCallback(callbackUrl, window.location.origin);
+          if (destination) {
+            router.push(destination);
             router.refresh();
             return;
           }

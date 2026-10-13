@@ -6,7 +6,7 @@ Hệ thống đặt vé xe khứ hồi kèm Leader dẫn đoàn trekking/dã ngo
 
 Đã có scaffold Next.js, 21 bảng nghiệp vụ PostgreSQL, catalog tham khảo từ GoTrail với importer idempotent, seed phát triển và Prisma client trên server. Backend Auth/RBAC/audit đã có: đăng ký Customer, credentials/JWT, rate limit dùng chung qua Upstash Redis, Proxy kiểm nhóm route, service kiểm chủ hóa đơn/phân công Leader và thay đổi quyền có audit. Migration Auth chỉ bổ sung `users.auth_version` và CHECK không âm; không tạo bảng counter PostgreSQL.
 
-Trang chủ vẫn là giao diện mặc định của Next.js. UI đăng nhập/đăng ký và các trang `/account`, `/leader`, `/staff`, `/admin` chưa được xây; các luồng đặt vé/thanh toán chưa triển khai. Áp dụng migration Auth vào database của môi trường trước khi sử dụng các API mới.
+Đã có trang chủ, About Us, UI đăng nhập/đăng ký và các portal `/account`, `/leader`, `/staff`, `/admin`. Portal Auth đang được review tích hợp; danh sách tour trang chủ còn dùng fixture tham khảo, các luồng đặt vé/thanh toán chưa triển khai. Áp dụng migration Auth vào database của môi trường trước khi sử dụng các API mới.
 
 ## Phạm vi MVP
 
@@ -45,7 +45,7 @@ Driver và Assistant có hồ sơ nhân sự nhưng không đăng nhập hệ th
 | Database / ORM | PostgreSQL trên Supabase, Prisma 7.10.0 + adapter pg | Đã triển khai schema, migration, seed |
 | Xác thực | Auth.js (`next-auth` 4.24.15), credentials + JWT sessions | Backend đã triển khai |
 | Validation | Zod 4.6.5 | Schema Auth dùng chung client/server |
-| Form / components | React Hook Form, shadcn/ui | Dự kiến |
+| Form / components | React state, shadcn/ui (@base-ui/react) | UI đã có; React Hook Form dự kiến |
 | Thanh toán | VietQR + webhook SePay | Dự kiến |
 
 Dùng npm và giữ `package-lock.json` để thống nhất dependency giữa các máy.
@@ -166,7 +166,7 @@ Các bảng bật RLS, thu hồi quyền table/sequence của Data API roles; tr
 
 ## Hợp đồng Auth/RBAC
 
-Đăng nhập/đăng xuất sử dụng `signIn("credentials", { email, password, redirect: false })` và `signOut()` từ `next-auth/react`; dùng `/api/auth/signin` mặc định để thử backend trước khi có UI. Đăng ký không tự đăng nhập. Mật khẩu đăng ký từ 12 ký tự, tối đa 72 byte UTF-8; không trim mật khẩu. Email được trim/lowercase. Hệ thống chưa có xác minh email hoặc quên mật khẩu.
+Đăng nhập/đăng xuất sử dụng `signIn("credentials", { email, password, redirect: false })` và `signOut()` từ `next-auth/react`; UI tại `/login` và `/register`, `/api/auth/signin` dẫn tới custom login. Guest/expired portal giữ callback nội bộ; login chấp nhận relative hoặc absolute same-origin callback đã chuẩn hóa, từ chối external origins/backslash/authority tricks. Đăng ký không tự đăng nhập. Mật khẩu đăng ký từ 12 ký tự, tối đa 72 byte UTF-8; không trim mật khẩu. Email được trim/lowercase. Hệ thống chưa có xác minh email hoặc quên mật khẩu.
 
 | Endpoint | Quyền và dữ liệu |
 | --- | --- |

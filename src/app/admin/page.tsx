@@ -48,21 +48,21 @@ export default async function AdminPage() {
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
       <Navbar />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-[126px] sm:pt-[134px] pb-8 sm:pb-12 space-y-8">
         {/* Header Admin */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <div className="w-16 h-16 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black text-2xl shadow-md shrink-0">
               🛡️
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white">
+                <h1 className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white break-words">
                   Bảng Điều Khiển Quản Trị Hệ Thống
                 </h1>
                 <RoleBadge role={actor.role} />
               </div>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 break-words">
                 Toàn quyền kiểm soát tài khoản, cấu hình tham số và nhật ký kiểm toán.
               </p>
             </div>
@@ -150,7 +150,7 @@ export default async function AdminPage() {
                       </span>
                     </td>
                     <td className="py-3 text-xs text-zinc-500">
-                      {new Date(u.created_at).toLocaleDateString("vi-VN")}
+                      {new Date(u.created_at).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}
                     </td>
                   </tr>
                 ))}

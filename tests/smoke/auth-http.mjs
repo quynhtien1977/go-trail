@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 import { hash } from "bcryptjs";
+import { encode } from "next-auth/jwt";
 import nextEnv from "@next/env";
 import { createTestDatabase } from "../helpers/test-database.mjs";
 import { getRedisConfig } from "../../src/server/auth/redis.ts";
@@ -30,7 +31,7 @@ const authSecret = randomBytes(32).toString("hex");
 async function startServer(redisToken, databaseUrl = database.connectionString) {
   child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: process.cwd(), stdio: "ignore", windowsHide: true,
-    env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: databaseUrl,
+    env: { ...process.env, VERCEL: "", NODE_ENV: "production", TZ: "UTC", DATABASE_URL: databaseUrl,
       DIRECT_URL: databaseUrl, AUTH_SECRET: authSecret, NEXTAUTH_URL: origin,
       AUTH_RATE_LIMIT_NAMESPACE: rateNamespace, UPSTASH_REDIS_REST_TOKEN: redisToken },
   });
@@ -70,7 +71,7 @@ try {
   const password_hash = await hash(password, 12);
   for (const role of ["Customer", "Leader", "RouteMgr", "HRMgr", "Accountant", "Admin"]) {
     users.set(role, await db.user.create({ data: { email: `${role.toLowerCase()}@smoke.example.test`, role,
-      full_name: `Test ${role}`, phone: "0901234567", password_hash } }));
+      full_name: `Test ${role}`, phone: "0901234567", password_hash, created_at: new Date("2026-10-12T18:00:00Z") } }));
   }
   const other = await db.user.create({ data: { email: "other@smoke.example.test", full_name: "Test Other", phone: "0901234567", password_hash } });
   const staff = await db.staff.create({ data: { user_id: users.get("Leader").user_id, full_name: "Test Leader", phone: "0901234567", staff_type: "Leader" } });
@@ -89,7 +90,14 @@ try {
   await startServer(process.env.UPSTASH_REDIS_REST_TOKEN);
   const guest = new BrowserSession();
   assert.equal((await guest.request("/api/account/me")).status, 401);
-  assert.equal((await guest.request("/admin")).status, 307);
+  const guestPortal = await guest.request("/admin?view=users");
+  assert.equal(guestPortal.status, 307);
+  const guestLocation = new URL(guestPortal.headers.get("location"), origin);
+  assert.equal(guestLocation.pathname, "/login");
+  assert.equal(guestLocation.searchParams.get("callbackUrl"), "/admin?view=users");
+  const defaultSignin = await guest.request("/api/auth/signin?callbackUrl=%2Faccount");
+  assert.equal(defaultSignin.status, 302);
+  assert.equal(new URL(defaultSignin.headers.get("location"), origin).pathname, "/login");
   const sessions = new Map();
   const allowed = { Customer: ["account"], Leader: ["leader"], RouteMgr: ["staff"], HRMgr: ["staff"], Accountant: ["staff"], Admin: ["account", "leader", "staff", "admin"] };
   for (const [role, user] of users) {
@@ -105,13 +113,36 @@ try {
     assert.equal(dto.role, role);
     assert.equal(Object.hasOwn(dto, "password_hash"), false);
     for (const group of ["account", "leader", "staff", "admin"]) {
-      // UI groups are not built yet: authorized requests reach 404; others stop at Proxy 403.
-      assert.equal((await browser.request(`/${group}`)).status, allowed[role].includes(group) ? 404 : 403, `${role}/${group}`);
+      const portal = await browser.request(`/${group}`);
+      assert.equal(portal.status, allowed[role].includes(group) ? 200 : 403, `${role}/${group}`);
+      if (portal.status === 200) {
+        assert.match(portal.headers.get("content-type"), /text\/html/);
+        assert.match(portal.headers.get("cache-control"), /no-store/);
+        const html = await portal.text();
+        assert.ok(!html.includes(password_hash) && !html.includes(password));
+        if (group === "account" || group === "admin") assert.ok(html.includes("13/10/2026"), "Portal dates use Vietnam timezone on a UTC host");
+        if (group === "account" || group === "admin") assert.ok(!html.includes("12/10/2026"), "Near-midnight UTC fixture must not render the previous day");
+        if (group === "account") assert.ok(html.includes('href="/#system-trailbus"'));
+      }
     }
     sessions.set(role, browser);
   }
   console.log("PASS: six-role login, secure cookies, current identity, Proxy route groups");
   const customer = sessions.get("Customer");
+  const sessionCsrf = await (await customer.request("/api/auth/csrf")).json();
+  await customer.request("/api/auth/session", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ csrfToken: sessionCsrf.csrfToken, data: { user: { role: "Admin", auth_version: 999 } } }) });
+  assert.equal((await (await customer.request("/api/account/me")).json()).data.role, "Customer");
+  assert.equal((await customer.request("/admin")).status, 403);
+  const expired = new BrowserSession();
+  expired.cookies.set("__Secure-next-auth.session-token", await encode({ secret: authSecret, maxAge: 8 * 60 * 60,
+    token: { sub: String(users.get("Customer").user_id), role: "Customer", auth_version: 0,
+      authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }));
+  const expiredPortal = await expired.request("/account");
+  assert.equal(expiredPortal.status, 307);
+  assert.equal(new URL(expiredPortal.headers.get("location"), origin).pathname, "/login");
+  assert.equal((await expired.request("/api/account/me")).status, 401);
+  console.log("PASS: session update cannot elevate privileges; absolute session expiry sends portals to custom login");
   assert.equal((await customer.request(`/api/invoices/${invoice.invoice_id}`)).status, 200);
   const otherSession = new BrowserSession();
   await otherSession.login(other.email);
@@ -127,7 +158,15 @@ try {
   assert.equal((await customer.request(accessPath, payload)).status, 403);
   assert.equal((await sessions.get("Admin").request(accessPath, payload)).status, 200);
   assert.equal((await sessions.get("RouteMgr").request("/api/account/me")).status, 401);
+  const lockedPortal = await sessions.get("RouteMgr").request("/staff");
+  assert.equal(lockedPortal.status, 307);
+  assert.equal(new URL(lockedPortal.headers.get("location"), origin).pathname, "/login");
   assert.equal(await db.auditLog.count({ where: { action: "AccountStatusChanged" } }), 1);
+  await sessions.get("Admin").request(accessPath, { ...payload, body: JSON.stringify({ status: "Active" }) });
+  assert.equal((await sessions.get("RouteMgr").request("/staff")).status, 307, "Unlock does not restore a revoked session");
+  const newRouteSession = new BrowserSession();
+  await newRouteSession.login(users.get("RouteMgr").email);
+  assert.equal((await newRouteSession.request("/staff")).status, 200);
   console.log("PASS: Admin-only access changes, durable audit and existing-session revocation");
 
   const registration = { email: "new@smoke.example.test", password, full_name: "Khách Mới", phone: "0901234567" };
