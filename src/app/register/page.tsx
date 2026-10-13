@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
@@ -73,7 +72,7 @@ export default function RegisterPage() {
       try {
         const payload = {
           email: email.trim().toLowerCase(),
-          password, // Passwords are not trimmed per schema rules
+          password,
           full_name: fullName.trim(),
           phone: phone.trim(),
         };
@@ -125,65 +124,76 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
+    <div
+      className="min-h-screen flex flex-col bg-[#F8F9FA] text-[#212529] font-sans antialiased selection:bg-[#FEBB02] selection:text-black bg-cover bg-top"
+      style={{
+        backgroundImage: "url('/ref/topo-gotrail-2.svg'), url('/ref/topo2.svg')",
+        backgroundColor: "#F8F9FA",
+      }}
+    >
       <Navbar />
 
-      <main className="flex-1 flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
+      <main className="flex-1 flex items-center justify-center pt-[120px] pb-12 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           {/* Visual Brand Panel */}
-          <div className="hidden lg:flex lg:col-span-5 flex-col justify-between p-8 rounded-3xl bg-gradient-to-br from-zinc-900 via-zinc-900 to-black text-white relative overflow-hidden min-h-[580px] border border-zinc-800">
-            <div className="absolute inset-0 opacity-30 bg-cover bg-center mix-blend-overlay"
+          <div className="hidden lg:flex lg:col-span-5 flex-col justify-between p-10 rounded-2xl bg-neutral-900 text-white relative overflow-hidden min-h-[620px] shadow-xl border border-neutral-200/20 group">
+            {/* Background image from Supabase */}
+            <div
+              className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
               style={{
-                backgroundImage: "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/35-e1742370003781.jpg')",
+                backgroundImage:
+                  "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/35-e1742370003781.jpg')",
               }}
             />
+            {/* Dark gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/55 to-black/35" />
 
-            <div className="relative z-10 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-[#febb02]">
-                ✦ Thành viên Go-Trail
+            <div className="relative z-10 space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FEBB02] text-black text-xs font-extrabold uppercase tracking-wider">
+                <span>✦</span> THÀNH VIÊN GO TRAIL
               </div>
-              <h2 className="text-3xl font-black tracking-tight leading-snug">
+              <h2 className="text-3xl font-extrabold tracking-tight leading-snug">
                 Bắt đầu những bước chân chinh phục thiên nhiên
               </h2>
-              <p className="text-zinc-300 text-sm leading-relaxed">
+              <p className="text-neutral-200 text-sm leading-relaxed max-w-md">
                 Đăng ký tài khoản Khách hàng để chọn sơ đồ ghế xe bus yêu thích, nhận mã vé điện tử QR và thanh toán tự động tiện lợi.
               </p>
             </div>
 
-            <div className="relative z-10 space-y-3 pt-6 border-t border-white/10">
-              <div className="flex items-center gap-3 text-xs text-zinc-300">
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="relative z-10 space-y-3 pt-6 border-t border-white/20">
+              <div className="flex items-center gap-3 text-xs text-neutral-200 p-2.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10">
+                <div className="w-6 h-6 rounded-full bg-[#186734] text-white flex items-center justify-center font-bold shrink-0">
                   ✓
                 </div>
-                <span>Chọn trực tiếp số ghế khứ hồi trên xe</span>
+                <span>Chọn trực tiếp số ghế khứ hồi trên xe bus</span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-zinc-300">
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3 text-xs text-neutral-200 p-2.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10">
+                <div className="w-6 h-6 rounded-full bg-[#186734] text-white flex items-center justify-center font-bold shrink-0">
                   ✓
                 </div>
                 <span>Thanh toán tự động qua VietQR xác nhận tức thì</span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-zinc-300">
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3 text-xs text-neutral-200 p-2.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10">
+                <div className="w-6 h-6 rounded-full bg-[#186734] text-white flex items-center justify-center font-bold shrink-0">
                   ✓
                 </div>
-                <span>Leader theo sát từng chặng đường an toàn</span>
+                <span>Leader theo sát từng chặng đường an toàn 1:15</span>
               </div>
             </div>
           </div>
 
           {/* Form Panel */}
           <div className="w-full lg:col-span-7">
-            <div className="w-full max-w-lg mx-auto bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-xl border border-zinc-200/80 dark:border-zinc-800/80">
-              <div className="mb-6 space-y-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold mb-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <div className="w-full max-w-lg mx-auto bg-white rounded-2xl p-7 sm:p-9 shadow-[0px_10px_30px_rgba(0,0,0,0.06)] border border-neutral-200">
+              <div className="mb-6 space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#9ACE7D]/20 text-[#186734] text-xs font-bold mb-1">
+                  <span className="w-2 h-2 rounded-full bg-[#186734]" />
                   Đăng ký tài khoản Khách hàng
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-black text-zinc-950 dark:text-white tracking-tight">
+                <h1 className="text-2xl sm:text-3xl font-black text-[#121212] tracking-tight uppercase">
                   Tạo tài khoản mới
                 </h1>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                <p className="text-sm text-neutral-600">
                   Điền thông tin để bắt đầu đặt vé xe và tham gia cùng đoàn
                 </p>
               </div>
@@ -212,8 +222,9 @@ export default function RegisterPage() {
                   error={fieldErrors.fullName}
                   required
                   autoComplete="name"
+                  className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
                   leftIcon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   }
@@ -231,8 +242,9 @@ export default function RegisterPage() {
                     error={fieldErrors.email}
                     required
                     autoComplete="email"
+                    className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
                     leftIcon={
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.206" />
                       </svg>
                     }
@@ -249,8 +261,9 @@ export default function RegisterPage() {
                     error={fieldErrors.phone}
                     required
                     autoComplete="tel"
+                    className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
                     leftIcon={
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
                     }
@@ -269,8 +282,9 @@ export default function RegisterPage() {
                   error={fieldErrors.password}
                   required
                   autoComplete="new-password"
+                  className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
                   leftIcon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   }
@@ -278,7 +292,7 @@ export default function RegisterPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                      className="text-neutral-400 hover:text-neutral-700 transition-colors"
                       aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                     >
                       {showPassword ? (
@@ -306,30 +320,35 @@ export default function RegisterPage() {
                   error={fieldErrors.confirmPassword}
                   required
                   autoComplete="new-password"
+                  className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
                   leftIcon={
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
                   }
                 />
 
-                <Button
+                <button
                   type="submit"
-                  variant="primary"
-                  size="lg"
-                  className="w-full mt-2"
-                  isLoading={isPending}
+                  disabled={isPending}
+                  className="w-full mt-2 py-3.5 px-6 rounded-lg bg-[#FEBB02] hover:bg-[#e5a802] active:scale-[0.99] text-black font-extrabold text-[15px] uppercase tracking-wide transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Tạo tài khoản Khách hàng
-                </Button>
+                  {isPending && (
+                    <svg className="animate-spin -ml-1 mr-2 w-4 h-4 text-black" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  <span>Tạo tài khoản Khách hàng</span>
+                </button>
               </form>
 
-              <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center space-y-2">
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  Đã có tài khoản?{" "}
+              <div className="mt-6 pt-6 border-t border-neutral-200 text-center space-y-2">
+                <p className="text-sm text-neutral-600">
+                  Đã có tài khoản Go Trail?{" "}
                   <Link
                     href="/login"
-                    className="font-bold text-[#d97706] dark:text-[#febb02] hover:underline"
+                    className="font-bold text-[#186734] hover:text-[#FEBB02] hover:underline transition-colors"
                   >
                     Đăng nhập tại đây
                   </Link>
@@ -339,6 +358,16 @@ export default function RegisterPage() {
           </div>
         </div>
       </main>
+
+      {/* Mini Footer */}
+      <footer className="py-6 border-t border-neutral-200/80 bg-white/80 backdrop-blur-sm text-center text-xs text-neutral-500">
+        <p>
+          Copyright © 2026 Go Trail. Công ty TNHH Khám Phá Trải Nghiệm Tổ Ong · Hotline:{" "}
+          <a href="tel:0972699242" className="font-semibold text-neutral-700 hover:text-[#186734]">
+            0972699242
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }

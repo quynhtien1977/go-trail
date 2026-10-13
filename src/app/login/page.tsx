@@ -4,7 +4,6 @@ import { useState, useTransition, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
@@ -59,14 +58,12 @@ function LoginForm() {
         }
 
         if (res.ok) {
-          // If a safe internal callbackUrl was provided and starts with "/", use it
           if (callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")) {
             router.push(callbackUrl);
             router.refresh();
             return;
           }
 
-          // Otherwise, inspect actor role to redirect to the proper landing page
           try {
             const meRes = await fetch("/api/account/me");
             if (meRes.ok) {
@@ -107,16 +104,16 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-xl border border-zinc-200/80 dark:border-zinc-800/80">
-        <div className="mb-6 space-y-1 text-center sm:text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold mb-2">
-            <span className="w-2 h-2 rounded-full bg-[#febb02]" />
-            Hệ thống đặt vé Go-Trail
+      <div className="bg-white rounded-2xl p-7 sm:p-9 shadow-[0px_10px_30px_rgba(0,0,0,0.06)] border border-neutral-200">
+        <div className="mb-6 space-y-1.5">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#9ACE7D]/20 text-[#186734] text-xs font-bold mb-1">
+            <span className="w-2 h-2 rounded-full bg-[#186734]" />
+            Hệ thống đặt vé Go Trail
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-950 dark:text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#121212] tracking-tight uppercase">
             Đăng nhập
           </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-neutral-600">
             Truy cập chuyến đi của bạn cùng Leader dẫn đoàn
           </p>
         </div>
@@ -138,8 +135,9 @@ function LoginForm() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
+            className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
             leftIcon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.206" />
               </svg>
             }
@@ -155,8 +153,9 @@ function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
+            className="rounded-lg border-neutral-300 focus-visible:border-[#FEBB02] focus-visible:ring-[#FEBB02]/25"
             leftIcon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             }
@@ -164,7 +163,7 @@ function LoginForm() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                className="text-neutral-400 hover:text-neutral-700 transition-colors"
                 aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               >
                 {showPassword ? (
@@ -181,23 +180,27 @@ function LoginForm() {
             }
           />
 
-          <Button
+          <button
             type="submit"
-            variant="primary"
-            size="lg"
-            className="w-full mt-2"
-            isLoading={isPending}
+            disabled={isPending}
+            className="w-full mt-2 py-3.5 px-6 rounded-lg bg-[#FEBB02] hover:bg-[#e5a802] active:scale-[0.99] text-black font-extrabold text-[15px] uppercase tracking-wide transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
           >
-            Đăng nhập ngay
-          </Button>
+            {isPending && (
+              <svg className="animate-spin -ml-1 mr-2 w-4 h-4 text-black" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            )}
+            <span>Đăng nhập ngay</span>
+          </button>
         </form>
 
-        <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center space-y-2">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Chưa có tài khoản Go-Trail?{" "}
+        <div className="mt-6 pt-6 border-t border-neutral-200 text-center space-y-2">
+          <p className="text-sm text-neutral-600">
+            Chưa có tài khoản Go Trail?{" "}
             <Link
               href="/register"
-              className="font-bold text-[#d97706] dark:text-[#febb02] hover:underline"
+              className="font-bold text-[#186734] hover:text-[#FEBB02] hover:underline transition-colors"
             >
               Đăng ký tài khoản
             </Link>
@@ -210,41 +213,52 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
+    <div
+      className="min-h-screen flex flex-col bg-[#F8F9FA] text-[#212529] font-sans antialiased selection:bg-[#FEBB02] selection:text-black bg-cover bg-top"
+      style={{
+        backgroundImage: "url('/ref/topo-gotrail-2.svg'), url('/ref/topo2.svg')",
+        backgroundColor: "#F8F9FA",
+      }}
+    >
       <Navbar />
 
-      <main className="flex-1 flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
+      <main className="flex-1 flex items-center justify-center pt-[120px] pb-12 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           {/* Visual Brand Panel (Desktop/Tablet) */}
-          <div className="hidden lg:flex lg:col-span-6 flex-col justify-between p-8 rounded-3xl bg-gradient-to-br from-zinc-900 via-zinc-900 to-black text-white relative overflow-hidden min-h-[540px] border border-zinc-800">
-            <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#febb02_1px,transparent_1px)] [background-size:16px_16px]" />
+          <div className="hidden lg:flex lg:col-span-6 flex-col justify-between p-10 rounded-2xl bg-neutral-900 text-white relative overflow-hidden min-h-[560px] shadow-xl border border-neutral-200/20 group">
+            {/* Background image from Supabase */}
             <div
-              className="absolute inset-0 opacity-20 bg-cover bg-center mix-blend-overlay"
+              className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
               style={{
-                backgroundImage: "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/PHOR7222.JPG_compressed.jpeg')",
+                backgroundImage:
+                  "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/KVBUS-3.jpg')",
               }}
             />
+            {/* Elegant dark gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-black/30" />
 
-            <div className="relative z-10 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-[#febb02]">
-                ✦ Khám phá cung đường mới
+            {/* Top brand header */}
+            <div className="relative z-10 space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FEBB02] text-black text-xs font-extrabold uppercase tracking-wider">
+                <span>✦</span> YOUR WEEKEND TRAIL
               </div>
-              <h2 className="text-3xl font-black tracking-tight leading-snug">
+              <h2 className="text-3xl font-extrabold tracking-tight leading-snug">
                 Hành trình trekking an tâm cùng Leader bản địa
               </h2>
-              <p className="text-zinc-300 text-sm leading-relaxed">
-                Đặt xe bus đưa đón tận nơi từ TP.HCM, an toàn tuyệt đối với Leader kiểm soát tốc độ và sơ cứu y tế đồng hành suốt tuyến đường.
+              <p className="text-neutral-200 text-sm leading-relaxed max-w-md">
+                Những chuyến xe bus đưa đón tận nơi từ TP.HCM, kết nối bạn với những cung đường xanh – nơi bạn có thể hít thở không khí trong lành và tìm lại sự tự do.
               </p>
             </div>
 
-            <div className="relative z-10 grid grid-cols-2 gap-3 pt-6 border-t border-white/10">
-              <div className="p-3 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
-                <div className="text-[#febb02] font-black text-xl">100%</div>
-                <div className="text-xs text-zinc-400">Xe bus đời mới & ghế chọn sẵn</div>
+            {/* Bottom value props */}
+            <div className="relative z-10 grid grid-cols-2 gap-3 pt-6 border-t border-white/20">
+              <div className="p-3.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10">
+                <div className="text-[#FEBB02] font-black text-2xl">100%</div>
+                <div className="text-xs text-neutral-300 mt-0.5">Xe bus đời mới & ghế chọn sẵn</div>
               </div>
-              <div className="p-3 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
-                <div className="text-emerald-400 font-black text-xl">1:15</div>
-                <div className="text-xs text-zinc-400">Tỷ lệ Leader đồng hành đoàn</div>
+              <div className="p-3.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10">
+                <div className="text-[#9ACE7D] font-black text-2xl">1:15</div>
+                <div className="text-xs text-neutral-300 mt-0.5">Tỷ lệ Leader đồng hành đoàn</div>
               </div>
             </div>
           </div>
@@ -253,7 +267,7 @@ export default function LoginPage() {
           <div className="w-full lg:col-span-6">
             <Suspense
               fallback={
-                <div className="w-full max-w-md mx-auto p-8 bg-white dark:bg-zinc-900 rounded-3xl animate-pulse h-96" />
+                <div className="w-full max-w-md mx-auto p-8 bg-white rounded-2xl animate-pulse h-96 shadow-lg border border-neutral-200" />
               }
             >
               <LoginForm />
@@ -261,6 +275,16 @@ export default function LoginPage() {
           </div>
         </div>
       </main>
+
+      {/* Mini Footer */}
+      <footer className="py-6 border-t border-neutral-200/80 bg-white/80 backdrop-blur-sm text-center text-xs text-neutral-500">
+        <p>
+          Copyright © 2026 Go Trail. Công ty TNHH Khám Phá Trải Nghiệm Tổ Ong · Hotline:{" "}
+          <a href="tel:0972699242" className="font-semibold text-neutral-700 hover:text-[#186734]">
+            0972699242
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }
