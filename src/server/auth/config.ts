@@ -18,6 +18,7 @@ export function getAuthOptions(): NextAuthOptions {
   }
   return {
     secret,
+    pages: { signIn: "/login" },
     session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
     useSecureCookies: production,
     providers: [Credentials({

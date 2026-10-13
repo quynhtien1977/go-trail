@@ -1,0 +1,413 @@
+[
+  {
+    "slug": "trail-bus-pal-sol",
+    "title": "Trail Bus – Pal Sol",
+    "link": "https://gotrail.vn/bus/trail-bus-pal-sol/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/PHOR7222.JPG_compressed.jpeg",
+    "tags": [],
+    "time": "Trong ngày",
+    "length": "11km",
+    "difficultyLevel": 3,
+    "difficultyIcon": "/ref/i-do-kho-3.svg",
+    "height": "900m",
+    "oldPrice": "1,850,000 VND",
+    "newPrice": "1,599,000 VND"
+  },
+  {
+    "slug": "trail-bus-suoi-cua-tu",
+    "title": "Trail Bus – Suối Cửa Tử",
+    "link": "https://gotrail.vn/bus/trail-bus-suoi-cua-tu/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/IMG_3754-scaled.jpg",
+    "tags": [
+      "Chùa Đồng",
+      "Đỉnh Yên Tử 1068m",
+      "Hiking"
+    ],
+    "time": "2,5 tiếng tùy thể lực",
+    "length": "4km",
+    "difficultyLevel": 1,
+    "difficultyIcon": "/ref/i-do-kho-1.svg",
+    "height": "Không",
+    "oldPrice": "700,000 VND",
+    "newPrice": "700,000 VND"
+  },
+  {
+    "slug": "trail-bus-tam-dao",
+    "title": "Trail Bus – Tam Đảo",
+    "link": "https://gotrail.vn/bus/trail-bus-tam-dao/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/IMG_1691-scaled.jpg",
+    "tags": [
+      "Chùa Đồng",
+      "Đỉnh Yên Tử 1068m",
+      "Hiking"
+    ],
+    "time": "Khoảng 10 tiếng tùy thể lực",
+    "length": "13km",
+    "difficultyLevel": 5,
+    "difficultyIcon": "/ref/i-do-kho-5.svg",
+    "height": "1400m",
+    "oldPrice": "550,000 VND",
+    "newPrice": "512,000 VND"
+  },
+  {
+    "slug": "trail-bus-ba-vi",
+    "title": "Trail Bus – Ba Vì",
+    "link": "https://gotrail.vn/bus/trail-bus-ba-vi/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/IMG_1542-scaled.jpg",
+    "tags": [
+      "Chùa Đồng",
+      "Đỉnh Yên Tử 1068m",
+      "Hiking"
+    ],
+    "time": "Khoảng 6 tiếng tùy thể lực",
+    "length": "8km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "490m",
+    "oldPrice": "450,000 VND",
+    "newPrice": "419,000 VND"
+  },
+  {
+    "slug": "trail-bus-thac-lieng-ai",
+    "title": "Trail Bus – Thác Liêng Ài",
+    "link": "https://gotrail.vn/bus/trail-bus-thac-lieng-ai/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/IMG_2095-scaled.jpg",
+    "tags": [
+      "Ăn uống trong chuyến đi",
+      "Leader biết chụp ảnh đẹp",
+      "Người dẫn đường",
+      "Thẻ chinh phục",
+      "Túi sơ cứu cơ bản"
+    ],
+    "time": "Trong ngày",
+    "length": "~10km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "0m",
+    "oldPrice": "730,000 VND",
+    "newPrice": "679,000 VND"
+  },
+  {
+    "slug": "trail-bus-thi-vai",
+    "title": "Trail Bus – Thị Vải",
+    "link": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/z7475843429565_62f31e2a8f408d4a21adad4cdca40111.jpg_compressed.jpeg",
+    "tags": [
+      "Ăn uống trong chuyến đi",
+      "Leader biết chụp ảnh đẹp",
+      "Người dẫn đường",
+      "Thẻ chinh phục",
+      "Túi sơ cứu cơ bản"
+    ],
+    "time": "Trong ngày",
+    "length": "~4km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "~467m",
+    "oldPrice": "380,000 VND",
+    "newPrice": "354,000 VND"
+  },
+  {
+    "slug": "trail-bus-lang-biang",
+    "title": "Trail Bus – Lang Biang",
+    "link": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/z7472622327870_d41e5d011eccbfd0303690c94cc53c05.jpg",
+    "tags": [
+      "Ăn uống trong chuyến đi",
+      "Leader biết chụp ảnh đẹp",
+      "Người dẫn đường",
+      "Thẻ chinh phục Lang Biang",
+      "Túi sơ cứu cơ bản",
+      "Vé vào KDL Lang Biang"
+    ],
+    "time": "Trong ngày",
+    "length": "~10km",
+    "difficultyLevel": 3,
+    "difficultyIcon": "/ref/i-do-kho-3.svg",
+    "height": "~2167m",
+    "oldPrice": "990,000 VND",
+    "newPrice": "921,000 VND"
+  },
+  {
+    "slug": "trail-bus-chu-bluk",
+    "title": "Trail Bus – Chư Bluk",
+    "link": "https://gotrail.vn/bus/trail-bus-chu-bluk/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/20260205-104337.png",
+    "tags": [
+      "Ăn uống trong chuyến đi",
+      "Leader biết chụp ảnh đẹp",
+      "Người dẫn đường",
+      "Thẻ chinh phục Chư Blưk",
+      "Túi sơ cứu cơ bản"
+    ],
+    "time": "Trong ngày",
+    "length": "~5km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "1,300,000 VND",
+    "newPrice": "1,209,000 VND"
+  },
+  {
+    "slug": "trail-bus-ba-den",
+    "title": "Trail Bus – Bà Đen",
+    "link": "https://gotrail.vn/bus/trail-bus-ba-den/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/PHOR7222.JPG_compressed.jpeg",
+    "tags": [
+      "Người dẫn đường",
+      "Thẻ chinh phục",
+      "Túi sơ cứu cơ bản"
+    ],
+    "time": "Trong ngày",
+    "length": "~5,5 km",
+    "difficultyLevel": 4,
+    "difficultyIcon": "/ref/i-do-kho-4.svg",
+    "height": "986m",
+    "oldPrice": "250,000 VND",
+    "newPrice": "233,000 VND"
+  },
+  {
+    "slug": "trail-bus-bu-gia-map",
+    "title": "Trail Bus – Bù Gia Mập",
+    "link": "https://gotrail.vn/bus/trail-bus-bu-gia-map/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/Artboard-2.png",
+    "tags": [
+      "Ăn sáng",
+      "Ăn trưa tại địa phương",
+      "Dịch vụ tắm",
+      "vệ sinh sau chuyến đi",
+      "Vé tham quan Trung tâm cứu hộ động vật",
+      "Vé tham quan VQG Bù Gia Mập"
+    ],
+    "time": "Trong ngày",
+    "length": "~7km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "690,000 VND",
+    "newPrice": "642,000 VND"
+  },
+  {
+    "slug": "trail-bus-phuoc-buu-tam-bo",
+    "title": "Trail Bus Phước Bửu – Tầm Bồ",
+    "link": "https://gotrail.vn/bus/trail-bus-phuoc-buu-tam-bo/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/13-scaled.jpg",
+    "tags": [
+      "Ăn trưa",
+      "Rừng ven biển nguyên sinh",
+      "Tắm biển Hồ Tràm",
+      "Vé tham quan Khu BTTN Phước Bửu - Bình Châu"
+    ],
+    "time": "~3 tiếng tùy thể lực",
+    "length": "10km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "112m",
+    "oldPrice": "910,000 VND",
+    "newPrice": "847,000 VND"
+  },
+  {
+    "slug": "trail-bus-ta-cu-ke-ga",
+    "title": "Trail Bus Tà Cú – Kê Gà",
+    "link": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/24-1.jpg",
+    "tags": [
+      "Ăn trưa ở bãi biển Kê Gà",
+      "Leader",
+      "Tắm biển Kê Gà",
+      "Trek rừng Tà Cú"
+    ],
+    "time": "Trong ngày",
+    "length": "~9km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "550,000 VND",
+    "newPrice": "512,000 VND"
+  },
+  {
+    "slug": "trail-bus-ham-lon",
+    "title": "Trail Bus – Hàm Lợn",
+    "link": "https://gotrail.vn/bus/trail-bus-ham-lon/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/16-1-scaled.jpg",
+    "tags": [
+      "Chạy trail",
+      "Check-in cột mốc Thủ Đô cũ",
+      "Newbie"
+    ],
+    "time": "4 tiếng",
+    "length": "~8km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "462m",
+    "oldPrice": "250,000 VND",
+    "newPrice": "233,000 VND"
+  },
+  {
+    "slug": "trail-bus-tay-yen-tu",
+    "title": "Trail Bus – Tây Yên Tử",
+    "link": "https://gotrail.vn/bus/trail-bus-tay-yen-tu/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/z7327558689801_89f69462969a57dadf85bc79b076603f.jpg",
+    "tags": [
+      "Chùa Đồng",
+      "Đỉnh Yên Tử 1068m",
+      "Hiking"
+    ],
+    "time": "Khoảng 6 tiếng tùy thể lực",
+    "length": "10.5km",
+    "difficultyLevel": 4,
+    "difficultyIcon": "/ref/i-do-kho-4.svg",
+    "height": "1068m",
+    "oldPrice": "350,000 VND",
+    "newPrice": "326,000 VND"
+  },
+  {
+    "slug": "trail-bus-lao-than",
+    "title": "Trail Bus – Lảo Thẩn",
+    "link": "https://gotrail.vn/bus/trail-bus-lao-than/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/30-scaled.jpg",
+    "tags": [
+      "Hiking",
+      "Mỏm \"Tiên Ông Câu Cá\"",
+      "Mỏm đá chênh vênh",
+      "Porter hỗ trợ",
+      "Săn mây"
+    ],
+    "time": "Khoảng 8-9 tiếng tùy thể lực",
+    "length": "~14km",
+    "difficultyLevel": 3,
+    "difficultyIcon": "/ref/i-do-kho-3.svg",
+    "height": "2860m",
+    "oldPrice": "990,000 VND",
+    "newPrice": "921,000 VND"
+  },
+  {
+    "slug": "trail-bus-da-giang",
+    "title": "Trail Bus Đà Giang",
+    "link": "https://gotrail.vn/bus/trail-bus-da-giang/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/trail-bus-da-bac-hoa-binh-thump.png",
+    "tags": [
+      "Chèo Sup/Kayak",
+      "Động Hoa Tiên",
+      "Hồ Hoà Bình",
+      "Hồ Mắt Ngọc"
+    ],
+    "time": "Trong ngày",
+    "length": "~7.8km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "270m",
+    "oldPrice": "750,000 VND",
+    "newPrice": "698,000 VND"
+  },
+  {
+    "slug": "trail-bus-cuc-phuong",
+    "title": "Trail Bus – Cúc Phương",
+    "link": "https://gotrail.vn/bus/trail-bus-cuc-phuong/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/image-4-e1749211120188.png",
+    "tags": [
+      "Cây Sấu cổ thụ",
+      "Đạp xe",
+      "Rừng Chò Chỉ",
+      "Trung tâm Bống"
+    ],
+    "time": "Trong ngày",
+    "length": "~20km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "750,000 VND",
+    "newPrice": "698,000 VND"
+  },
+  {
+    "slug": "trail-bus-hiking-8-nang-tien",
+    "title": "Trail Bus – Hiking 8 Nàng Tiên",
+    "link": "https://gotrail.vn/bus/trail-bus-hiking-8-nang-tien/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/image-3-e1743670466630.jpeg",
+    "tags": [
+      "Bãi Thùng",
+      "Hồ Cô Đơn",
+      "Mũi Đá Vách"
+    ],
+    "time": "Trong ngày",
+    "length": "~6km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "990,000 VND",
+    "newPrice": "921,000 VND"
+  },
+  {
+    "slug": "trail-bus-ngu-long-cong-chua",
+    "title": "Trail Bus – Ngũ Long Công Chúa",
+    "link": "https://gotrail.vn/bus/trail-bus-ngu-long-cong-chua/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/NLCC-IST-e1744098853388.jpg",
+    "tags": [
+      "Hiking",
+      "Vịnh Cam Ranh",
+      "VQG Núi Chúa"
+    ],
+    "time": "Trong ngày",
+    "length": "5km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "413m",
+    "oldPrice": "990,000 VND",
+    "newPrice": "921,000 VND"
+  },
+  {
+    "slug": "bus-trail-cat-tien",
+    "title": "Trail Bus – Cát Tiên",
+    "link": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/14.jpg",
+    "tags": [
+      "Đạp xe",
+      "Khu bảo tồn",
+      "Tà Lài"
+    ],
+    "time": "Trong ngày",
+    "length": "~20km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "Không",
+    "oldPrice": "630,000 VND",
+    "newPrice": "586,000 VND"
+  },
+  {
+    "slug": "bus-trail-chua-chan",
+    "title": "Trail Bus – Chứa Chan",
+    "link": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/35-e1742370003781.jpg",
+    "tags": [
+      "Cây đa 3 gốc",
+      "Chùa Bửu Quang",
+      "Hiking",
+      "Leo dốc"
+    ],
+    "time": "Trong ngày",
+    "length": "~7km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "837m",
+    "oldPrice": "200,000 VND",
+    "newPrice": "186,000 VND"
+  },
+  {
+    "slug": "bus-trail-nui-dinh",
+    "title": "Trail Bus – Núi Dinh",
+    "link": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+    "img": "https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/35-1-scaled.jpg",
+    "tags": [
+      "Checkin đỉnh La Bàn",
+      "Chùa Hang",
+      "Hiking"
+    ],
+    "time": "Trong ngày",
+    "length": "~8km",
+    "difficultyLevel": 2,
+    "difficultyIcon": "/ref/i-do-kho-2.svg",
+    "height": "491m",
+    "oldPrice": "250,000 VND",
+    "newPrice": "233,000 VND"
+  }
+]

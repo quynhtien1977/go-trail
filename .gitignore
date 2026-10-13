@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+tools/**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -49,3 +50,5 @@ docs/
 # Private agent instructions and generated/local files
 /src/generated/prisma/
 /scratch/
+
+tools/
