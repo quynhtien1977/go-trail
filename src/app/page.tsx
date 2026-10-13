@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/ui/navbar";
 import { GOTRAIL_TOURS } from "@/lib/fixtures/tours";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface FaqItem {
   q: string;
@@ -32,9 +32,20 @@ const FAQS: FaqItem[] = [
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   const toggleFaq = (index: number) => {
     setOpenFaq(openFaq === index ? null : index);
+  };
+
+  const scrollCarousel = (direction: "left" | "right") => {
+    if (carouselRef.current) {
+      const scrollAmount = 400;
+      carouselRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
+    }
   };
 
   return (
@@ -55,29 +66,31 @@ export default function Home() {
         </section>
 
         {/* =========================================================================
-            3. SECTION INSPIRE (LOGO TRAILBUS, 3 PARAGRAPHS, KVBUS-3.jpg)
+            3. SECTION INSPIRE (LOGO TRAILBUS, 3 PARAGRAPHS CENTERED, IMAGE KVBUS-3.jpg BELOW)
             ========================================================================= */}
         <section
-          className="section-inspire py-[95px] relative bg-cover bg-center"
+          className="section-inspire py-[95px] relative bg-cover bg-top"
           style={{
-            backgroundImage: "url('/ref/topo-gotrail-2.svg')",
+            backgroundImage: "url('/ref/topo-gotrail-2.svg'), url('/ref/topo2.svg')",
             backgroundColor: "#FFFFFF",
           }}
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-12">
+            {/* Logo gotrail / trailbus centered */}
+            <div className="text-center mb-8">
               <h1 className="flex justify-center">
                 <img
                   src="/ref/logo-trailbus.svg"
-                  alt="Trail Bus Logo"
-                  className="h-16 sm:h-20 w-auto object-contain"
+                  alt="Go Trail"
+                  className="h-[72px] w-auto object-contain mx-auto"
                 />
               </h1>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-              {/* Left Column: 3 Paragraphs (Verbatim) */}
-              <div className="lg:col-span-6 space-y-6 text-neutral-800 text-[16px] leading-[1.75]">
+            {/* Box Info: Text centered at top, Image centered below (bám sát cấu trúc gotrail gốc) */}
+            <div className="flex flex-col items-center">
+              {/* 3 Paragraphs (Verbatim) - Centered */}
+              <div className="max-w-[960px] text-center space-y-6 text-[#212529] text-[18px] leading-[1.8] font-normal">
                 <p>
                   Bạn có tin vào những cung trails giữa thiên nhiên mang lại khả năng tái tạo năng
                   lượng? Bạn tìm kiếm một ngày để bước lên những cung trails, được hồi phục sau
@@ -96,9 +109,9 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* Right Column: KVBUS-3.jpg image */}
-              <div className="lg:col-span-6">
-                <div className="relative rounded-2xl overflow-hidden shadow-xl border border-neutral-200">
+              {/* KVBUS-3.jpg image: centered below the 3 paragraphs */}
+              <div className="mt-12 w-full max-w-[1146px]">
+                <div className="relative rounded-[8px] overflow-hidden shadow-xl border border-neutral-200">
                   <img
                     src="https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/KVBUS-3.jpg"
                     alt="Go Trail Bus Community"
@@ -111,96 +124,100 @@ export default function Home() {
         </section>
 
         {/* =========================================================================
-            4. SECTION REGION (#YourWeekendtrail, mapvn.svg, Tags by Region)
+            4. SECTION REGION (#YourWeekendtrail, mapvn.svg, Tags by Region matching fe-styles.css)
             ========================================================================= */}
         <section
-          className="section-region py-[95px] relative bg-cover bg-center"
+          className="section-region py-[95px] relative bg-cover bg-top"
           style={{
             backgroundImage: "url('/ref/topo2.svg')",
             backgroundColor: "#FFFFFF",
           }}
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              {/* Left Column: Title, Description, Region Tags */}
-              <div className="lg:col-span-7 order-2 lg:order-1 space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+              {/* Left Column: Heading, Description, Region Container */}
+              <div className="lg:col-span-7 order-2 lg:order-1 space-y-6">
                 <div>
-                  <h2 className="text-4xl sm:text-5xl lg:text-[70px] font-tharon leading-none text-[#121212] mb-4 tracking-tight">
-                    <span className="text-[#FEBB02]">#</span>YourWeekend
-                    <span className="text-[#4CA62F]">trail</span>
+                  <h2 className="text-4xl sm:text-5xl lg:text-[70px] font-tharon leading-none text-[#121212] mb-5 tracking-tight">
+                    <span className="text-[#FFC107]">#</span>YourWeekend
+                    <span className="text-[#FFC107]">trail</span>
                   </h2>
-                  <p className="text-base sm:text-lg text-neutral-700 leading-relaxed max-w-2xl">
+                  <p className="text-[18px] text-[#212529] leading-relaxed mb-10 max-w-2xl">
                     Cách trung tâm Hà Nội và TP.HCM không quá 5 tiếng di chuyển, những chuyến trail bus
                     của chúng tôi sẽ đưa và đón bạn về trong vòng 24 giờ, phù hợp với bất cứ nhu cầu di
                     chuyển và khám phá cho cuối tuần của bạn.
                   </p>
                 </div>
 
-                <div className="space-y-6">
-                  {/* Miền Nam */}
-                  <div className="space-y-3">
-                    <div className="inline-block px-4 py-1.5 rounded-full bg-[#186734] text-white font-extrabold text-sm uppercase tracking-wider">
+                <div className="flex flex-col gap-6">
+                  {/* Row 1: Miền Nam */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                    {/* Region Label: Width 178px, Bold, Yellow #fbbf24 */}
+                    <div className="w-[178px] shrink-0 text-center uppercase font-bold text-[18px] py-2.5 px-3 rounded-[5px] bg-[#fbbf24] text-white shadow-sm">
                       MIỀN NAM
                     </div>
-                    <div className="flex flex-wrap gap-2.5">
+                    {/* Region List */}
+                    <div className="flex flex-wrap gap-4 sm:gap-6">
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Chứa Chan
                       </a>
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Cát Tiên
                       </a>
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Núi Dinh
                       </a>
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Ngũ Long
                       </a>
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Đá Vách
                       </a>
-                      <span className="px-4 py-2 rounded-full border border-dashed border-neutral-300 text-neutral-400 text-sm">
+                      <span className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#cbd5e1] text-[#555] cursor-not-allowed">
                         XX/2025
                       </span>
                     </div>
                   </div>
 
-                  {/* Miền Bắc */}
-                  <div className="space-y-3">
-                    <div className="inline-block px-4 py-1.5 rounded-full bg-neutral-800 text-white font-extrabold text-sm uppercase tracking-wider">
+                  {/* Row 2: Miền Bắc */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+                    {/* Region Label: Width 178px, Bold, Yellow #fbbf24 */}
+                    <div className="w-[178px] shrink-0 text-center uppercase font-bold text-[18px] py-2.5 px-3 rounded-[5px] bg-[#fbbf24] text-white shadow-sm">
                       MIỀN BẮC
                     </div>
-                    <div className="flex flex-wrap gap-2.5">
+                    {/* Region List */}
+                    <div className="flex flex-wrap gap-4 sm:gap-6">
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Cúc Phương
                       </a>
                       <a
                         href="#system-trailbus"
-                        className="px-4 py-2 rounded-full border border-neutral-300 bg-white hover:bg-[#FEBB02] hover:border-[#FEBB02] hover:text-black font-semibold text-sm transition-all"
+                        className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#186734] text-white hover:opacity-85 transition-opacity"
                       >
                         Đà Bắc
                       </a>
-                      <span className="px-4 py-2 rounded-full border border-dashed border-neutral-300 text-neutral-400 text-sm">
+                      <span className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#cbd5e1] text-[#555] cursor-not-allowed">
                         XX/2025
                       </span>
-                      <span className="px-4 py-2 rounded-full border border-dashed border-neutral-300 text-neutral-400 text-sm">
+                      <span className="w-[178px] text-center font-semibold text-[18px] py-2.5 px-4 rounded-[5px] bg-[#cbd5e1] text-[#555] cursor-not-allowed">
                         XX/2025
                       </span>
                     </div>
@@ -213,7 +230,7 @@ export default function Home() {
                 <img
                   src="/ref/mapvn.svg"
                   alt="Bản đồ các tuyến Go Trail"
-                  className="w-full max-w-[440px] h-auto object-contain drop-shadow-md"
+                  className="w-full max-w-[464px] h-auto object-contain drop-shadow-md"
                 />
               </div>
             </div>
@@ -221,7 +238,7 @@ export default function Home() {
         </section>
 
         {/* =========================================================================
-            5. SECTION TRAILBUS (HỆ THỐNG TRAIL BUS CHO BẠN - SINGLE GRID 100% GỐC)
+            5. SECTION TRAILBUS (HỆ THỐNG TRAIL BUS CHO BẠN - HORIZONTAL CAROUSEL 100% GỐC)
             ========================================================================= */}
         <section
           id="system-trailbus"
@@ -233,18 +250,46 @@ export default function Home() {
           }}
         >
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-12">
+            {/* Header: Title on Left, Carousel Navigation Arrows on Right */}
+            <div className="flex items-center justify-between mb-12">
               <h2 className="text-2xl sm:text-3xl lg:text-[35px] font-extrabold text-black uppercase tracking-tight">
                 HỆ THỐNG TRAIL BUS CHO BẠN
               </h2>
+
+              {/* Flickity-style 50px circular navigation buttons */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => scrollCarousel("left")}
+                  aria-label="Previous Slide"
+                  className="w-[50px] h-[50px] rounded-full border-[3px] border-black bg-transparent flex items-center justify-center hover:bg-black hover:text-white transition-all shadow-sm active:scale-95"
+                >
+                  <ChevronLeft className="w-6 h-6 stroke-[3]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollCarousel("right")}
+                  aria-label="Next Slide"
+                  className="w-[50px] h-[50px] rounded-full border-[3px] border-black bg-transparent flex items-center justify-center hover:bg-black hover:text-white transition-all shadow-sm active:scale-95"
+                >
+                  <ChevronRight className="w-6 h-6 stroke-[3]" />
+                </button>
+              </div>
             </div>
 
-            {/* Single Grid of Tours (Authentic gotrail.vn) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Horizontal Scrollable Carousel Container */}
+            <div
+              ref={carouselRef}
+              className="flex gap-[30px] overflow-x-auto scroll-smooth pb-6 select-none"
+              style={{
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+              }}
+            >
               {GOTRAIL_TOURS.map((tour) => (
                 <div
                   key={tour.slug}
-                  className="tour-card bg-white rounded-[16px] overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 flex flex-col group border border-neutral-100"
+                  className="tour-card carousel-cell w-[370px] min-h-[730px] shrink-0 bg-white rounded-[5px] overflow-hidden shadow-[0px_4px_8px_rgba(0,0,0,0.1)] hover:shadow-[0px_6px_12px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col group"
                 >
                   {/* Tour Image */}
                   <div className="relative h-[245px] w-full overflow-hidden bg-neutral-200">
@@ -255,89 +300,90 @@ export default function Home() {
                     />
                   </div>
 
-                  {/* Tour Content */}
-                  <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                  {/* Tour Content: Padding 30px */}
+                  <div className="p-[30px] flex-1 flex flex-col justify-between">
                     <div>
-                      <h3 className="text-xl font-bold text-neutral-900 group-hover:text-[#4CA62F] transition-colors mb-2">
+                      {/* Tour Title: 25px, Bold, Uppercase, min-height 60px */}
+                      <h3 className="text-[25px] font-bold text-black uppercase min-h-[60px] leading-tight mb-2.5">
                         {tour.title}
                       </h3>
 
-                      {/* Tags */}
+                      {/* Tour Tags: Background #e6eaf0, font-size 14px */}
                       {tour.tags && tour.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-3">
+                        <div className="flex flex-wrap gap-[7px] mb-5">
                           {tour.tags.map((tag, idx) => (
                             <span
                               key={idx}
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#EBF5E7] text-[#186734] text-xs font-semibold"
+                              className="inline-flex items-center gap-[7px] px-2.5 py-1 rounded-[5px] bg-[#E6EAF0] text-black text-[14px] font-bold"
                             >
-                              <img src="/ref/i-check.svg" alt="check" className="w-3.5 h-3.5" />
+                              <img src="/ref/i-check.svg" alt="check" className="w-4 h-4" />
                               <span>{tag}</span>
                             </span>
                           ))}
                         </div>
                       )}
 
-                      {/* 4 Rows Specs */}
-                      <div className="space-y-2 text-sm text-neutral-700 pt-2 border-t border-neutral-100">
-                        <div className="flex items-center gap-2.5">
+                      {/* Tour Info: 15px, font-weight 500, border-bottom 1px solid #ccc */}
+                      <div className="space-y-2 text-[15px] font-medium text-black pb-5 border-b border-[#ccc]">
+                        <p className="flex items-center gap-2">
                           <img src="/ref/i-clock.svg" alt="clock" className="w-[18px] h-[17px]" />
                           <span>
-                            <strong className="text-neutral-900">Thời Gian: </strong>
+                            <strong>Thời Gian: </strong>
                             {tour.time}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
+                        </p>
+                        <p className="flex items-center gap-2">
                           <img src="/ref/i-car.svg" alt="distance" className="w-[21px] h-[15px]" />
                           <span>
-                            <strong className="text-neutral-900">Độ Dài: </strong>
+                            <strong>Độ Dài: </strong>
                             {tour.length}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
+                        </p>
+                        <p className="flex items-center gap-2">
                           <img src="/ref/i-do-kho.svg" alt="difficulty" className="w-[21px] h-[14px]" />
                           <span className="flex items-center gap-2">
-                            <strong className="text-neutral-900">Độ khó: </strong>
+                            <strong>Độ khó: </strong>
                             <img
                               src={tour.difficultyIcon}
                               alt="dokho"
                               className="h-[14px] w-auto inline-block"
                             />
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
+                        </p>
+                        <p className="flex items-center gap-2">
                           <img src="/ref/i-do-cao-dinh.svg" alt="elevation" className="w-[21px] h-[20px]" />
                           <span>
-                            <strong className="text-neutral-900">Độ cao đỉnh: </strong>
+                            <strong>Độ cao đỉnh: </strong>
                             {tour.height}
                           </span>
-                        </div>
+                        </p>
                       </div>
                     </div>
 
-                    {/* Price and Action */}
-                    <div className="pt-4 border-t border-neutral-100 flex items-end justify-between">
-                      <div>
-                        {tour.oldPrice && tour.oldPrice !== tour.newPrice && (
-                          <div className="text-xs text-neutral-400 line-through mb-0.5">
-                            {tour.oldPrice}
-                          </div>
-                        )}
-                        <div className="text-xs text-neutral-500 font-bold">
-                          Giá vé:{" "}
-                          <span className="text-lg font-black text-red-600 block sm:inline">
+                    {/* Price Section */}
+                    <div className="pt-4 space-y-1">
+                      {tour.oldPrice && tour.oldPrice !== tour.newPrice && (
+                        <div className="text-[16px] text-[#888] line-through">
+                          {tour.oldPrice}
+                        </div>
+                      )}
+                      <div className="flex items-baseline justify-between">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[16px] font-bold text-black">Giá vé:</span>
+                          <span className="text-[24px] font-bold text-black">
                             {tour.newPrice}
                           </span>
                         </div>
-                      </div>
 
-                      <a
-                        href={`https://gotrail.vn/bus/${tour.slug}/`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 rounded-full bg-[#FEBB02] hover:bg-[#E5A800] text-black font-extrabold text-xs uppercase tracking-wider transition-transform hover:scale-105"
-                      >
-                        Đặt vé
-                      </a>
+                        <a
+                          href={`https://gotrail.vn/bus/${tour.slug}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 rounded-full bg-[#FEBB02] hover:bg-[#E5A800] text-black font-extrabold text-xs uppercase tracking-wider transition-transform hover:scale-105"
+                        >
+                          Đặt vé
+                        </a>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -428,7 +474,7 @@ export default function Home() {
         {/* =========================================================================
             7. SECTION GALLERY (PANORAMA DÃ NGOẠI)
             ========================================================================= */}
-        <section className="section-gallery w-full pb-[95px] overflow-hidden">
+        <section className="section-gallery w-full overflow-hidden">
           <img
             src="https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/gallery-pc.jpg"
             alt="Go Trail Gallery"
@@ -442,12 +488,12 @@ export default function Home() {
         </section>
 
         {/* =========================================================================
-            8. SECTION FAQ (NHỮNG CÂU HỎI THƯỜNG GẶP - ACCORDION GỐC)
+            8. SECTION FAQ (NHỮNG CÂU HỎI THƯỜNG GẶP - HOTLINE CỦA TEAM)
             ========================================================================= */}
         <section className="section-faq bg-[#EEEEEE] py-16 px-4 sm:px-8">
           <div className="max-w-[1280px] mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-              {/* Left Column: Title and Hotline */}
+              {/* Left Column: Title and Hotline của team */}
               <div className="lg:col-span-4 space-y-4">
                 <h2 className="text-3xl font-extrabold text-black uppercase leading-tight">
                   NHỮNG CÂU HỎI
@@ -457,9 +503,12 @@ export default function Home() {
                 <p className="text-neutral-700 text-sm">
                   Tư vấn chi tiết liên hệ hotline
                   <br />
-                  <span className="font-bold text-lg text-black">
-                    0933 22 78 78 (Nhánh 3)
-                  </span>
+                  <a
+                    href="tel:0972699242"
+                    className="font-bold text-lg text-black hover:text-[#186734] transition-colors"
+                  >
+                    0972699242
+                  </a>
                 </p>
               </div>
 
@@ -510,12 +559,12 @@ export default function Home() {
       </main>
 
       {/* =========================================================================
-          10. FOOTER (ĐẦY ĐỦ THÔNG TIN, PHÁP LÝ & DISCLAIMER ĐỒ ÁN)
+          10. FOOTER (ĐẦY ĐỦ THÔNG TIN CÁ NHÂN CỦA TEAM & PHÁP LÝ)
           ========================================================================= */}
       <footer className="footer bg-[#111111] text-white py-12 border-t border-neutral-800">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            {/* Column 1: Logo & Company Info */}
+            {/* Column 1: Logo & Company Info của team */}
             <div className="lg:col-span-4 space-y-6">
               <img
                 src="/ref/logo.png"
@@ -529,39 +578,71 @@ export default function Home() {
                 phá cuối tuần này nhé!
               </p>
 
-              <div className="space-y-2.5 text-xs text-neutral-400">
+              <div className="space-y-2.5 text-xs text-neutral-300">
                 <div className="flex items-start gap-2.5">
                   <img src="/ref/i-location.svg" alt="address" className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>53 Đường 2, KĐT Vạn Phúc, P. Hiệp Bình Phước, TP. Thủ Đức, TP. HCM</span>
+                  <span>Trường Đại học Sài Gòn - SGU</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <img src="/ref/i-email.svg" alt="email" className="w-4 h-4 shrink-0" />
-                  <span>hello@gotrail.vn (Placeholder đồ án)</span>
+                  <a
+                    href="mailto:quynhtien123123@gmail.com"
+                    className="hover:text-[#FEBB02] transition-colors"
+                  >
+                    quynhtien123123@gmail.com
+                  </a>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <img src="/ref/i-phone.svg" alt="phone" className="w-4 h-4 shrink-0" />
-                  <span>0933 22 78 78 (Nhánh 3)</span>
+                  <a
+                    href="tel:0972699242"
+                    className="hover:text-[#FEBB02] transition-colors"
+                  >
+                    0972699242
+                  </a>
                 </div>
               </div>
 
-              {/* Social icons */}
+              {/* Social icons của team */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
                   Kết nối với Go Trail
                 </h4>
                 <div className="flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors cursor-pointer">
+                  <a
+                    href="https://www.facebook.com/tienan.nguyen.33821/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Facebook"
+                    className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors"
+                  >
                     <img src="/ref/i-fb.svg" alt="Facebook" className="w-4 h-4" />
-                  </span>
-                  <span className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors cursor-pointer">
+                  </a>
+                  <a
+                    href="https://www.instagram.com/_tienann_/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Instagram"
+                    className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors"
+                  >
                     <img src="/ref/i-ins.svg" alt="Instagram" className="w-4 h-4" />
-                  </span>
-                  <span className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors cursor-pointer">
+                  </a>
+                  <a
+                    href="https://zalo.me/0972699242"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Zalo"
+                    className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors"
+                  >
                     <img src="/ref/i-zalo.svg" alt="Zalo" className="w-4 h-4" />
-                  </span>
-                  <span className="w-16 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors cursor-pointer">
+                  </a>
+                  <a
+                    href="#"
+                    title="Strava"
+                    className="w-16 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02] hover:text-black transition-colors"
+                  >
                     <img src="/ref/i-strava.svg" alt="Strava" className="h-4 w-auto" />
-                  </span>
+                  </a>
                 </div>
               </div>
             </div>
@@ -689,7 +770,7 @@ export default function Home() {
             <div className="space-y-1">
               <p>Copyright © 2026 Go Trail. Công ty TNHH Khám Phá Trải Nghiệm Tổ Ong.</p>
               <p className="text-[#FEBB02] font-semibold">
-                ⚠️ Đồ án học phần — không phải trang chính thức của Go Trail.
+                Đồ án học phần — không phải trang chính thức của Go Trail.
               </p>
             </div>
           </div>
@@ -697,12 +778,14 @@ export default function Home() {
       </footer>
 
       {/* =========================================================================
-          11. NÚT NỔI ZALO & MESSENGER (BOTTOM 92px VÀ 20px, RIGHT 20px, 60x60)
+          11. NÚT NỔI ZALO & MESSENGER (BOTTOM 92px VÀ 20px, RIGHT 20px, 60x60 - DẪN TRỰC TIẾP TỚI TEAM)
           ========================================================================= */}
       <div className="fixed z-50 right-5 bottom-[92px] w-[60px] h-[60px] transition-transform hover:scale-110">
         <a
-          href="#zalo-placeholder"
-          title="Tư vấn Zalo (Đồ án placeholder)"
+          href="https://zalo.me/0972699242"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Tư vấn qua Zalo: 0972699242"
           className="block w-full h-full drop-shadow-xl"
         >
           <img src="/ref/ist-zalo.svg" alt="Zalo" className="w-full h-full" />
@@ -711,8 +794,10 @@ export default function Home() {
 
       <div className="fixed z-50 right-5 bottom-5 w-[60px] h-[60px] transition-transform hover:scale-110">
         <a
-          href="#messenger-placeholder"
-          title="Tư vấn Messenger (Đồ án placeholder)"
+          href="https://www.facebook.com/tienan.nguyen.33821/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Tư vấn qua Facebook Messenger"
           className="block w-full h-full drop-shadow-xl"
         >
           <img src="/ref/ist-messenger.svg" alt="Messenger" className="w-full h-full" />

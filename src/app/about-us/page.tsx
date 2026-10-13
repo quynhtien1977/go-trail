@@ -125,16 +125,56 @@ export default function AboutUsPage() {
 
       {/* Footer */}
       <footer className="footer bg-[#111111] text-white py-12 border-t border-neutral-800">
-        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 text-center sm:text-left sm:flex sm:items-center sm:justify-between text-xs text-neutral-500">
-          <div className="flex items-center justify-center sm:justify-start gap-2 text-neutral-300 mb-4 sm:mb-0">
-            <img src="/ref/logo-toong.svg" alt="Tổ Ong Adventure" width={36} height={34} className="h-8 w-auto" />
-            <span className="font-semibold">Thành viên của Tổ Ong Adventure</span>
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 pb-8">
+            <div className="lg:col-span-6 space-y-4">
+              <img src="/ref/logo.png" alt="Go Trail" width={170} height={80} className="h-14 w-auto object-contain" />
+              <div className="space-y-2 text-xs text-neutral-300">
+                <div className="flex items-start gap-2">
+                  <img src="/ref/i-location.svg" alt="address" className="w-4 h-4 mt-0.5" />
+                  <span>Trường Đại học Sài Gòn - SGU</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <img src="/ref/i-email.svg" alt="email" className="w-4 h-4" />
+                  <a href="mailto:quynhtien123123@gmail.com" className="hover:text-[#FEBB02]">quynhtien123123@gmail.com</a>
+                </div>
+                <div className="flex items-center gap-2">
+                  <img src="/ref/i-phone.svg" alt="phone" className="w-4 h-4" />
+                  <a href="tel:0972699242" className="hover:text-[#FEBB02]">0972699242</a>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-6 flex flex-col justify-end items-start lg:items-end space-y-3">
+              <span className="text-xs font-bold uppercase text-neutral-400">Kết nối với Go Trail</span>
+              <div className="flex items-center gap-3">
+                <a href="https://www.facebook.com/tienan.nguyen.33821/" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02]">
+                  <img src="/ref/i-fb.svg" alt="Facebook" className="w-4 h-4" />
+                </a>
+                <a href="https://www.instagram.com/_tienann_/" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02]">
+                  <img src="/ref/i-ins.svg" alt="Instagram" className="w-4 h-4" />
+                </a>
+                <a href="https://zalo.me/0972699242" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02]">
+                  <img src="/ref/i-zalo.svg" alt="Zalo" className="w-4 h-4" />
+                </a>
+                <a href="#" className="w-16 h-8 rounded-full bg-neutral-800 flex items-center justify-center hover:bg-[#FEBB02]">
+                  <img src="/ref/i-strava.svg" alt="Strava" className="h-4 w-auto" />
+                </a>
+              </div>
+            </div>
           </div>
-          <div>
-            <p>Copyright © 2026 Go Trail. Công ty TNHH Khám Phá Trải Nghiệm Tổ Ong.</p>
-            <p className="text-[#FEBB02] font-semibold mt-1">
-              ⚠️ Đồ án học phần — không phải trang chính thức của Go Trail.
-            </p>
+
+          <div className="pt-6 border-t border-neutral-800 text-center sm:text-left sm:flex sm:items-center sm:justify-between text-xs text-neutral-500">
+            <div className="flex items-center justify-center sm:justify-start gap-2 text-neutral-300 mb-4 sm:mb-0">
+              <img src="/ref/logo-toong.svg" alt="Tổ Ong Adventure" width={36} height={34} className="h-8 w-auto" />
+              <span className="font-semibold">Thành viên của Tổ Ong Adventure</span>
+            </div>
+            <div>
+              <p>Copyright © 2026 Go Trail. Công ty TNHH Khám Phá Trải Nghiệm Tổ Ong.</p>
+              <p className="text-[#FEBB02] font-semibold mt-1">
+                Đồ án học phần — không phải trang chính thức của Go Trail.
+              </p>
+            </div>
           </div>
         </div>
       </footer>
