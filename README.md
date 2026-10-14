@@ -4,9 +4,9 @@
 
 ## Trạng thái dự án
 
-Đã có schema/database, dữ liệu mẫu, Auth/RBAC/audit, giao diện đăng nhập/đăng ký, portal theo role, trang chủ và About Us. GitHub Actions đã kiểm tra chất lượng tự động.
+Đã có schema/database, dữ liệu mẫu, Auth/RBAC/audit, backend catalog và quản lý tuyến/điểm đón, giao diện đăng nhập/đăng ký, portal theo role, trang chủ và About Us. GitHub Actions đã kiểm tra chất lượng tự động.
 
-Danh sách tour trên trang chủ còn dùng fixture. Quản lý tuyến/xe/nhân sự/chuyến, booking, thanh toán SePay và check-in QR đang được phát triển.
+Danh sách tour trên trang chủ còn dùng fixture, chưa nối API catalog. Quản lý xe/nhân sự/chuyến, booking, thanh toán SePay và check-in QR đang được phát triển.
 
 ## Công nghệ
 
@@ -86,6 +86,7 @@ npm run dev
 | `npm run lint` | Kiểm tra ESLint |
 | `npm run typecheck` | Sinh Prisma Client và kiểm tra TypeScript |
 | `npm test` | Tests trên DB PGlite cô lập, không dùng DB Supabase của thành viên |
+| `npm run test:catalog:http` | HTTP smoke catalog trên production build có sẵn, DB cô lập |
 | `npm run build` | Build production |
 | `npm run db:status` | Xem migrations của DB đang cấu hình |
 | `npm run audit:check` | Kiểm tra dependency theo baseline của nhóm |

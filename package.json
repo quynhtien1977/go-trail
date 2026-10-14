@@ -12,6 +12,7 @@
     "typecheck": "prisma generate && next typegen && tsc --noEmit",
     "test": "node --conditions=react-server --import tsx --test --test-isolation=none tests/*.test.mjs",
     "test:auth:http": "node --conditions=react-server --import tsx tests/smoke/auth-http.mjs",
+    "test:catalog:http": "node --conditions=react-server --import tsx tests/smoke/catalog-http.mjs",
     "test:auth:redis": "node --conditions=react-server --import tsx tests/smoke/auth-redis.mjs",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
