@@ -4,6 +4,8 @@ import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
+import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
+import type { Role } from "@/schemas/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +160,9 @@ export default async function AdminPage() {
             </table>
           </div>
         </div>
+
+        {/* Quản lý danh mục tuyến trekking & điểm đón xe */}
+        <StaffCatalogManager actorRole={actor.role as Role} />
       </main>
     </div>
   );
