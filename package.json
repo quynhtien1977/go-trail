@@ -20,7 +20,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:seed": "prisma db seed",
-    "db:catalog": "tsx scripts/catalog/import-catalog.ts"
+    "db:catalog": "tsx scripts/catalog/import-catalog.ts",
+    "db:media": "tsx scripts/catalog/import-media.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

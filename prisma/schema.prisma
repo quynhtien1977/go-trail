@@ -7,6 +7,13 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TripMediaPlacement {
+  Cover
+  Hero
+  Highlight
+  Schedule
+}
+
 enum UserRole {
   Customer
   Leader
@@ -227,7 +234,29 @@ model Trip {
   pickups          PickupPoint[]
   departures       Departure[]
 
+  media            TripMedia[]
+
   @@map("trips")
+}
+
+model TripMedia {
+  media_id       Int                @id @default(autoincrement())
+  trip_id        Int
+  placement      TripMediaPlacement
+  sort_order     Int
+  source_url     String
+  storage_url    String
+  content_sha256 String             @db.Char(64)
+  alt_text       String
+  caption        String?
+  title          String?
+  body           String?
+  is_active      Boolean            @default(true)
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+  trip           Trip               @relation(fields: [trip_id], references: [trip_id], onDelete: Restrict)
+
+  @@unique([trip_id, placement, sort_order])
+  @@map("trip_media")
 }
 
 model PickupPoint {

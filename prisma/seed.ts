@@ -4,6 +4,8 @@ import { hash } from "bcryptjs";
 import { PrismaClient, Prisma, UserRole, StaffType, DepartureStatus } from "../src/generated/prisma/client";
 import { assertCatalogTarget, CatalogValidationError, readReviewedCatalog } from "./catalog";
 import { importCatalogRows, type CatalogQuery } from "./catalog-importer";
+import { existsSync } from "node:fs";
+import { importMediaRows, readResolvedMedia } from "./trip-media";
 
 loadEnvConfig(process.cwd());
 
@@ -21,12 +23,14 @@ async function main() {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString, max: 1, connectionTimeoutMillis: 10000 }) });
   try {
     const catalog = await readReviewedCatalog();
+    const media = existsSync(new URL("../data/reference/gotrail/media.json", import.meta.url)) ? await readResolvedMedia() : [];
     const passwordHash = await hash(password, 12);
     await db.$transaction(async (tx) => {
       // Prevent concurrent seed runs from duplicating demo rows without natural unique keys.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(717001)::text`;
       const query: CatalogQuery = <T>(sql: string, parameters: unknown[] = []) => tx.$queryRawUnsafe<T[]>(sql, ...parameters);
       await importCatalogRows(query, catalog);
+      if (media.length) await importMediaRows(query, media);
       const users = new Map<UserRole, number>();
       for (const [index, role] of Object.values(UserRole).entries()) {
         const email = `${role.toLowerCase()}@go-trail.example.test`;
@@ -120,6 +124,7 @@ async function main() {
       }
     }, { timeout: 120000, maxWait: 10000 });
     console.log("Development seed complete: reviewed reference catalog, 6 roles, 3 staff, 1 vehicle / 16 seats, 3 demo departures, settings and refund policies.");
+    console.log(media.length ? "Reference media metadata imported; existing edits preserved. No image upload or Storage key required." : "Reference media manifest not available yet; catalog has no imported gallery. Run db:media after the upload manifest is provided.");
     console.log("Demo emails: <role lowercase>@go-trail.example.test. Password stays in local SEED_PASSWORD; existing credentials and settings are preserved.");
   } finally {
     await db.$disconnect();
