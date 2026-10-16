@@ -4,9 +4,9 @@
 
 ## Trạng thái dự án
 
-Đã có schema/database, dữ liệu mẫu, Auth/RBAC/audit, giao diện đăng nhập/đăng ký, portal theo role, trang chủ và About Us. GitHub Actions đã kiểm tra chất lượng tự động.
+Đã có schema/database, dữ liệu mẫu, Auth/RBAC/audit, backend catalog và quản lý tuyến/điểm đón, giao diện đăng nhập/đăng ký, portal theo role, trang chủ và About Us. GitHub Actions đã kiểm tra chất lượng tự động.
 
-Danh sách tour trên trang chủ còn dùng fixture. Quản lý tuyến/xe/nhân sự/chuyến, booking, thanh toán SePay và check-in QR đang được phát triển.
+Backend catalog có metadata media theo tuyến; giao diện catalog/chi tiết đang tích hợp và nghiệm thu. Quản lý xe/nhân sự/chuyến, booking, thanh toán SePay và check-in QR đang được phát triển.
 
 ## Công nghệ
 
@@ -66,6 +66,8 @@ Seed tạo **8 tuyến tham khảo, 13 điểm đón, 6 tài khoản theo role, 
 
 Seed có thể chạy lại và giữ các giá trị đã có; đổi `SEED_PASSWORD` không đổi mật khẩu tài khoản đã tạo.
 
+Ảnh tuyến được phục vụ từ Supabase Storage. Seed nạp thêm **148 vị trí ảnh của 8 tuyến** vào DB riêng từ manifest dùng chung; không tải binary ảnh về repo. Thành viên chạy app/seed không cần `SUPABASE_SERVICE_ROLE_KEY`; biến này chỉ dành cho người phụ trách upload dữ liệu ảnh.
+
 Chỉ seed DB development của mình. Seed/importer từ chối khi `NODE_ENV=production`; URL không tự cho biết một DB là development hay production.
 
 ## Khi nhận code mới
@@ -86,8 +88,10 @@ npm run dev
 | `npm run lint` | Kiểm tra ESLint |
 | `npm run typecheck` | Sinh Prisma Client và kiểm tra TypeScript |
 | `npm test` | Tests trên DB PGlite cô lập, không dùng DB Supabase của thành viên |
+| `npm run test:catalog:http` | HTTP smoke catalog trên production build có sẵn, DB cô lập |
 | `npm run build` | Build production |
 | `npm run db:status` | Xem migrations của DB đang cấu hình |
+| `npm run db:media` | Kiểm tra import metadata media bằng transaction rollback; `--apply` để áp dụng vào DB development của mình khi có manifest hoàn chỉnh |
 | `npm run audit:check` | Kiểm tra dependency theo baseline của nhóm |
 
 ## Cấu trúc dự án

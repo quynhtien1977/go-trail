@@ -22,9 +22,10 @@ before(async () => {
 });
 after(async () => { await db?.close(); });
 
-test("creates 21 business tables with RLS; rate counters stay outside PostgreSQL", async () => {
+test("creates 22 business tables including trip media with RLS; rate counters stay outside PostgreSQL", async () => {
   const { rows } = await db.query("SELECT relname, relrowsecurity FROM pg_class JOIN pg_namespace n ON n.oid = relnamespace WHERE n.nspname = 'public' AND relkind = 'r' AND relname <> '_prisma_migrations'");
-  assert.equal(rows.length, 21);
+  assert.equal(rows.length, 22);
+  assert.ok(rows.some(row => row.relname === "trip_media"));
   assert.ok(!rows.some((row) => row.relname === "auth_rate_limits"));
   assert.ok(rows.every((row) => row.relrowsecurity));
 });

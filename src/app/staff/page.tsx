@@ -4,6 +4,8 @@ import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
+import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
+import type { Role } from "@/schemas/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -125,9 +127,12 @@ export default async function StaffPage() {
           </div>
 
           <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
-            * Phân hệ CRUD quản lý chi tiết sẽ được hoàn thiện trong các bước tiếp theo theo tiến trình PRD.
+            * Phân hệ CRUD danh mục tuyến và điểm đón đã sẵn sàng bên dưới dành cho RouteMgr và Admin.
           </div>
         </div>
+
+        {/* Phân hệ Quản lý Tuyến & Điểm đón xe */}
+        <StaffCatalogManager actorRole={user.role as Role} />
       </main>
     </div>
   );

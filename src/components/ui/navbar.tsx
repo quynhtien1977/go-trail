@@ -114,13 +114,13 @@ export function Navbar() {
             </button>
           </div>
 
-          {/* Thẻ Chinh Phục (Out of scope - link to anchor) */}
-          <a
-            href="#the-chinh-phuc"
+          {/* Miền Trung */}
+          <Link
+            href="/#system-trailbus"
             className="text-white hover:text-[#FEBB02] transition-colors"
           >
-            Thẻ Chinh Phục
-          </a>
+            Miền Trung
+          </Link>
 
           {/* About Us */}
           <Link
@@ -325,13 +325,13 @@ export function Navbar() {
             </div>
 
             <div className="pt-2 border-t border-neutral-800 space-y-3">
-              <a
-                href="#the-chinh-phuc"
+              <Link
+                href="/#system-trailbus"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-base font-bold text-white hover:text-[#FEBB02]"
               >
-                Thẻ Chinh Phục
-              </a>
+                Miền Trung
+              </Link>
               <Link
                 href="/about-us"
                 onClick={() => setMobileMenuOpen(false)}

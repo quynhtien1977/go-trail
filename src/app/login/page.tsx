@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
 import type { Role } from "@/schemas/auth";
 import { getSafeAuthCallback } from "@/lib/auth-redirect";
+import { getLegacyMediaUrl } from "@/lib/legacy-media";
 
 function LoginForm() {
   const router = useRouter();
@@ -232,8 +233,7 @@ export default function LoginPage() {
             <div
               className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
               style={{
-                backgroundImage:
-                  "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/KVBUS-3.jpg')",
+                backgroundImage: `url('${getLegacyMediaUrl("shared-bus-background")}')`,
               }}
             />
             {/* Elegant dark gradient overlay */}

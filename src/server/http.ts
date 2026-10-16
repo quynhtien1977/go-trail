@@ -40,14 +40,23 @@ export async function readBodyText(request: Request, maxBytes = 8192): Promise<s
   try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
   catch { throw new AppError("INVALID_INPUT", 422); }
 }
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request, maxBytes?: number): Promise<unknown> {
   if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json") {
     throw new AppError("INVALID_INPUT", 415);
   }
-  const text = await readBodyText(request);
+  const text = await readBodyText(request, maxBytes);
   try { return JSON.parse(text); } catch { throw new AppError("INVALID_INPUT", 422); }
 }
 export function parseId(value: string): number {
   if (!/^[1-9]\d{0,9}$/.test(value) || Number(value) > 2147483647) throw new AppError("INVALID_INPUT", 422);
   return Number(value);
+}
+export function readQuery(request: Request): Record<string, string> {
+  const params = new URL(request.url).searchParams;
+  const seen = new Set<string>();
+  for (const key of params.keys()) {
+    if (seen.has(key)) throw new AppError("INVALID_INPUT", 422);
+    seen.add(key);
+  }
+  return Object.fromEntries(params);
 }
