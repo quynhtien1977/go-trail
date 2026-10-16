@@ -1,5 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Navbar } from "@/components/ui/navbar";
+import { getLegacyMediaUrl } from "@/lib/legacy-media";
 
 export const metadata = {
   title: "Giới thiệu Go Trail — Về Chúng Tôi",
@@ -47,9 +49,11 @@ export default function AboutUsPage() {
 
             <div className="lg:col-span-6">
               <div className="rounded-2xl overflow-hidden shadow-xl border border-neutral-200">
-                <img
-                  src="https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/KVBUS-3.jpg"
+                <Image
+                  src={getLegacyMediaUrl("shared-bus-background")}
                   alt="Go Trail Community"
+                  width={1600}
+                  height={900}
                   className="w-full h-auto object-cover"
                 />
               </div>

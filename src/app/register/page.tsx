@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
+import { getLegacyMediaUrl } from "@/lib/legacy-media";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -141,8 +142,7 @@ export default function RegisterPage() {
             <div
               className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
               style={{
-                backgroundImage:
-                  "url('https://anqtlegcsrqzqenytrjo.supabase.co/storage/v1/object/public/gotrail-media/35-e1742370003781.jpg')",
+                backgroundImage: `url('${getLegacyMediaUrl("legacy-35-e1742370003781")}')`,
               }}
             />
             {/* Dark gradient overlay */}
