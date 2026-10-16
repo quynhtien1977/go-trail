@@ -9,8 +9,11 @@ import { writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
 
 const summarySelect = { trip_id: true, name: true, city: true, district: true, location_name: true,
-  difficulty_level: true, length_km: true, peak_height_m: true, base_price: true, source_url: true, is_active: true } as const;
-const tripSelect = { ...summarySelect, description: true, schedule_content: true } as const;
+  difficulty_level: true, length_km: true, peak_height_m: true, base_price: true, source_url: true, is_active: true,
+  media: { where: { placement: "Cover", is_active: true }, select: { placement: true, storage_url: true }, take: 1 } } as const;
+const tripSelect = { ...summarySelect, description: true, schedule_content: true,
+  media: { where: { is_active: true }, orderBy: [{ placement: "asc" }, { sort_order: "asc" }],
+    select: { media_id: true, placement: true, sort_order: true, storage_url: true, alt_text: true, caption: true, title: true, body: true } } } satisfies Prisma.TripSelect;
 const pickupSelect = { pickup_id: true, trip_id: true, name: true, address: true, is_active: true } as const;
 type TripSummaryRow = Prisma.TripGetPayload<{ select: typeof summarySelect }>;
 type TripRow = Prisma.TripGetPayload<{ select: typeof tripSelect }>;
@@ -24,9 +27,14 @@ function assertId(id: number) {
   if (!Number.isInteger(id) || id < 1 || id > 2147483647) throw new AppError("INVALID_INPUT", 422);
 }
 function summary(row: TripSummaryRow): TripSummaryDto {
-  return { ...row, base_price: row.base_price.toFixed(0), length_km: row.length_km.toFixed(2) };
+  const { media, ...fields } = row;
+  return { ...fields, base_price: row.base_price.toFixed(0), length_km: row.length_km.toFixed(2),
+    cover_image_url: media.find(item => item.placement === "Cover")?.storage_url ?? null };
 }
-function tripDto(row: TripRow): TripDto { return { ...summary(row), description: row.description, schedule_content: row.schedule_content }; }
+function tripDto(row: TripRow): TripDto {
+  return { ...summary(row), description: row.description, schedule_content: row.schedule_content,
+    media: row.media.map(({ storage_url, ...item }) => ({ ...item, url: storage_url })) };
+}
 function page<T>(items: T[], totalItems: number, query: { page: number; pageSize: number }): Page<T> {
   return { items, pagination: { ...query, totalItems, totalPages: Math.ceil(totalItems / query.pageSize) } };
 }

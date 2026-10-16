@@ -24,13 +24,18 @@ export const catalogQuerySchema = pageQuerySchema.extend({ q: singleLine(100).op
 
 export type TripInput = z.infer<typeof createTripSchema>;
 export type TripPatch = z.infer<typeof updateTripSchema>;
+export type TripMediaDto = {
+  media_id: number; placement: "Cover" | "Hero" | "Highlight" | "Schedule"; sort_order: number;
+  url: string; alt_text: string; caption: string | null; title: string | null; body: string | null;
+};
 export type TripDto = {
   trip_id: number; name: string; city: string; district: string | null; location_name: string;
   difficulty_level: string | null; length_km: string; peak_height_m: number | null; base_price: string;
   description: string; schedule_content: string; source_url: string | null; is_active: boolean;
+  cover_image_url: string | null; media: TripMediaDto[];
 };
 export type PickupDto = { pickup_id: number; trip_id: number; name: string; address: string; is_active: boolean };
-export type TripSummaryDto = Omit<TripDto, "description" | "schedule_content">;
+export type TripSummaryDto = Omit<TripDto, "description" | "schedule_content" | "media">;
 export type DepartureDto = { departure_id: number; trip_id: number; departure_date: string; booking_deadline: string;
   min_passengers: number; status: "Open"; price: string };
 export type Page<T> = { items: T[]; pagination: { page: number; pageSize: number; totalItems: number; totalPages: number } };

@@ -75,6 +75,8 @@ try {
   const trip = created.body.data;
   assert.equal(trip.base_price, "500000");
   assert.equal(trip.length_km, "8.50");
+  assert.deepEqual(trip.media, []);
+  assert.equal(trip.cover_image_url, null);
   check(await request(`/api/trips/${trip.trip_id}`), 200);
   const list = await request("/api/trips?q=HTTP&pageSize=1");
   check(list, 200);
@@ -142,6 +144,25 @@ try {
   check(await request("/api/staff/trips", {}, manager), 401, "UNAUTHENTICATED");
   check(await request("/api/staff/trips", {}, { ...manager, auth_version: 1 }), 200);
   console.log("PASS: malformed queries/IDs/body limits/provenance injection and Locked/revoked sessions honor existing error contracts.");
+
+  const hash = "a".repeat(64), mediaUrl = `https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/gotrail-media/trips/assets/${hash}.jpg`;
+  for (const placement of ["Schedule", "Highlight", "Hero", "Cover"]) {
+    await database.client.tripMedia.create({ data: { trip_id: trip.trip_id, placement, sort_order: 0,
+      source_url: "https://gotrail.vn/wp-content/uploads/fixture.jpg", storage_url: mediaUrl,
+      content_sha256: hash, alt_text: "Fixture image", title: placement === "Highlight" ? "Highlight fixture" : null } });
+  }
+  const detailMedia = await request(`/api/trips/${trip.trip_id}`);
+  check(detailMedia, 200);
+  assert.deepEqual(detailMedia.body.data.media.map(row => row.placement), ["Cover", "Hero", "Highlight", "Schedule"]);
+  assert.equal(detailMedia.body.data.media[2].body, null);
+  assert.equal(detailMedia.body.data.cover_image_url, mediaUrl);
+  assert.equal("content_sha256" in detailMedia.body.data.media[0], false);
+  assert.equal("source_url" in detailMedia.body.data.media[0], false);
+  assert.equal((await request("/api/trips")).body.data.items[0].cover_image_url, mediaUrl);
+  await database.client.tripMedia.updateMany({ where: { trip_id: trip.trip_id }, data: { is_active: false } });
+  assert.deepEqual((await request(`/api/trips/${trip.trip_id}`)).body.data.media, []);
+  assert.equal((await request("/api/trips")).body.data.items[0].cover_image_url, null);
+  console.log("PASS: public media DTO orders all four placements, supports missing descriptions and hides inactive media/source hashes.");
 } finally {
   if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   await database.close();
