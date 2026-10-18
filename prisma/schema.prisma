@@ -128,7 +128,8 @@ model User {
   created_at    DateTime   @default(now()) @db.Timestamptz(6)
   staff         Staff?
   audit_logs    AuditLog[]
-  invoices      Invoice[]
+  invoices      Invoice[]  @relation("InvoiceCustomer")
+  responsible_invoices Invoice[] @relation("InvoiceResponsible")
   reviews       Review[]
   requests      Refund[]   @relation("RefundRequester")
   approvals     Refund[]   @relation("RefundApprover")
@@ -383,13 +384,21 @@ model Invoice {
   status       InvoiceStatus   @default(Pending)
   expires_at   DateTime        @db.Timestamptz(6)
   created_at   DateTime        @default(now()) @db.Timestamptz(6)
-  customer     User            @relation(fields: [customer_id], references: [user_id], onDelete: Restrict)
+  // Snapshot of the departure's invoice owner at hold time (PRD 6.2); NULL only on invoices created before it.
+  responsible_user_id       Int?
+  responsible_name_snapshot String?
+  responsible_role_snapshot UserRole?
+  idempotency_key           String?
+  customer     User            @relation("InvoiceCustomer", fields: [customer_id], references: [user_id], onDelete: Restrict)
+  responsible  User?           @relation("InvoiceResponsible", fields: [responsible_user_id], references: [user_id], onDelete: Restrict)
   departure    Departure       @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
   details      InvoiceDetail[]
   seats        DepartureSeat[]
   payments     Payment[]
   refunds      Refund[]
 
+  @@unique([customer_id, idempotency_key])
+  @@index([responsible_user_id])
   @@index([customer_id, created_at])
   @@index([departure_id])
   @@index([status, expires_at])
