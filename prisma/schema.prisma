@@ -132,6 +132,7 @@ model User {
   reviews       Review[]
   requests      Refund[]   @relation("RefundRequester")
   approvals     Refund[]   @relation("RefundApprover")
+  owned_departures Departure[] @relation("DepartureInvoiceOwner")
 
   @@map("users")
 }
@@ -281,7 +282,10 @@ model Departure {
   price_override   Decimal?           @db.Decimal(14, 0)
   status           DepartureStatus    @default(Draft)
   is_demo          Boolean            @default(false)
+  // Active RouteMgr named on new invoices; NULL only for departures created before PRD 6.2.
+  invoice_owner_user_id Int?
   trip             Trip               @relation(fields: [trip_id], references: [trip_id], onDelete: Restrict)
+  invoice_owner    User?              @relation("DepartureInvoiceOwner", fields: [invoice_owner_user_id], references: [user_id], onDelete: Restrict)
   pickups          DeparturePickup[]
   vehicles         DepartureVehicle[]
   staff            DepartureStaff[]
@@ -290,6 +294,7 @@ model Departure {
 
   @@index([trip_id, departure_date])
   @@index([status, departure_date])
+  @@index([invoice_owner_user_id])
   @@map("departures")
 }
 

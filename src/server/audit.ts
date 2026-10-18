@@ -16,6 +16,7 @@ const eventSchema = z.discriminatedUnion("action", [
     from: z.enum(departureStatuses), to: z.enum(departureStatuses) }),
   z.strictObject({ action: z.literal("MoneyRecorded"), record_id: id,
     table_name: z.enum(["payments", "refunds", "departure_costs", "vehicle_maintenance"]), amount: z.string().regex(/^(0|[1-9]\d{0,13})$/) }),
+  z.strictObject({ action: z.literal("DepartureOwnerChanged"), record_id: id, from: id.nullable(), to: id }),
   z.strictObject({ action: z.literal("VehicleStatusChanged"), record_id: id,
     from: z.enum(vehicleStatuses), to: z.enum(vehicleStatuses) }),
   z.strictObject({ action: z.literal("TripCreated"), record_id: id, base_price: amount }),
@@ -31,7 +32,7 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
   if (!event.success || !id.safeParse(actorId).success) throw new AppError("INVALID_INPUT", 422);
   const value = event.data;
   const table_name = value.action === "MoneyRecorded" ? value.table_name
-    : value.action === "DepartureStatusChanged" ? "departures"
+    : value.action === "DepartureStatusChanged" || value.action === "DepartureOwnerChanged" ? "departures"
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips" : "users";
   await tx.auditLog.create({ data: { user_id: actorId, action: value.action, table_name,
