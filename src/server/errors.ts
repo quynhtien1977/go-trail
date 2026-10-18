@@ -1,7 +1,8 @@
 import "server-only";
 
 export type ErrorCode = "INVALID_INPUT" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND"
-  | "REGISTRATION_UNAVAILABLE" | "RATE_LIMITED" | "ACCESS_CONFLICT" | "AUTH_UNAVAILABLE";
+  | "REGISTRATION_UNAVAILABLE" | "RATE_LIMITED" | "ACCESS_CONFLICT" | "AUTH_UNAVAILABLE"
+  | "RESOURCE_CONFLICT" | "VEHICLE_UNAVAILABLE";
 
 const messages: Record<ErrorCode, string> = {
   INVALID_INPUT: "Dữ liệu không hợp lệ.",
@@ -12,6 +13,8 @@ const messages: Record<ErrorCode, string> = {
   RATE_LIMITED: "Bạn đã thử quá nhiều lần. Vui lòng thử lại sau.",
   ACCESS_CONFLICT: "Thay đổi này không phù hợp với tài khoản hoặc nhân sự hiện tại.",
   AUTH_UNAVAILABLE: "Dịch vụ đăng nhập tạm thời không khả dụng. Vui lòng thử lại sau.",
+  RESOURCE_CONFLICT: "Dữ liệu bị trùng hoặc xung đột với trạng thái hiện tại.",
+  VEHICLE_UNAVAILABLE: "Xe đang bảo dưỡng, ngừng hoạt động hoặc đã được phân công trong thời gian này.",
 };
 
 export class AppError extends Error {

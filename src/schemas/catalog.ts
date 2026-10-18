@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const singleLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\u0000-\u001f\u007f<>]+$/u);
+export const singleLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\u0000-\u001f\u007f<>]+$/u);
 const content = z.string().trim().min(1).max(10000).regex(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f<>]+$/u);
 const fields = {
   name: singleLine(200), city: singleLine(100), district: singleLine(100).nullish(),
