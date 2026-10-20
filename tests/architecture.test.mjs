@@ -19,9 +19,12 @@ test("presentation never imports repositories or generated Prisma; repositories 
     for (const name of imports(file)) assert.ok(!/server\/services|server\/auth|@\/app|@\/components|next\/|next-auth/.test(name), `${file}: ${name}`);
   }
 });
-test("Auth business services contain no Prisma model operations or SQL", () => {
-  for (const file of ["src/server/services/accounts.ts", "src/server/services/account-data.ts", "src/server/auth/authorization.ts", "src/server/audit.ts"]) {
+test("Business services and Auth/audit contain no Prisma operations or SQL", () => {
+  for (const file of [...files("src/server/services"), "src/server/auth/authorization.ts", "src/server/audit.ts"]) {
     const source = readFileSync(file, "utf8");
-    assert.doesNotMatch(source, /\b(?:db|tx)\.(?:user|staff|invoice|departure|auditLog|\$queryRaw|\$executeRaw|\$transaction)\b/, file);
+    assert.doesNotMatch(source, /\.\s*(?:findUnique|findUniqueOrThrow|findFirst|findFirstOrThrow|findMany|count|aggregate|groupBy|create|createMany|update|updateMany|upsert|delete|deleteMany|\$queryRaw(?:Unsafe)?|\$executeRaw(?:Unsafe)?|\$transaction)\b/, file);
+  }
+  for (const file of ["src/server/services/catalog.ts", "src/server/services/fleet.ts"]) {
+    for (const name of imports(file)) assert.doesNotMatch(name, /generated\/prisma|@prisma\//, file);
   }
 });
