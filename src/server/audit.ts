@@ -4,6 +4,7 @@ import type { AuthDatabase } from "./auth/authorization";
 import { userRoles } from "@/schemas/auth";
 import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
+import { insertAudit } from "./repositories/audit";
 
 const id = z.number().int().positive().max(2147483647);
 const departureStatuses = ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"] as const;
@@ -34,6 +35,6 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
     : value.action === "DepartureStatusChanged" ? "departures"
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips" : "users";
-  await tx.auditLog.create({ data: { user_id: actorId, action: value.action, table_name,
-    record_id: String(value.record_id), description: JSON.stringify(value) } });
+  await insertAudit(tx, { user_id: actorId, action: value.action, table_name,
+    record_id: String(value.record_id), description: JSON.stringify(value) });
 }

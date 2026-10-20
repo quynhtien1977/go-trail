@@ -2,8 +2,27 @@ import { exec, execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const BASELINE_PATH = resolve(process.cwd(), ".github/security-audit-baseline.json");
+
+export function parseAuditReport(raw) {
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid npm audit report: expected JSON from the registry.");
+  }
+  const counts = report?.metadata?.vulnerabilities;
+  const severities = ["info", "low", "moderate", "high", "critical"];
+  if (report?.error || report?.auditReportVersion !== 2 || !report.vulnerabilities
+    || typeof report.vulnerabilities !== "object" || Array.isArray(report.vulnerabilities)
+    || !counts || ![...severities, "total"].every(key => Number.isSafeInteger(counts[key]) && counts[key] >= 0)
+    || counts.total !== severities.reduce((total, key) => total + counts[key], 0)) {
+    throw new Error("Invalid npm audit report: missing or inconsistent vulnerability data.");
+  }
+  return report;
+}
 
 async function main() {
   console.log("==> Loading security audit baseline configuration...");
@@ -53,7 +72,10 @@ async function main() {
     `==> Baseline active (review deadline: ${baseline.reviewDeadline}). Approved exceptions: ${approvedAdvisories.size}`
   );
 
-  console.log("==> Running 'npm audit --json'...");
+  // npm's offline mode can return an empty report without contacting the registry.
+  // Audit the authoritative lockfile and require an online response on every run.
+  const auditArgs = ["audit", "--json", "--package-lock-only", "--offline=false"];
+  console.log(`==> Running 'npm ${auditArgs.join(" ")}'...`);
   const auditOutput = await new Promise((resolvePromise) => {
     const handleResult = (err, stdout, stderr) => {
       // npm audit exits with 1 if vulnerabilities are found, which is expected
@@ -66,15 +88,15 @@ async function main() {
     };
 
     if (process.platform === "win32") {
-      exec("npm.cmd audit --json", { maxBuffer: 10 * 1024 * 1024 }, handleResult);
+      exec(`npm.cmd ${auditArgs.join(" ")}`, { maxBuffer: 10 * 1024 * 1024 }, handleResult);
     } else {
-      execFile("npm", ["audit", "--json"], { maxBuffer: 10 * 1024 * 1024 }, handleResult);
+      execFile("npm", auditArgs, { maxBuffer: 10 * 1024 * 1024 }, handleResult);
     }
   });
 
   let report;
   try {
-    report = JSON.parse(auditOutput.stdout);
+    report = parseAuditReport(auditOutput.stdout);
   } catch (err) {
     console.error(`ERROR: Failed to parse npm audit JSON output: ${err.message}`);
     if (auditOutput.stderr) console.error("STDERR:", auditOutput.stderr);
@@ -141,7 +163,7 @@ async function main() {
   console.log(`No unapproved high or critical vulnerabilities found. Review deadline: ${baseline.reviewDeadline}`);
 }
 
-main().catch((err) => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((err) => {
   console.error("FATAL: Unexpected error in audit check script:", err);
   process.exit(1);
 });

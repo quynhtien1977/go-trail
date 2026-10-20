@@ -58,11 +58,11 @@ class BrowserSession {
     }
     return response;
   }
-  async login(email, suppliedPassword = password) {
+  async login(email, suppliedPassword = password, provider = "credentials", callbackUrl = "/") {
     const csrf = await (await this.request("/api/auth/csrf")).json();
-    return this.request("/api/auth/callback/credentials", { method: "POST",
+    return this.request(`/api/auth/callback/${provider}`, { method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ email, password: suppliedPassword, csrfToken: csrf.csrfToken, json: "true", callbackUrl: "/" }),
+      body: new URLSearchParams({ email, password: suppliedPassword, csrfToken: csrf.csrfToken, json: "true", callbackUrl }),
     });
   }
 }
@@ -93,18 +93,44 @@ try {
   const guestPortal = await guest.request("/admin?view=users");
   assert.equal(guestPortal.status, 307);
   const guestLocation = new URL(guestPortal.headers.get("location"), origin);
-  assert.equal(guestLocation.pathname, "/login");
+  assert.equal(guestLocation.pathname, "/staff/login");
   assert.equal(guestLocation.searchParams.get("callbackUrl"), "/admin?view=users");
   const defaultSignin = await guest.request("/api/auth/signin?callbackUrl=%2Faccount");
   assert.equal(defaultSignin.status, 302);
   assert.equal(new URL(defaultSignin.headers.get("location"), origin).pathname, "/login");
+  const internalSignin = await guest.request("/api/auth/signin?callbackUrl=%2Fleader");
+  assert.equal(new URL(internalSignin.headers.get("location"), origin).pathname, "/staff/login");
+  const wrongGate = new BrowserSession();
+  for (const [role, provider] of [["Admin", "credentials"], ["Customer", "staff-credentials"]]) {
+    const response = await wrongGate.login(users.get(role).email, password, provider);
+    assert.equal(new URL((await response.json()).url).searchParams.get("error"), "CredentialsSignin");
+    assert.ok(!response.headers.getSetCookie().some(cookie => cookie.includes("session-token")));
+    assert.equal((await wrongGate.request("/api/account/me")).status, 401);
+  }
+  for (const path of ["/login", "/register", "/staff/login"]) {
+    const entry = await guest.request(path);
+    assert.equal(entry.status, 200, `Guest can open ${path} without a redirect loop`);
+    assert.match(entry.headers.get("content-type"), /text\/html/);
+    assert.match(entry.headers.get("cache-control"), /no-store/);
+    assert.match(await entry.text(), /<form/);
+  }
   const sessions = new Map();
   const allowed = { Customer: ["account"], Leader: ["leader"], RouteMgr: ["staff"], HRMgr: ["staff"], Accountant: ["staff"], Admin: ["account", "leader", "staff", "admin"] };
   for (const [role, user] of users) {
     const browser = new BrowserSession();
-    const login = await browser.login(user.email);
+    const login = await browser.login(user.email, password, role === "Customer" ? "credentials" : "staff-credentials");
     assert.equal(login.status, 200, `${role} login should succeed`);
-    assert.equal(new URL((await login.json()).url).searchParams.has("error"), false);
+    const loginUrl = new URL((await login.json()).url);
+    assert.equal(loginUrl.searchParams.has("error"), false);
+    const continuation = await browser.request(loginUrl.pathname + loginUrl.search);
+    assert.equal(continuation.status, 303);
+    const portalPath = role === "Customer" ? "/account" : role === "Leader" ? "/leader" : role === "Admin" ? "/admin" : "/staff";
+    assert.equal(new URL(continuation.headers.get("location"), origin).pathname, portalPath);
+    for (const path of ["/login", "/register", "/staff/login"]) {
+      const entry = await browser.request(path);
+      assert.equal(entry.status, 307, `${role} session opening ${path}`);
+      assert.equal(new URL(entry.headers.get("location"), origin).pathname, portalPath);
+    }
     assert.ok(login.headers.getSetCookie().some((value) => value.includes("session-token") && value.includes("HttpOnly") && value.includes("Secure") && value.includes("SameSite=Lax")));
     const profile = await browser.request("/api/account/me");
     assert.equal(profile.status, 200);
@@ -129,6 +155,12 @@ try {
   }
   console.log("PASS: six-role login, secure cookies, current identity, Proxy route groups");
   const customer = sessions.get("Customer");
+  for (const target of ["/admin", "/staff/login", "/auth/continue", "//evil.test", "https://evil.test", "/%61dmin"]) {
+    const nav = await customer.request(`/auth/continue?${new URLSearchParams({ callbackUrl: target })}`);
+    assert.equal(new URL(nav.headers.get("location"), origin).pathname, "/account");
+  }
+  const deepLink = await customer.request("/auth/continue?callbackUrl=%2Faccount%3Ftab%3Dtickets");
+  assert.equal(new URL(deepLink.headers.get("location"), origin).search, "?tab=tickets");
   const sessionCsrf = await (await customer.request("/api/auth/csrf")).json();
   await customer.request("/api/auth/session", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ csrfToken: sessionCsrf.csrfToken, data: { user: { role: "Admin", auth_version: 999 } } }) });
@@ -160,12 +192,12 @@ try {
   assert.equal((await sessions.get("RouteMgr").request("/api/account/me")).status, 401);
   const lockedPortal = await sessions.get("RouteMgr").request("/staff");
   assert.equal(lockedPortal.status, 307);
-  assert.equal(new URL(lockedPortal.headers.get("location"), origin).pathname, "/login");
+  assert.equal(new URL(lockedPortal.headers.get("location"), origin).pathname, "/staff/login");
   assert.equal(await db.auditLog.count({ where: { action: "AccountStatusChanged" } }), 1);
   await sessions.get("Admin").request(accessPath, { ...payload, body: JSON.stringify({ status: "Active" }) });
   assert.equal((await sessions.get("RouteMgr").request("/staff")).status, 307, "Unlock does not restore a revoked session");
   const newRouteSession = new BrowserSession();
-  await newRouteSession.login(users.get("RouteMgr").email);
+  await newRouteSession.login(users.get("RouteMgr").email, password, "staff-credentials");
   assert.equal((await newRouteSession.request("/staff")).status, 200);
   console.log("PASS: Admin-only access changes, durable audit and existing-session revocation");
 
@@ -188,7 +220,7 @@ try {
   const foreign = await fetch(base + "/api/auth/register", { method: "POST", headers: { "origin": "https://evil.example.test", "content-type": "application/json" }, body: JSON.stringify(registration) });
   assert.equal(foreign.status, 403);
   const denied = new BrowserSession();
-  for (let i = 0; i < 10; i++) await denied.login(other.email, "wrong-password-123");
+  for (let i = 0; i < 10; i++) await denied.login(other.email, "wrong-password-123", i % 2 ? "staff-credentials" : "credentials");
   const rateLimited = await denied.login(other.email);
   assert.equal(new URL((await rateLimited.json()).url).searchParams.get("error"), "CredentialsSignin");
   console.log("PASS: Customer registration, privilege-injection rejection, CSRF/Origin and login rate limit");

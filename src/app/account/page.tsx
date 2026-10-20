@@ -1,4 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
+import { readCurrentPortalProfile } from "@/server/services/accounts";
 import { getDb } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
@@ -19,18 +20,7 @@ export default async function AccountPage() {
     throw error;
   }
 
-  const user = await getDb().user.findUniqueOrThrow({
-    where: { user_id: actor.user_id },
-    select: {
-      user_id: true,
-      email: true,
-      full_name: true,
-      phone: true,
-      role: true,
-      status: true,
-      created_at: true,
-    },
-  });
+  const user = await readCurrentPortalProfile(getDb(), actor);
 
   return (
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">

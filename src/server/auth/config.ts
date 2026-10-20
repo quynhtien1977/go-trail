@@ -6,11 +6,13 @@ import { authenticateCredentials } from "@/server/services/accounts";
 import { requireActor } from "./authorization";
 import { getAuthSecret } from "./env";
 import { getTrustedClientIp } from "./client-source";
+import { getSafeAuthCallback } from "@/lib/auth-redirect";
+import type { LoginGate } from "@/lib/auth-portal";
 
 export { getAuthSecret } from "./env";
 
 // Lazy configuration preserves env-free scaffold/build; auth itself fails closed without a secret.
-export function getAuthOptions(): NextAuthOptions {
+export function getAuthOptions(gate: LoginGate = "customer", continueAfterLogin = false): NextAuthOptions {
   const secret = getAuthSecret();
   const production = process.env.NODE_ENV === "production";
   if (production && (!process.env.NEXTAUTH_URL || new URL(process.env.NEXTAUTH_URL).protocol !== "https:")) {
@@ -18,17 +20,18 @@ export function getAuthOptions(): NextAuthOptions {
   }
   return {
     secret,
-    pages: { signIn: "/login" },
+    pages: { signIn: gate === "staff" ? "/staff/login" : "/login" },
     session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
     useSecureCookies: production,
-    providers: [Credentials({
-      name: "Email và mật khẩu",
+    providers: (["customer", "staff"] as const).map(providerGate => Credentials({
+      id: providerGate === "customer" ? "credentials" : "staff-credentials",
+      name: providerGate === "customer" ? "Khách hàng" : "Nội bộ",
       credentials: { email: { label: "Email", type: "email" }, password: { label: "Mật khẩu", type: "password" } },
       async authorize(credentials, request) {
         let user;
         try {
           user = await authenticateCredentials(getDb(), { email: credentials?.email, password: credentials?.password },
-            secret, getTrustedClientIp(new Headers(request.headers)));
+            secret, getTrustedClientIp(new Headers(request.headers)), providerGate);
         } catch {
           // v4 Credentials forwards thrown messages into a public URL.
           // Sanitize every unexpected failure, including database errors.
@@ -38,8 +41,16 @@ export function getAuthOptions(): NextAuthOptions {
         return { id: String(user.user_id), name: user.full_name, email: user.email,
           role: user.role, auth_version: user.auth_version };
       },
-    })],
+    })),
     callbacks: {
+      async redirect({ url, baseUrl }) {
+        const safe = getSafeAuthCallback(url, baseUrl);
+        if (!continueAfterLogin) return baseUrl + (safe ?? "/");
+        // Auth.js resolves callback URLs before authorize. Validate role after the session is set.
+        if (safe?.startsWith("/auth/continue?")) return baseUrl + safe;
+        const query = new URLSearchParams({ gate, callbackUrl: safe ?? "/" });
+        return `${baseUrl}/auth/continue?${query}`;
+      },
       async jwt({ token, user }) {
         if (user) {
           token.sub = user.id;

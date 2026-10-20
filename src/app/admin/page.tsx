@@ -1,4 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
+import { readAdminPortal } from "@/server/services/accounts";
 import { getDb } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
@@ -15,34 +16,12 @@ export default async function AdminPage() {
     actor = await getRouteActor("/admin");
   } catch (error) {
     if (error instanceof AppError && error.status === 401) {
-      redirect("/login?callbackUrl=/admin");
+      redirect("/staff/login?callbackUrl=/admin");
     }
     throw error;
   }
 
-  const db = getDb();
-
-  const [usersCount, recentUsers, settings] = await Promise.all([
-    db.user.groupBy({
-      by: ["role"],
-      _count: { user_id: true },
-    }),
-    db.user.findMany({
-      take: 10,
-      orderBy: { user_id: "desc" },
-      select: {
-        user_id: true,
-        email: true,
-        full_name: true,
-        role: true,
-        status: true,
-        created_at: true,
-      },
-    }),
-    db.systemSetting.findMany({
-      select: { setting_key: true, setting_value: true, description: true },
-    }),
-  ]);
+  const { usersCount, recentUsers, settings } = await readAdminPortal(getDb(), actor);
 
   const totalUsers = usersCount.reduce((acc, curr) => acc + curr._count.user_id, 0);
 
