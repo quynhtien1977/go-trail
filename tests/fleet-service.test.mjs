@@ -89,6 +89,8 @@ test("seat names are unique per vehicle, positions do not collide and seats stay
   assert.equal(await db.vehicleSeat.count({ where: { vehicle_id: first.vehicle_id } }), 4);
   await updateSeat(db, hr, second.vehicle_id, second.seats[0].seat_id, { is_active: false });
   await assert.rejects(updateSeat(db, hr, second.vehicle_id, second.seats[1].seat_id, { is_active: false }), { code: "RESOURCE_CONFLICT" });
+  assert.equal((await db.vehicleSeat.findUniqueOrThrow({ where: { seat_id: second.seats[1].seat_id } })).is_active, true,
+    "Rejecting the last active seat must roll back its update as well as seat_count");
   assert.equal((await readVehicle(db, hr, second.vehicle_id)).seat_count, 1);
 });
 
@@ -137,4 +139,25 @@ test("vehicles with open assignments cannot enter maintenance, change status or 
   await updateVehicle(db, hr, ended.vehicle_id, { status: "Ready" });
   await assignable(ended.vehicle_id, new Date("2026-12-01T01:00:00Z"));
   await assert.rejects(assignable(999, new Date()), { code: "NOT_FOUND" });
+});
+
+test("vehicle status and maintenance writes roll back when durable audit recording fails", async () => {
+  const vehicle = await createVehicle(db, hr, input);
+  await database.sql.exec(`CREATE FUNCTION reject_fleet_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.table_name IN ('vehicles', 'vehicle_maintenance') THEN
+      RAISE EXCEPTION 'isolated audit failure'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER reject_fleet_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_fleet_audit();`);
+  try {
+    await assert.rejects(updateVehicle(db, admin, vehicle.vehicle_id, { status: "Maintenance", vehicle_type: "Must roll back" }));
+    const unchanged = await readVehicle(db, hr, vehicle.vehicle_id);
+    assert.equal(unchanged.status, "Ready");
+    assert.equal(unchanged.vehicle_type, vehicle.vehicle_type);
+    await assert.rejects(createMaintenance(db, hr, vehicle.vehicle_id,
+      { start_date: "2026-11-01", end_date: "2026-11-02", description: "Must roll back", cost: "150000" }));
+    assert.equal(await db.vehicleMaintenance.count({ where: { vehicle_id: vehicle.vehicle_id } }), 0);
+    assert.equal(await db.auditLog.count(), 0);
+    await assignable(vehicle.vehicle_id, new Date("2026-11-01T01:00:00Z"));
+  } finally {
+    await database.sql.exec("DROP TRIGGER reject_fleet_audit ON audit_logs; DROP FUNCTION reject_fleet_audit();");
+  }
 });
