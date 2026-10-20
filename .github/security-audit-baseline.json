@@ -1,7 +1,8 @@
 {
-  "version": "1.0.0",
-  "reviewDeadline": "2026-10-18T23:59:59Z",
-  "notes": "Prisma CLI and ESLint tooling baseline dependencies from initial scaffold. Re-evaluate before production launch.",
+  "version": "1.1.0",
+  "reviewedAt": "2026-10-20",
+  "reviewDeadline": "2026-11-03T23:59:59Z",
+  "notes": "Reviewed 2026-10-20 with Prisma CLI/Client/pg adapter kept at 7.10.0 and the existing lockfile unchanged. The four known root advisories below remain temporary exceptions after reachability review. The user deferred dependency upgrades until current PRs are merged and the team can resync branches from develop. Re-review by 2026-11-03 or before production release, whichever comes first; this does not mean the vulnerabilities are fixed.",
   "exceptions": [
     {
       "id": "GHSA-vfj7-8cjw-p6xm",
@@ -14,42 +15,41 @@
         "micromatch",
         "braces"
       ],
-      "reachability": "Build/lint dev tooling only; not executed in runtime production server.",
-      "expiresAt": "2026-10-18T23:59:59Z"
+      "additionalChains": [
+        ["shadcn", "fast-glob", "micromatch", "braces"],
+        ["shadcn", "@shadcn/registry", "fast-glob", "micromatch", "braces"],
+        ["shadcn", "ts-morph", "@ts-morph/common", "fast-glob", "micromatch", "braces"]
+      ],
+      "reachability": "ESLint and shadcn execute during development/build. shadcn remains in dependencies as before, but the application imports only its static Tailwind CSS, not its JavaScript CLI in request handlers. Glob patterns come from repository-controlled files/configuration; HTTP input is never passed to braces. No patched braces release is available. Do not run these tools with untrusted patterns or registries; review upstream before this exception expires.",
+      "source": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "expiresAt": "2026-11-03T23:59:59Z"
     },
     {
       "id": "GHSA-ggr8-5vv4-36mx",
       "package": "deepmerge-ts",
       "severity": "high",
-      "chain": [
-        "prisma",
-        "@prisma/config",
-        "deepmerge-ts"
-      ],
-      "reachability": "Prisma CLI dev tooling only; not executed in runtime production server.",
-      "expiresAt": "2026-10-18T23:59:59Z"
+      "chain": ["prisma", "@prisma/config", "deepmerge-ts"],
+      "reachability": "Used by Prisma CLI configuration loaded from repository-controlled files. Go-Trail request handlers do not import prisma/config or merge attacker-controlled recursive object graphs. A fix is available through Prisma 7.10.1, but the user explicitly deferred this coordinated dependency upgrade until open PRs are merged and the team resyncs from develop. Keep this exception time-bounded and do not load untrusted Prisma config.",
+      "source": "https://github.com/advisories/GHSA-ggr8-5vv4-36mx",
+      "expiresAt": "2026-11-03T23:59:59Z"
     },
     {
       "id": "GHSA-3f6p-5ww8-9rcr",
       "package": "mysql2",
       "severity": "high",
-      "chain": [
-        "prisma",
-        "mysql2"
-      ],
-      "reachability": "Prisma CLI internal driver bundle for MySQL; Go-Trail uses PostgreSQL via pg adapter.",
-      "expiresAt": "2026-10-18T23:59:59Z"
+      "chain": ["prisma", "mysql2"],
+      "reachability": "MySQL driver bundled by Prisma CLI. Go-Trail uses PostgreSQL via the pg adapter and does not open MySQL connections or use mysql_clear_password. A patch is available through Prisma 7.10.1; the user deferred the upgrade until current PRs are merged and the team resyncs from develop. This exception must be reviewed before enabling any MySQL path and before expiry.",
+      "source": "https://github.com/advisories/GHSA-3f6p-5ww8-9rcr",
+      "expiresAt": "2026-11-03T23:59:59Z"
     },
     {
       "id": "GHSA-rgwj-5xj2-c3m3",
       "package": "mysql2",
       "severity": "moderate",
-      "chain": [
-        "prisma",
-        "mysql2"
-      ],
-      "reachability": "Prisma CLI internal driver bundle for MySQL; Go-Trail uses PostgreSQL via pg adapter.",
-      "expiresAt": "2026-10-18T23:59:59Z"
+      "chain": ["prisma", "mysql2"],
+      "reachability": "Affected path requires a compressed MySQL connection to a malicious or compromised MySQL server. Go-Trail uses PostgreSQL via pg and does not enable the MySQL compressed protocol. A patch is available through Prisma 7.10.1; the user deferred the coordinated upgrade until open PRs are merged and the team resyncs from develop. Review before any MySQL use or exception expiry.",
+      "source": "https://github.com/advisories/GHSA-rgwj-5xj2-c3m3",
+      "expiresAt": "2026-11-03T23:59:59Z"
     }
   ]
 }
