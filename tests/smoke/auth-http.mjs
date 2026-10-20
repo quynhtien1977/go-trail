@@ -107,8 +107,13 @@ try {
     assert.ok(!response.headers.getSetCookie().some(cookie => cookie.includes("session-token")));
     assert.equal((await wrongGate.request("/api/account/me")).status, 401);
   }
-  const staffEntry = await guest.request("/staff/login");
-  assert.notEqual(staffEntry.status, 307, "Staff login is exempt from the protected staff gate (UI page is Anti scope)");
+  for (const path of ["/login", "/register", "/staff/login"]) {
+    const entry = await guest.request(path);
+    assert.equal(entry.status, 200, `Guest can open ${path} without a redirect loop`);
+    assert.match(entry.headers.get("content-type"), /text\/html/);
+    assert.match(entry.headers.get("cache-control"), /no-store/);
+    assert.match(await entry.text(), /<form/);
+  }
   const sessions = new Map();
   const allowed = { Customer: ["account"], Leader: ["leader"], RouteMgr: ["staff"], HRMgr: ["staff"], Accountant: ["staff"], Admin: ["account", "leader", "staff", "admin"] };
   for (const [role, user] of users) {
@@ -121,9 +126,11 @@ try {
     assert.equal(continuation.status, 303);
     const portalPath = role === "Customer" ? "/account" : role === "Leader" ? "/leader" : role === "Admin" ? "/admin" : "/staff";
     assert.equal(new URL(continuation.headers.get("location"), origin).pathname, portalPath);
-    const entry = await browser.request("/login");
-    assert.equal(entry.status, 307);
-    assert.equal(new URL(entry.headers.get("location"), origin).pathname, portalPath);
+    for (const path of ["/login", "/register", "/staff/login"]) {
+      const entry = await browser.request(path);
+      assert.equal(entry.status, 307, `${role} session opening ${path}`);
+      assert.equal(new URL(entry.headers.get("location"), origin).pathname, portalPath);
+    }
     assert.ok(login.headers.getSetCookie().some((value) => value.includes("session-token") && value.includes("HttpOnly") && value.includes("Secure") && value.includes("SameSite=Lax")));
     const profile = await browser.request("/api/account/me");
     assert.equal(profile.status, 200);
