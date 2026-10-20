@@ -1,4 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
+import { readCurrentPortalProfile } from "@/server/services/accounts";
 import { getDb } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
@@ -15,22 +16,12 @@ export default async function StaffPage() {
     actor = await getRouteActor("/staff");
   } catch (error) {
     if (error instanceof AppError && error.status === 401) {
-      redirect("/login?callbackUrl=/staff");
+      redirect("/staff/login?callbackUrl=/staff");
     }
     throw error;
   }
 
-  const user = await getDb().user.findUniqueOrThrow({
-    where: { user_id: actor.user_id },
-    select: {
-      user_id: true,
-      email: true,
-      full_name: true,
-      phone: true,
-      role: true,
-      status: true,
-    },
-  });
+  const user = await readCurrentPortalProfile(getDb(), actor);
 
   const getRoleResponsibilities = (role: string) => {
     switch (role) {

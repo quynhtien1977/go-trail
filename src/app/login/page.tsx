@@ -7,8 +7,6 @@ import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/navbar";
-import type { Role } from "@/schemas/auth";
-import { getSafeAuthCallback } from "@/lib/auth-redirect";
 import { getLegacyMediaUrl } from "@/lib/legacy-media";
 
 function LoginForm() {
@@ -37,6 +35,7 @@ function LoginForm() {
           email: email.trim().toLowerCase(),
           password,
           redirect: false,
+          callbackUrl: callbackUrl ?? "/account",
         });
 
         if (!res) {
@@ -59,44 +58,8 @@ function LoginForm() {
           return;
         }
 
-        if (res.ok) {
-          const destination = getSafeAuthCallback(callbackUrl, window.location.origin);
-          if (destination) {
-            router.push(destination);
-            router.refresh();
-            return;
-          }
-
-          try {
-            const meRes = await fetch("/api/account/me");
-            if (meRes.ok) {
-              const body = await meRes.json();
-              const role: Role = body?.data?.role;
-              switch (role) {
-                case "Leader":
-                  router.push("/leader");
-                  break;
-                case "RouteMgr":
-                case "HRMgr":
-                case "Accountant":
-                  router.push("/staff");
-                  break;
-                case "Admin":
-                  router.push("/admin");
-                  break;
-                case "Customer":
-                default:
-                  router.push("/account");
-                  break;
-              }
-              router.refresh();
-              return;
-            }
-          } catch {
-            // fallback
-          }
-
-          router.push("/account");
+        if (res.ok && res.url) {
+          router.push(res.url);
           router.refresh();
         }
       } catch {

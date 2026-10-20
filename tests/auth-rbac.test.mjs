@@ -69,13 +69,27 @@ test("registration rejects passwords over bcrypt's 72 UTF-8 byte limit without t
 
 test("all six roles authenticate; wrong password, missing account and Locked account fail identically", async () => {
   for (const email of ["admin", "customer", "leader", "hr", "routes", "finance"]) {
-    const user = await authenticateCredentials(db, credentials(`${email}@example.test`), secret);
+    const user = await authenticateCredentials(db, credentials(`${email}@example.test`), secret, undefined, email === "customer" ? "customer" : "staff");
     assert.ok(user?.user_id);
     assert.equal("password_hash" in user, false);
   }
   assert.equal(await authenticateCredentials(db, { ...credentials(), password: "wrong-password-123" }, secret), null);
   assert.equal(await authenticateCredentials(db, credentials("missing@example.test"), secret), null);
   await db.user.update({ where: { user_id: 2 }, data: { status: "Locked" } });
+  assert.equal(await authenticateCredentials(db, credentials(), secret), null);
+});
+
+test("login gates reject the other audience and forged role input before issuing an identity", async () => {
+  assert.equal(await authenticateCredentials(db, credentials("admin@example.test"), secret), null);
+  assert.equal(await authenticateCredentials(db, credentials(), secret, undefined, "staff"), null);
+  assert.equal(await authenticateCredentials(db, { ...credentials(), role: "Admin" }, secret), null);
+  assert.equal(await authenticateCredentials(db, credentials(), secret, undefined, "invented"), null);
+  assert.ok(await authenticateCredentials(db, credentials(), secret));
+  assert.ok(await authenticateCredentials(db, credentials("admin@example.test"), secret, undefined, "staff"));
+});
+
+test("alternating customer and staff gates shares one normalized email attempt budget", async () => {
+  for (let i = 0; i < 10; i++) await authenticateCredentials(db, credentials(), secret, undefined, i % 2 ? "customer" : "staff");
   assert.equal(await authenticateCredentials(db, credentials(), secret), null);
 });
 
@@ -88,13 +102,13 @@ test("login limit counts attempts across calls and normalized email variants", a
 
 test("a noisy login identity cannot consume unrelated users' login budgets", async () => {
   for (let i = 0; i < 501; i++) await authenticateCredentials(db, credentials(), secret);
-  assert.ok(await authenticateCredentials(db, credentials("admin@example.test"), secret));
+  assert.ok(await authenticateCredentials(db, credentials("admin@example.test"), secret, undefined, "staff"));
 });
 
 test("trusted source limits span email identities while leaving another source unaffected", async () => {
   for (let i = 0; i < 51; i++) await authenticateCredentials(db, credentials(), secret, "192.0.2.1");
   assert.equal(await authenticateCredentials(db, credentials("admin@example.test"), secret, "192.0.2.1"), null);
-  assert.ok(await authenticateCredentials(db, credentials("admin@example.test"), secret, "192.0.2.2"));
+  assert.ok(await authenticateCredentials(db, credentials("admin@example.test"), secret, "192.0.2.2", "staff"));
 });
 
 test("Redis REST adapter shares its budget across calls, resets expired buckets and stores no email", async () => {

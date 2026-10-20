@@ -14,7 +14,7 @@ export default async function LeaderPage() {
     actor = await getRouteActor("/leader");
   } catch (error) {
     if (error instanceof AppError && error.status === 401) {
-      redirect("/login?callbackUrl=/leader");
+      redirect("/staff/login?callbackUrl=/leader");
     }
     throw error;
   }
