@@ -89,6 +89,7 @@ npm run dev
 | `npm run typecheck` | Sinh Prisma Client và kiểm tra TypeScript |
 | `npm test` | Tests trên DB PGlite cô lập, không dùng DB Supabase của thành viên |
 | `npm run test:catalog:http` | HTTP smoke catalog trên production build có sẵn, DB cô lập |
+| `npm run test:rbac:http` | Kiểm ma trận 5 role qua HTTP trên production build có sẵn, DB cô lập; không cần secrets bên ngoài |
 | `npm run build` | Build production |
 | `npm run db:status` | Xem migrations của DB đang cấu hình |
 | `npm run db:media` | Kiểm tra import metadata media bằng transaction rollback; `--apply` để áp dụng vào DB development của mình khi có manifest hoàn chỉnh |
