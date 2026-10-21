@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -21,5 +22,13 @@ export async function createTestDatabase({ beforeMigration } = {}) {
       connectionTimeoutMillis: 5000 }),
   });
   return { client, sql, connectionString,
-    async close() { await client.$disconnect(); await server.stop(); await sql.close(); } };
+    async close() {
+      await client.$disconnect();
+      await server.stop();
+      // pglite-socket defers close callbacks with setImmediate and stop() does not
+      // await detach(). Drain those callbacks and their rollback work before closing WASM.
+      await nextTurn();
+      await sql.runExclusive(() => {});
+      await sql.close();
+    } };
 }
