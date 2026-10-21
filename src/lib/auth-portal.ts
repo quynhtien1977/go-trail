@@ -2,7 +2,7 @@ import type { Role } from "@/schemas/auth";
 import { getSafeAuthCallback } from "./auth-redirect";
 
 export type LoginGate = "customer" | "staff";
-const staffRoles: readonly string[] = ["Leader", "RouteMgr", "HRMgr", "Accountant", "Admin"];
+const staffRoles: readonly string[] = ["Leader", "RouteMgr", "HRMgr", "Admin"];
 
 export function canLoginAtGate(role: string, gate: LoginGate): boolean {
   return gate === "customer" ? role === "Customer" : gate === "staff" && staffRoles.includes(role);

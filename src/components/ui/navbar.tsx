@@ -51,7 +51,6 @@ export function Navbar() {
         return "/leader";
       case "RouteMgr":
       case "HRMgr":
-      case "Accountant":
         return "/staff";
       case "Admin":
         return "/admin";
