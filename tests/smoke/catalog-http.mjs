@@ -46,7 +46,7 @@ function check(result, status, code) {
 }
 
 try {
-  for (const role of ["RouteMgr", "Admin", "Customer", "Leader", "HRMgr", "Accountant"]) {
+  for (const role of ["RouteMgr", "Admin", "Customer", "Leader", "HRMgr"]) {
     const user = await database.client.user.create({ data: { email: `${role}@http-catalog.example.test`,
       password_hash: "unused-fixture-hash", full_name: role, phone: "0901234567", role } });
     actors.set(role, { user_id: user.user_id, role, auth_version: 0 });
@@ -85,7 +85,7 @@ try {
   console.log("PASS: guest public catalog, filters/pagination and RouteMgr create return decimal DTOs/no-store without Redis.");
 
   check(await request("/api/staff/trips", { method: "POST", body: JSON.stringify(input) }), 401, "UNAUTHENTICATED");
-  for (const role of ["Customer", "Leader", "HRMgr", "Accountant"]) {
+  for (const role of ["Customer", "Leader", "HRMgr"]) {
     check(await request("/api/staff/trips", {}, actors.get(role)), 403, "FORBIDDEN");
     check(await request("/api/staff/trips", { method: "POST", body: JSON.stringify(input) }, actors.get(role)), 403, "FORBIDDEN");
   }

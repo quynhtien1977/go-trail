@@ -5,10 +5,11 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 // Entirely isolated: never loads .env or uses DATABASE_URL.
-export async function createTestDatabase() {
+export async function createTestDatabase({ beforeMigration } = {}) {
   const sql = await PGlite.create();
   const names = await readdir(new URL("../../prisma/migrations/", import.meta.url));
   for (const name of names.filter((value) => /^\d+_/.test(value)).sort()) {
+    if (beforeMigration && name >= beforeMigration) break;
     await sql.exec(await readFile(new URL(`../../prisma/migrations/${name}/migration.sql`, import.meta.url), "utf8"));
   }
   // pg replaces a pooled connection after a SQL error; allow the old socket to drain.
