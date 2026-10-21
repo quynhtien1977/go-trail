@@ -123,7 +123,7 @@ async function main() {
         await tx.refundPolicyRule.upsert({ where: { hours_before_departure }, update: {}, create: { hours_before_departure, refund_percentage } });
       }
     }, { timeout: 120000, maxWait: 10000 });
-    console.log("Development seed complete: reviewed reference catalog, 6 roles, 3 staff, 1 vehicle / 16 seats, 3 demo departures, settings and refund policies.");
+    console.log("Development seed complete: reviewed reference catalog, 5 roles, 3 staff, 1 vehicle / 16 seats, 3 demo departures, settings and legacy refund policies.");
     console.log(media.length ? "Reference media metadata imported; existing edits preserved. No image upload or Storage key required." : "Reference media manifest not available yet; catalog has no imported gallery. Run db:media after the upload manifest is provided.");
     console.log("Demo emails: <role lowercase>@go-trail.example.test. Password stays in local SEED_PASSWORD; existing credentials and settings are preserved.");
   } finally {

@@ -29,9 +29,9 @@ beforeEach(async () => {
     [1, "admin@example.test", "Admin"], [2, "customer@example.test", "Customer"],
     [3, "other@example.test", "Customer"], [4, "leader@example.test", "Leader"],
     [5, "unassigned@example.test", "Leader"], [6, "hr@example.test", "HRMgr"],
-    [7, "routes@example.test", "RouteMgr"], [8, "finance@example.test", "Accountant"],
+    [7, "routes@example.test", "RouteMgr"],
   ]) await db.user.create({ data: { user_id, email, role, password_hash: passwordHash, full_name: role, phone: "0901234567" } });
-  await db.$queryRaw`SELECT setval('users_user_id_seq', 8)`;
+  await db.$queryRaw`SELECT setval('users_user_id_seq', 7)`;
   for (const user_id of [4, 5]) await db.staff.create({ data: { user_id, full_name: "Leader", phone: "0901234567", staff_type: "Leader" } });
 });
 after(async () => { redis?.close(); await database?.close(); });
@@ -67,8 +67,8 @@ test("registration rejects passwords over bcrypt's 72 UTF-8 byte limit without t
   assert.equal(await compare(password, saved.password_hash), false);
 });
 
-test("all six roles authenticate; wrong password, missing account and Locked account fail identically", async () => {
-  for (const email of ["admin", "customer", "leader", "hr", "routes", "finance"]) {
+test("all five roles authenticate; wrong password, missing account and Locked account fail identically", async () => {
+  for (const email of ["admin", "customer", "leader", "hr", "routes"]) {
     const user = await authenticateCredentials(db, credentials(`${email}@example.test`), secret, undefined, email === "customer" ? "customer" : "staff");
     assert.ok(user?.user_id);
     assert.equal("password_hash" in user, false);
@@ -134,10 +134,10 @@ test("the Redis SDK aborts a stalled request and does not retry or allow login",
   assert.ok(Date.now() - started < 4000, "Request must have a bounded timeout");
 });
 
-test("route group permissions match all six roles, with Admin access to every group", () => {
+test("route group permissions match all five roles, with Admin access to every group", () => {
   const expected = {
     Customer: ["/account"], Leader: ["/leader"], RouteMgr: ["/staff"],
-    HRMgr: ["/staff"], Accountant: ["/staff"], Admin: ["/account", "/leader", "/staff", "/admin"],
+    HRMgr: ["/staff"], Admin: ["/account", "/leader", "/staff", "/admin"],
   };
   for (const [role, groups] of Object.entries(expected)) {
     for (const group of ["/account", "/leader", "/staff", "/admin"]) {
@@ -215,11 +215,11 @@ test("access changes preserve the last active Admin and Leader's staff relations
 
 test("audit and business changes roll back together; audit refuses credentials, bank fields and arbitrary descriptions", async () => {
   await assert.rejects(db.$transaction(async (tx) => {
-    await tx.user.update({ where: { user_id: 7 }, data: { role: "Accountant" } });
-    await writeAudit(tx, 1, { action: "RoleChanged", record_id: 7, from: "RouteMgr", to: "Accountant" });
+    await tx.user.update({ where: { user_id: 7 }, data: { role: "HRMgr" } });
+    await writeAudit(tx, 1, { action: "RoleChanged", record_id: 7, from: "RouteMgr", to: "HRMgr" });
     throw new Error("Abort isolated transaction");
   }), /Abort isolated transaction/);
   assert.equal((await db.user.findUnique({ where: { user_id: 7 } })).role, "RouteMgr");
   assert.equal(await db.auditLog.count(), 0);
-  await assert.rejects(writeAudit(db, 1, { action: "RoleChanged", record_id: 7, from: "RouteMgr", to: "Accountant", bank_account_number: "secret" }), { code: "INVALID_INPUT" });
+  await assert.rejects(writeAudit(db, 1, { action: "RoleChanged", record_id: 7, from: "RouteMgr", to: "HRMgr", bank_account_number: "secret" }), { code: "INVALID_INPUT" });
 });

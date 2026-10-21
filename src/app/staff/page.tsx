@@ -43,15 +43,6 @@ export default async function StaffPage() {
             "Phân công xe và Leader cho từng chuyến khởi hành; kiểm tra tỷ lệ 1 Leader / N khách",
           ],
         };
-      case "Accountant":
-        return {
-          title: "Kế toán & Quản lý Tài chính",
-          items: [
-            "Đối soát các giao dịch thanh toán chuyển khoản qua cổng VietQR / SePay",
-            "Xử lý các khoản thanh toán cần rà soát (NeedsReview)",
-            "Duyệt và xác nhận các lệnh hoàn tiền (REFUNDS) cho khách hủy vé",
-          ],
-        };
       case "Admin":
       default:
         return {

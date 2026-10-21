@@ -4,7 +4,7 @@ import { getAuthDestination, getLoginPath, getRolePortal, canLoginAtGate } from 
 
 const origin = "https://go-trail.example.test";
 test("gate and portal policy covers current roles without granting an invented role", () => {
-  for (const [role, portal] of Object.entries({ Customer: "/account", Leader: "/leader", RouteMgr: "/staff", HRMgr: "/staff", Accountant: "/staff", Admin: "/admin" })) {
+  for (const [role, portal] of Object.entries({ Customer: "/account", Leader: "/leader", RouteMgr: "/staff", HRMgr: "/staff", Admin: "/admin" })) {
     assert.equal(getRolePortal(role), portal);
     assert.equal(canLoginAtGate(role, "customer"), role === "Customer");
     assert.equal(canLoginAtGate(role, "staff"), role !== "Customer");

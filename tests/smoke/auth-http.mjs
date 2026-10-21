@@ -69,7 +69,7 @@ class BrowserSession {
 
 try {
   const password_hash = await hash(password, 12);
-  for (const role of ["Customer", "Leader", "RouteMgr", "HRMgr", "Accountant", "Admin"]) {
+  for (const role of ["Customer", "Leader", "RouteMgr", "HRMgr", "Admin"]) {
     users.set(role, await db.user.create({ data: { email: `${role.toLowerCase()}@smoke.example.test`, role,
       full_name: `Test ${role}`, phone: "0901234567", password_hash, created_at: new Date("2026-10-12T18:00:00Z") } }));
   }
@@ -115,7 +115,7 @@ try {
     assert.match(await entry.text(), /<form/);
   }
   const sessions = new Map();
-  const allowed = { Customer: ["account"], Leader: ["leader"], RouteMgr: ["staff"], HRMgr: ["staff"], Accountant: ["staff"], Admin: ["account", "leader", "staff", "admin"] };
+  const allowed = { Customer: ["account"], Leader: ["leader"], RouteMgr: ["staff"], HRMgr: ["staff"], Admin: ["account", "leader", "staff", "admin"] };
   for (const [role, user] of users) {
     const browser = new BrowserSession();
     const login = await browser.login(user.email, password, role === "Customer" ? "credentials" : "staff-credentials");
@@ -153,7 +153,7 @@ try {
     }
     sessions.set(role, browser);
   }
-  console.log("PASS: six-role login, secure cookies, current identity, Proxy route groups");
+  console.log("PASS: five-role login, secure cookies, current identity, Proxy route groups");
   const customer = sessions.get("Customer");
   for (const target of ["/admin", "/staff/login", "/auth/continue", "//evil.test", "https://evil.test", "/%61dmin"]) {
     const nav = await customer.request(`/auth/continue?${new URLSearchParams({ callbackUrl: target })}`);

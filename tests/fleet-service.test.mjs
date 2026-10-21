@@ -17,7 +17,7 @@ before(async () => { database = await createTestDatabase(); db = database.client
 beforeEach(async () => {
   await database.sql.exec("TRUNCATE users, trips, vehicles RESTART IDENTITY CASCADE");
   const actors = [];
-  for (const role of ["HRMgr", "Admin", "Customer", "Leader", "RouteMgr", "Accountant"]) {
+  for (const role of ["HRMgr", "Admin", "Customer", "Leader", "RouteMgr"]) {
     const user = await db.user.create({ data: { email: `${role}@fleet.example.test`, password_hash: "unused-test-hash",
       full_name: role, phone: "0901234567", role } });
     actors.push({ user_id: user.user_id, role, auth_version: 0 });

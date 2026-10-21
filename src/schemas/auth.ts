@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const userRoles = ["Customer", "Leader", "RouteMgr", "HRMgr", "Accountant", "Admin"] as const;
+export const userRoles = ["Customer", "Leader", "RouteMgr", "HRMgr", "Admin"] as const;
 export type Role = (typeof userRoles)[number];
 const email = z.string().trim().max(254).toLowerCase().pipe(z.email());
 // bcrypt uses bytes, not character count. Password whitespace is significant.

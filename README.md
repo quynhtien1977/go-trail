@@ -60,9 +60,9 @@ npm run dev
 
 Mở [localhost:3000](http://localhost:3000). Auth/portal cần DB đã migration và Redis hoạt động.
 
-Seed tạo **8 tuyến tham khảo, 13 điểm đón, 6 tài khoản theo role, 3 nhân sự, 1 xe/16 ghế và 3 chuyến demo**, cùng cấu hình/chính sách hoàn tiền. Các chuyến demo không phải lịch mở bán thật.
+Seed tạo **8 tuyến tham khảo, 13 điểm đón, 5 tài khoản theo role, 3 nhân sự, 1 xe/16 ghế và 3 chuyến demo**, cùng cấu hình/chính sách hoàn tiền legacy. Các chuyến demo không phải lịch mở bán thật.
 
-Đăng nhập bằng email `<role viết thường>@go-trail.example.test`: `customer`, `leader`, `routemgr`, `hrmgr`, `accountant` hoặc `admin`; mật khẩu là `SEED_PASSWORD` đã điền. Đăng ký tại `/register` luôn tạo Customer.
+Đăng nhập bằng email `<role viết thường>@go-trail.example.test`: `customer`, `leader`, `routemgr`, `hrmgr` hoặc `admin`; mật khẩu là `SEED_PASSWORD` đã điền. Đăng ký tại `/register` luôn tạo Customer. Migration 5 role chuyển Accountant cũ thành Customer bị khóa và thu hồi phiên; seed không tự mở lại tài khoản này.
 
 Seed có thể chạy lại và giữ các giá trị đã có; đổi `SEED_PASSWORD` không đổi mật khẩu tài khoản đã tạo.
 

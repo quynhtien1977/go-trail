@@ -19,7 +19,6 @@ enum UserRole {
   Leader
   RouteMgr
   HRMgr
-  Accountant
   Admin
 }
 

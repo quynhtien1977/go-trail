@@ -25,12 +25,6 @@ const roleConfig: Record<Role, { label: string; bg: string; text: string; border
     text: "text-indigo-700 dark:text-indigo-300",
     border: "border-indigo-200 dark:border-indigo-800",
   },
-  Accountant: {
-    label: "Kế toán",
-    bg: "bg-amber-50 dark:bg-amber-950/40",
-    text: "text-amber-700 dark:text-amber-300",
-    border: "border-amber-200 dark:border-amber-800",
-  },
   Admin: {
     label: "Quản trị viên",
     bg: "bg-rose-50 dark:bg-rose-950/40",
