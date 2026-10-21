@@ -52,5 +52,8 @@ jobs:
       - name: Build production bundle
         run: npm run build
 
+      - name: Verify five-role HTTP RBAC matrix (isolated database, no external secrets)
+        run: npm run test:rbac:http
+
       - name: Verify dependency audit baseline
         run: npm run audit:check
