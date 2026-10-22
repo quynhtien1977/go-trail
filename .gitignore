@@ -45,7 +45,7 @@ next-env.d.ts
 .codegraph/
 .agents/
 
-docs/
+docs/*
 
 # Private agent instructions and generated/local files
 /src/generated/prisma/
@@ -53,3 +53,5 @@ docs/
 
 tools/
 tasks/
+
+!docs/PRD.md
