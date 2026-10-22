@@ -12,7 +12,7 @@ export function TripFaqSection() {
     },
     {
       q: "Có thể đổi hoặc hủy vé sau khi đặt chỗ không?",
-      a: "Chính sách hoàn vé và đổi vé phụ thuộc vào điều kiện của từng tuyến trail. Vui lòng liên hệ hotline để biết thêm chi tiết.",
+      a: "Theo chính sách của Go-Trail trong giai đoạn hiện tại, vé đã thanh toán thành công không áp dụng hủy hoặc hoàn tiền. Quý khách vui lòng kiểm tra kỹ lịch trình, điểm đón và thông tin cá nhân trước khi xác nhận đặt vé.",
     },
     {
       q: "Trail bus này phù hợp cho người mới không? Có khó không?",

@@ -20,7 +20,7 @@ const FAQS: FaqItem[] = [
   },
   {
     q: "Có thể đổi hoặc hủy vé sau khi đặt chỗ không?",
-    a: "Chính sách hoàn vé và đổi vé phụ thuộc vào điều kiện của từng tuyến trail. Vui lòng liên hệ hotline để biết thêm chi tiết.",
+    a: "Theo chính sách của Go-Trail trong giai đoạn hiện tại, vé đã thanh toán thành công không áp dụng hủy hoặc hoàn tiền. Quý khách vui lòng kiểm tra kỹ lịch trình, điểm đón và thông tin cá nhân trước khi xác nhận đặt vé.",
   },
   {
     q: "Trail bus này phù hợp cho người mới không? Có khó không?",
@@ -316,15 +316,14 @@ export default function Home() {
               <div className="space-y-4 flex flex-col items-center">
                 <div className="w-20 h-20 rounded-full flex items-center justify-center">
                   <img
-                    src="/ref/i-thechinhphuc.svg"
-                    alt="Thẻ Chinh Phục"
+                    src="/ref/i-car.svg"
+                    alt="Xe bus khứ hồi"
                     className="w-16 h-16 object-contain"
                   />
                 </div>
-                <h3 className="text-xl font-bold text-neutral-900">Thẻ Chinh Phục</h3>
+                <h3 className="text-xl font-bold text-neutral-900">Xe bus khứ hồi</h3>
                 <p className="text-sm text-neutral-600 leading-relaxed max-w-xs">
-                  Thẻ chinh phục thiết kế riêng cho từng cung đường, kèm in tên riêng của bạn để ghi
-                  dấu kỷ niệm.
+                  Xe chất lượng cao đưa đón khứ hồi tại các điểm hẹn cố định, mang đến trải nghiệm di chuyển tiện nghi và an toàn.
                 </p>
               </div>
 

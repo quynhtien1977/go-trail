@@ -27,11 +27,11 @@ export default async function StaffPage() {
     switch (role) {
       case "RouteMgr":
         return {
-          title: "Quản lý Tuyến đường & Vận hành Web",
+          title: "Quản lý Tuyến đường & Vận hành Tuyến",
           items: [
-            "Quản lý danh mục tuyến trekking, độ dài, mô tả cung đường và điểm đón xe",
-            "Mở chuyến, chốt chạy hoặc hủy chuyến trekking (kích hoạt hoàn tiền tự động)",
-            "Xem manifest danh sách hành khách và hỗ trợ sửa check-in thủ công khi cần",
+            "Quản lý danh mục tuyến trekking, cự ly, độ khó, giá cơ sở và điểm đón xe bus",
+            "Mở bán chuyến xe và điều phối lịch trình vận hành theo quy trình nghiệp vụ",
+            "Xem manifest danh sách hành khách và các hóa đơn được phân công phụ trách",
           ],
         };
       case "HRMgr":
@@ -48,7 +48,7 @@ export default async function StaffPage() {
         return {
           title: "Quản trị viên toàn hệ thống",
           items: [
-            "Toàn quyền truy cập và điều hành mọi phân hệ nhân sự, vận hành và kế toán",
+            "Toàn quyền truy cập và điều hành mọi phân hệ nhân sự, vận hành và tài chính",
             "Giám sát nhật ký kiểm toán AUDIT_LOGS và cấu hình hệ thống SYSTEM_SETTINGS",
           ],
         };

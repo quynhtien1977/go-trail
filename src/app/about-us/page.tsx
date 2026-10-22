@@ -88,10 +88,10 @@ export default function AboutUsPage() {
               </div>
 
               <div className="bg-white p-6 rounded-2xl shadow-sm space-y-3 flex flex-col items-center">
-                <img src="/ref/i-thechinhphuc.svg" alt="Thẻ Chinh Phục" className="w-16 h-16" />
-                <h3 className="font-bold text-lg text-black">Thẻ Chinh Phục</h3>
+                <img src="/ref/i-car.svg" alt="Xe bus khứ hồi" className="w-16 h-16" />
+                <h3 className="font-bold text-lg text-black">Xe bus khứ hồi</h3>
                 <p className="text-xs text-neutral-600 leading-relaxed">
-                  Thiết kế riêng cho từng cung đường, kèm in tên bạn để ghi dấu kỷ niệm độc bản.
+                  Xe đưa đón khứ hồi tại các điểm hẹn cố định, tiện nghi và đảm bảo an toàn suốt hành trình.
                 </p>
               </div>
 

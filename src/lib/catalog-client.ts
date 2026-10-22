@@ -53,7 +53,9 @@ export function getTripMedia(trip: { source_url?: string | null; name?: string }
     if (matched) {
       return {
         image: matched.img || FALLBACK_TRIP_IMAGE,
-        tags: matched.tags || [],
+        tags: (matched.tags || []).filter(
+          (t) => !t.toLowerCase().includes("chinh phục")
+        ),
         difficultyIcon: matched.difficultyIcon || "/ref/i-do-kho-2.svg",
       };
     }
@@ -317,10 +319,16 @@ export async function retireStaffTrip(id: number): Promise<TripDto> {
   return json.data;
 }
 
-export async function fetchStaffPickups(
-  tripId: number
-): Promise<PickupDto[]> {
-  const res = await fetch(`/api/staff/trips/${tripId}/pickups`, {
+export async function fetchStaffPickupsPage(
+  tripId: number,
+  params?: { page?: number; pageSize?: number }
+): Promise<Page<PickupDto>> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.pageSize) query.set("pageSize", String(params.pageSize));
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+
+  const res = await fetch(`/api/staff/trips/${tripId}/pickups${queryString}`, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -334,7 +342,18 @@ export async function fetchStaffPickups(
   }
 
   const json = await res.json();
-  return json.data.items || [];
+  return json.data;
+}
+
+export async function fetchStaffPickups(
+  tripId: number,
+  params?: { page?: number; pageSize?: number }
+): Promise<PickupDto[]> {
+  const page = await fetchStaffPickupsPage(tripId, {
+    pageSize: 50,
+    ...params,
+  });
+  return page.items || [];
 }
 
 export async function createStaffPickup(
