@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AuthDatabase } from "./auth/authorization";
 import { userRoles } from "@/schemas/auth";
 import { vehicleStatuses } from "@/schemas/fleet";
+import { settingKeys } from "@/schemas/admin";
 import { AppError } from "./errors";
 
 const id = z.number().int().positive().max(2147483647);
@@ -22,6 +23,8 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("TripCreated"), record_id: id, base_price: amount }),
   z.strictObject({ action: z.literal("TripPriceChanged"), record_id: id, from: amount, to: amount }),
   z.strictObject({ action: z.literal("TripAvailabilityChanged"), record_id: id, from: z.boolean(), to: z.boolean() }),
+  z.strictObject({ action: z.literal("SettingChanged"), record_id: z.enum(settingKeys),
+    from: z.string().max(20), to: z.string().max(20) }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
 
@@ -34,6 +37,7 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
   const table_name = value.action === "MoneyRecorded" ? value.table_name
     : value.action === "DepartureStatusChanged" || value.action === "DepartureOwnerChanged" ? "departures"
       : value.action === "VehicleStatusChanged" ? "vehicles"
+      : value.action === "SettingChanged" ? "system_settings"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips" : "users";
   await tx.auditLog.create({ data: { user_id: actorId, action: value.action, table_name,
     record_id: String(value.record_id), description: JSON.stringify(value) } });
