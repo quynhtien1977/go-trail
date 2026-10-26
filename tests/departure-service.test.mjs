@@ -10,6 +10,14 @@ const tripInput = { name: "Núi Bà Đen", city: "Tây Ninh", location_name: "N�
   base_price: "500000", description: "Tuyến tham khảo.", schedule_content: "Lịch trình." };
 const base = { departure_date: "2026-11-20T01:00:00Z", booking_deadline: "2026-11-19T10:00:00Z", min_passengers: 6 };
 const schedule = () => [{ pickup_id: pickup.pickup_id, pickup_time: "2026-11-20T00:30:00+07:00" }];
+let plate = 0;
+// Stand-in for O04 assignment: one vehicle with one generated departure seat.
+async function withSeats(departureId) {
+  const vehicle = await db.vehicle.create({ data: { plate_number: `51B-000.${String(++plate).padStart(2, "0")}`, vehicle_type: "Xe 29 chỗ",
+    seat_count: 1, seats: { create: [{ seat_name: "A01", floor_level: 1, x_position: 0, y_position: 0 }] } }, include: { seats: true } });
+  const assigned = await db.departureVehicle.create({ data: { departure_id: departureId, vehicle_id: vehicle.vehicle_id } });
+  await db.departureSeat.create({ data: { dep_vehicle_id: assigned.dep_vehicle_id, seat_id: vehicle.seats[0].seat_id } });
+}
 
 before(async () => { database = await createTestDatabase(); db = database.client; });
 beforeEach(async () => {
@@ -71,13 +79,16 @@ test("pickups must belong to the same active trip and deadlines/pickup times mus
   assert.equal(await db.departure.count(), 0);
 });
 
-test("Draft opens only with pickups on an active trip; Open departures are no longer editable", async () => {
+test("Draft opens only with pickups and seats on an active trip; Open departures are no longer editable", async () => {
   const empty = await createDeparture(db, manager, trip.trip_id, base, now);
+  await withSeats(empty.departure_id);
   await assert.rejects(updateDeparture(db, manager, empty.departure_id, { status: "Open" }, now), { code: "RESOURCE_CONFLICT" });
   const updated = await updateDeparture(db, manager, empty.departure_id,
     { min_passengers: 8, pickups: [{ pickup_id: pickup2.pickup_id, pickup_time: "2026-11-20T00:00:00Z" }] }, now);
   assert.equal(updated.min_passengers, 8);
   assert.deepEqual(updated.pickups.map((item) => item.pickup_id), [pickup2.pickup_id]);
+  const seatless = await createDeparture(db, manager, trip.trip_id, { ...base, pickups: schedule() }, now);
+  await assert.rejects(updateDeparture(db, manager, seatless.departure_id, { status: "Open" }, now), { code: "RESOURCE_CONFLICT" });
   const opened = await updateDeparture(db, manager, empty.departure_id, { status: "Open" }, now);
   assert.equal(opened.status, "Open");
   const log = await db.auditLog.findFirst({ where: { action: "DepartureStatusChanged" } });
@@ -86,6 +97,7 @@ test("Draft opens only with pickups on an active trip; Open departures are no lo
   await assert.rejects(updateDeparture(db, manager, empty.departure_id, { status: "Open" }, now), { code: "RESOURCE_CONFLICT" });
 
   const late = await createDeparture(db, manager, trip.trip_id, { ...base, pickups: schedule() }, now);
+  await withSeats(late.departure_id);
   await assert.rejects(updateDeparture(db, manager, late.departure_id, { status: "Open" }, new Date("2026-11-19T11:00:00Z")), { code: "INVALID_INPUT" });
   await db.trip.update({ where: { trip_id: trip.trip_id }, data: { is_active: false } });
   await assert.rejects(updateDeparture(db, manager, late.departure_id, { status: "Open" }, now), { code: "RESOURCE_CONFLICT" });
@@ -96,6 +108,8 @@ test("Draft opens only with pickups on an active trip; Open departures are no lo
 test("demo departures can open but are never listed for public sale", async () => {
   const real = await createDeparture(db, manager, trip.trip_id, { ...base, pickups: schedule() }, now);
   const demo = await createDeparture(db, manager, trip.trip_id, { ...base, is_demo: true, pickups: schedule() }, now);
+  await withSeats(real.departure_id);
+  await withSeats(demo.departure_id);
   await updateDeparture(db, manager, real.departure_id, { status: "Open" }, now);
   await updateDeparture(db, manager, demo.departure_id, { status: "Open" }, now);
   const listed = await listPublicDepartures(db, trip.trip_id, {}, now);
@@ -105,6 +119,7 @@ test("demo departures can open but are never listed for public sale", async () =
 
 test("only Admin reassigns the invoice owner, to an Active RouteMgr, with old/new IDs audited", async () => {
   const draft = await createDeparture(db, manager, trip.trip_id, { ...base, pickups: schedule() }, now);
+  await withSeats(draft.departure_id);
   await updateDeparture(db, manager, draft.departure_id, { status: "Open" }, now);
   await assert.rejects(updateDeparture(db, manager, draft.departure_id, { invoice_owner_user_id: otherManager.user_id }, now), { code: "FORBIDDEN" });
   await assert.rejects(updateDeparture(db, admin, draft.departure_id, { invoice_owner_user_id: others[0].user_id }, now), { code: "INVALID_INPUT" });

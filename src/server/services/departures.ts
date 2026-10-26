@@ -139,7 +139,9 @@ export async function updateDeparture(db: PrismaClient, identity: Actor, departu
     }
     if (status === "Open") {
       await lockActiveTrip(tx, current.trip_id);
-      if (!schedule.length) throw new AppError("RESOURCE_CONFLICT", 409);
+      // Selling needs pickups and at least one assigned vehicle with generated seats (O04).
+      const seats = await tx.departureSeat.count({ where: { vehicle: { departure_id: departureId } } });
+      if (!schedule.length || !seats) throw new AppError("RESOURCE_CONFLICT", 409);
     }
     await tx.departure.update({ where: { departure_id: departureId },
       data: { ...fields, ...(owner !== undefined ? { invoice_owner_user_id: owner } : {}), ...(status ? { status } : {}) } });
