@@ -19,7 +19,6 @@ export const FALLBACK_TRIP_IMAGE = getLegacyMediaUrl(
 interface FixtureTour {
   slug: string;
   link: string;
-  img: string;
   tags?: string[];
   time?: string;
   difficultyIcon?: string;
@@ -38,11 +37,10 @@ for (const item of toursData as FixtureTour[]) {
 }
 
 /**
- * Maps a trip to an image and metadata based on its source_url or slug,
- * with graceful fallback for manual / custom trips.
+ * Maps a trip to display tags and difficulty icon based on its source_url or slug,
+ * with graceful fallback for manual / custom trips. Images come from the API's cover_image_url.
  */
 export function getTripMedia(trip: { source_url?: string | null; name?: string }): {
-  image: string;
   tags: string[];
   difficultyIcon: string;
 } {
@@ -52,7 +50,6 @@ export function getTripMedia(trip: { source_url?: string | null; name?: string }
       fixtureMap.get(rawUrl) || fixtureMap.get(rawUrl.replace(/\/+$/, ""));
     if (matched) {
       return {
-        image: matched.img || FALLBACK_TRIP_IMAGE,
         tags: (matched.tags || []).filter(
           (t) => !t.toLowerCase().includes("chinh phục")
         ),
@@ -63,7 +60,6 @@ export function getTripMedia(trip: { source_url?: string | null; name?: string }
 
   // Fallback for manual or unmatched trips
   return {
-    image: FALLBACK_TRIP_IMAGE,
     tags: ["Trekking", "Xe bus khứ hồi", "Leader dẫn đoàn"],
     difficultyIcon: "/ref/i-do-kho-2.svg",
   };

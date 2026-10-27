@@ -1,6 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
-import { readCurrentPortalProfile } from "@/server/services/accounts";
-import { getDb } from "@/server/db";
+import { accountsService } from "@/server/services/accounts";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
@@ -21,7 +20,7 @@ export default async function StaffPage() {
     throw error;
   }
 
-  const user = await readCurrentPortalProfile(getDb(), actor);
+  const user = await accountsService.readCurrentPortalProfile(actor);
 
   const getRoleResponsibilities = (role: string) => {
     switch (role) {

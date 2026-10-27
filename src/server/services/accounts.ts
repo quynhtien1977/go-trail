@@ -1,18 +1,19 @@
 import "server-only";
 import { compare, hash } from "bcryptjs";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Database } from "@/server/repositories/database";
 import { accountAccessSchema, credentialsSchema, registrationSchema } from "@/schemas/auth";
 import { requireActor, requireRole, type Actor } from "@/server/auth/authorization";
 import { consumeRateLimit } from "@/server/auth/rate-limit";
 import { writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
 import { canLoginAtGate, type LoginGate } from "@/lib/auth-portal";
+import { bindDb } from "./bind-db";
 import { findCredentialUser, insertCustomer, readProfile, withAccountAccessTransaction,
   findAccountWithStaff, countActiveAdmins, changeAccountAccess, readPortalProfile, readAdminOverview } from "@/server/repositories/accounts";
 
 const dummyHash = "$2b$12$C6UzMDM.H6dfI/f/IKcEe.5PVdlXjrUdmqu89noDeJtdoqYnFwNZe";
 
-export async function registerCustomer(db: PrismaClient, input: unknown) {
+export async function registerCustomer(db: Database, input: unknown) {
   const parsed = registrationSchema.safeParse(input);
   if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
   const { password, ...profile } = parsed.data;
@@ -22,7 +23,7 @@ export async function registerCustomer(db: PrismaClient, input: unknown) {
   return user;
 }
 
-export async function authenticateCredentials(db: PrismaClient, input: unknown, secret: string, trustedClientIp?: string, gate: LoginGate = "customer") {
+export async function authenticateCredentials(db: Database, input: unknown, secret: string, trustedClientIp?: string, gate: LoginGate = "customer") {
   const parsed = credentialsSchema.safeParse(input);
   if (!parsed.success) return null;
   if (trustedClientIp) {
@@ -44,7 +45,7 @@ export async function authenticateCredentials(db: PrismaClient, input: unknown, 
     role: actor.role, auth_version: actor.auth_version };
 }
 
-export async function updateAccountAccess(db: PrismaClient, identity: Actor, userId: number, input: unknown) {
+export async function updateAccountAccess(db: Database, identity: Actor, userId: number, input: unknown) {
   const parsed = accountAccessSchema.safeParse(input);
   if (!parsed.success || !Number.isInteger(userId) || userId < 1 || userId > 2147483647) {
     throw new AppError("INVALID_INPUT", 422);
@@ -73,26 +74,29 @@ export async function updateAccountAccess(db: PrismaClient, identity: Actor, use
   });
 }
 
-export async function readCurrentProfile(db: PrismaClient, identity: Actor) {
+export async function readCurrentProfile(db: Database, identity: Actor) {
   const actor = await requireActor(db, identity);
   return readProfile(db, actor.user_id);
 }
 
-export async function readCurrentPortalProfile(db: PrismaClient, identity: Actor) {
+export async function readCurrentPortalProfile(db: Database, identity: Actor) {
   const actor = await requireActor(db, identity);
   return readPortalProfile(db, actor.user_id);
 }
 
-export async function readAdminPortal(db: PrismaClient, identity: Actor) {
+export async function readAdminPortal(db: Database, identity: Actor) {
   const actor = await requireActor(db, identity);
   requireRole(actor, []);
   return readAdminOverview(db);
 }
 
-export async function registerRateLimitedCustomer(db: PrismaClient, input: unknown, secret: string, source?: string) {
+export async function registerRateLimitedCustomer(db: Database, input: unknown, secret: string, source?: string) {
   const parsed = registrationSchema.safeParse(input);
   if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
   if (source && !(await consumeRateLimit("registration-source", source, secret, 50)).allowed) throw new AppError("RATE_LIMITED", 429);
   if (!(await consumeRateLimit("registration-email", parsed.data.email, secret, 3)).allowed) throw new AppError("RATE_LIMITED", 429);
   return registerCustomer(db, parsed.data);
 }
+
+export const accountsService = bindDb({ registerRateLimitedCustomer, updateAccountAccess, readCurrentProfile,
+  readCurrentPortalProfile, readAdminPortal });

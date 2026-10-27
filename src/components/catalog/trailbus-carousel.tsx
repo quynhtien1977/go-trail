@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search, RefreshCw, MapPin, AlertCircle } from "lucide-react";
 import type { TripSummaryDto } from "@/schemas/catalog";
-import { fetchPublicTrips, getTripMedia, formatVnd } from "@/lib/catalog-client";
+import { fetchPublicTrips, getTripMedia, formatVnd, FALLBACK_TRIP_IMAGE } from "@/lib/catalog-client";
 
 interface TrailbusCarouselProps {
   initialCity?: string | null;
@@ -270,7 +270,7 @@ export function TrailbusCarousel({ initialCity = null, onCitySelect }: TrailbusC
                 {/* Tour Image */}
                 <div className="relative h-[245px] w-full overflow-hidden bg-neutral-200">
                   <img
-                    src={media.image}
+                    src={trip.cover_image_url ?? FALLBACK_TRIP_IMAGE}
                     alt={trip.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"

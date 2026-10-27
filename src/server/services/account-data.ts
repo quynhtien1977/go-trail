@@ -1,11 +1,12 @@
 import "server-only";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Database } from "@/server/repositories/database";
 import { requireActor, requireRole, type Actor } from "@/server/auth/authorization";
 import { findInvoiceSummary, findLeaderDepartures } from "@/server/repositories/account-data";
 import { AppError } from "@/server/errors";
+import { bindDb } from "./bind-db";
 
 // Customer-facing DTO. Staff/financial views get separate projections in their own features.
-export async function readCustomerInvoice(db: PrismaClient, identity: Actor, invoiceId: number) {
+export async function readCustomerInvoice(db: Database, identity: Actor, invoiceId: number) {
   const actor = await requireActor(db, identity);
   requireRole(actor, ["Customer"]);
   const invoice = await findInvoiceSummary(db, invoiceId, actor.role === "Admin" ? undefined : actor.user_id);
@@ -14,9 +15,11 @@ export async function readCustomerInvoice(db: PrismaClient, identity: Actor, inv
     expires_at: invoice.expires_at.toISOString(), created_at: invoice.created_at.toISOString() };
 }
 
-export async function listLeaderDepartures(db: PrismaClient, identity: Actor) {
+export async function listLeaderDepartures(db: Database, identity: Actor) {
   const actor = await requireActor(db, identity);
   requireRole(actor, ["Leader"]);
   const departures = await findLeaderDepartures(db, actor.role === "Admin" ? undefined : actor.user_id);
   return departures.map((departure) => ({ ...departure, departure_date: departure.departure_date.toISOString() }));
 }
+
+export const accountDataService = bindDb({ readCustomerInvoice, listLeaderDepartures });

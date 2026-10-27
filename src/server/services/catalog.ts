@@ -8,6 +8,7 @@ import { catalogQuerySchema, pageQuerySchema, createTripSchema, updateTripSchema
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
 import { writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
+import { bindDb } from "./bind-db";
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input);
@@ -139,3 +140,15 @@ export async function updatePickup(db: Database, identity: Actor, tripId: number
     return catalog.updatePickup(tx, pickupId, data);
   });
 }
+
+// Trips and pickups stay referenced by departures and bookings, so retiring deactivates instead of deleting.
+export function retireTrip(db: Database, identity: Actor, tripId: number) {
+  return updateTrip(db, identity, tripId, { is_active: false });
+}
+export function retirePickup(db: Database, identity: Actor, tripId: number, pickupId: number) {
+  return updatePickup(db, identity, tripId, pickupId, { is_active: false });
+}
+
+export const catalogService = bindDb({ listPublicTrips, listManagedTrips, readPublicTrip, readManagedTrip,
+  listPublicPickups, listManagedPickups, listPublicDepartures, createTrip, updateTrip, retireTrip,
+  createPickup, updatePickup, retirePickup });

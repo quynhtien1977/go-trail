@@ -1,9 +1,8 @@
 import { getCurrentActor } from "@/server/auth/session";
-import { getDb } from "@/server/db";
 import { errorResponse, json } from "@/server/http";
-import { listLeaderDepartures } from "@/server/services/account-data";
+import { accountDataService } from "@/server/services/account-data";
 
 export async function GET() {
-  try { return json(await listLeaderDepartures(getDb(), await getCurrentActor())); }
+  try { return json(await accountDataService.listLeaderDepartures(await getCurrentActor())); }
   catch (error) { return errorResponse(error); }
 }

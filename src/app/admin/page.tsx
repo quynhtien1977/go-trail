@@ -1,6 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
-import { readAdminPortal } from "@/server/services/accounts";
-import { getDb } from "@/server/db";
+import { accountsService } from "@/server/services/accounts";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
@@ -21,7 +20,7 @@ export default async function AdminPage() {
     throw error;
   }
 
-  const { usersCount, recentUsers, settings } = await readAdminPortal(getDb(), actor);
+  const { usersCount, recentUsers, settings } = await accountsService.readAdminPortal(actor);
 
   const totalUsers = usersCount.reduce((acc, curr) => acc + curr._count.user_id, 0);
 

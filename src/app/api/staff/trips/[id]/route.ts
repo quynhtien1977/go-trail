@@ -1,8 +1,7 @@
 import { getCurrentActor } from "@/server/auth/session";
 import { requireRole } from "@/server/auth/authorization";
-import { getDb } from "@/server/db";
 import { assertSameOrigin, errorResponse, json, parseId, readJson } from "@/server/http";
-import { readManagedTrip, updateTrip } from "@/server/services/catalog";
+import { catalogService } from "@/server/services/catalog";
 
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {
@@ -10,7 +9,7 @@ export async function GET(_request: Request, context: Context) {
     const actor = await getCurrentActor();
     requireRole(actor, ["RouteMgr"]);
     const { id } = await context.params;
-    return json(await readManagedTrip(getDb(), actor, parseId(id)));
+    return json(await catalogService.readManagedTrip(actor, parseId(id)));
   } catch (error) { return errorResponse(error); }
 }
 
@@ -20,7 +19,7 @@ export async function PATCH(request: Request, context: Context) {
     requireRole(actor, ["RouteMgr"]);
     assertSameOrigin(request);
     const { id } = await context.params;
-    return json(await updateTrip(getDb(), actor, parseId(id), await readJson(request, 65536)));
+    return json(await catalogService.updateTrip(actor, parseId(id), await readJson(request, 65536)));
   } catch (error) { return errorResponse(error); }
 }
 
@@ -30,6 +29,6 @@ export async function DELETE(request: Request, context: Context) {
     requireRole(actor, ["RouteMgr"]);
     assertSameOrigin(request);
     const { id } = await context.params;
-    return json(await updateTrip(getDb(), actor, parseId(id), { is_active: false }));
+    return json(await catalogService.retireTrip(actor, parseId(id)));
   } catch (error) { return errorResponse(error); }
 }

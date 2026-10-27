@@ -1,8 +1,7 @@
 import { getCurrentActor } from "@/server/auth/session";
 import { requireRole } from "@/server/auth/authorization";
-import { getDb } from "@/server/db";
 import { assertSameOrigin, errorResponse, json, parseId, readJson } from "@/server/http";
-import { updatePickup } from "@/server/services/catalog";
+import { catalogService } from "@/server/services/catalog";
 
 type Context = { params: Promise<{ id: string; pickupId: string }> };
 export async function PATCH(request: Request, context: Context) {
@@ -11,7 +10,7 @@ export async function PATCH(request: Request, context: Context) {
     requireRole(actor, ["RouteMgr"]);
     assertSameOrigin(request);
     const { id, pickupId } = await context.params;
-    return json(await updatePickup(getDb(), actor, parseId(id), parseId(pickupId), await readJson(request)));
+    return json(await catalogService.updatePickup(actor, parseId(id), parseId(pickupId), await readJson(request)));
   } catch (error) { return errorResponse(error); }
 }
 
@@ -21,6 +20,6 @@ export async function DELETE(request: Request, context: Context) {
     requireRole(actor, ["RouteMgr"]);
     assertSameOrigin(request);
     const { id, pickupId } = await context.params;
-    return json(await updatePickup(getDb(), actor, parseId(id), parseId(pickupId), { is_active: false }));
+    return json(await catalogService.retirePickup(actor, parseId(id), parseId(pickupId)));
   } catch (error) { return errorResponse(error); }
 }

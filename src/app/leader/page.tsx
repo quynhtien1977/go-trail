@@ -1,6 +1,5 @@
 import { getRouteActor } from "@/server/auth/session";
-import { getDb } from "@/server/db";
-import { listLeaderDepartures } from "@/server/services/account-data";
+import { accountDataService } from "@/server/services/account-data";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
@@ -19,7 +18,7 @@ export default async function LeaderPage() {
     throw error;
   }
 
-  const departures = await listLeaderDepartures(getDb(), actor);
+  const departures = await accountDataService.listLeaderDepartures(actor);
 
   const formatVietnamTime = (isoString: string) => {
     return new Intl.DateTimeFormat("vi-VN", {

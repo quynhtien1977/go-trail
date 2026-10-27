@@ -8,6 +8,7 @@ import { createMaintenanceSchema, createSeatSchema, createVehicleSchema, updateS
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
 import { writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
+import { bindDb } from "./bind-db";
 
 // A vehicle on any departure outside these statuses is still committed to that trip.
 const closedDepartures = ["Ended", "Cancelled", "Rescheduled"] as const;
@@ -104,6 +105,11 @@ export async function updateVehicle(db: Database, identity: Actor, vehicleId: nu
   }).catch(uniqueConflict);
 }
 
+// Vehicles are referenced by departures and maintenance history, so delete deactivates.
+export function deactivateVehicle(db: Database, identity: Actor, vehicleId: number): Promise<VehicleDto> {
+  return updateVehicle(db, identity, vehicleId, { status: "Inactive" });
+}
+
 export async function addSeat(db: Database, identity: Actor, vehicleId: number, input: unknown): Promise<SeatDto> {
   assertId(vehicleId);
   const data = parse(createSeatSchema, input);
@@ -133,6 +139,11 @@ export async function updateSeat(db: Database, identity: Actor, vehicleId: numbe
     await syncSeatCount(tx, vehicleId);
     return seat;
   }).catch(uniqueConflict);
+}
+
+// Departure seats keep referencing old seats, so delete deactivates.
+export function deactivateSeat(db: Database, identity: Actor, vehicleId: number, seatId: number): Promise<SeatDto> {
+  return updateSeat(db, identity, vehicleId, seatId, { is_active: false });
 }
 
 export async function listMaintenance(db: Database, identity: Actor, vehicleId: number, input: unknown = {}): Promise<Page<MaintenanceDto>> {
@@ -173,3 +184,6 @@ export async function assertVehicleAssignable(tx: Transaction, vehicleId: number
   if (blocked) throw new AppError("VEHICLE_UNAVAILABLE", 409);
   return vehicle;
 }
+
+export const fleetService = bindDb({ listVehicles, readVehicle, createVehicle, updateVehicle, deactivateVehicle,
+  addSeat, updateSeat, deactivateSeat, listMaintenance, createMaintenance });
