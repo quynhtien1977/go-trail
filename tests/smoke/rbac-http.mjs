@@ -173,9 +173,25 @@ try {
       create: { departure_id: draft.departure_id, dep_vehicle_id: assignment.dep_vehicle_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" }, update: {} });
     removeStaffEndpoint.path = `/api/staff/departures/${draft.departure_id}/staff/${crew.dep_staff_id}`;
   };
-  assert.equal(endpoints.length, 32);
+  let bookingSeatId, bookingPickupId;
+  route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
+    idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
+      passenger_name: "Fixture passenger", passenger_phone: "0901234567", emergency_contact: "Fixture contact", health_declaration: true }],
+  }) });
+  const holdEndpoint = endpoints.at(-1);
+  holdEndpoint.prepareSuccess = async () => {
+    const sale = await db.departure.create({ data: { trip_id: operationsTrip.trip_id, status: "Open", min_passengers: 1,
+      invoice_owner_user_id: actors.get("RouteMgr").user_id, departure_date: new Date("2036-01-02"), booking_deadline: new Date("2036-01-01"),
+      pickups: { create: { pickup_id: operationsPickup.pickup_id, pickup_time: new Date("2036-01-02") } } }, include: { pickups: true } });
+    const assigned = await db.departureVehicle.create({ data: { departure_id: sale.departure_id, vehicle_id: operationsVehicle.vehicle_id } });
+    const physicalSeat = await db.vehicleSeat.findFirstOrThrow({ where: { vehicle_id: operationsVehicle.vehicle_id } });
+    const seat = await db.departureSeat.create({ data: { dep_vehicle_id: assigned.dep_vehicle_id, seat_id: physicalSeat.seat_id } });
+    bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
+    holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
+  };
+  assert.equal(endpoints.length, 33);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 32 protected API methods; new/unclassified API methods fail this gate.");
+  console.log("PASS: explicit A03 policies cover all 33 protected API methods; new/unclassified API methods fail this gate.");
 
   child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
@@ -201,6 +217,7 @@ try {
       db.departureVehicle.findMany({ orderBy: { dep_vehicle_id: "asc" } }), db.departureStaff.findMany({ orderBy: { dep_staff_id: "asc" } }),
       db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }),
       db.auditLog.findMany({ orderBy: { log_id: "asc" } }), db.invoice.findMany({ orderBy: { invoice_id: "asc" } }),
+      db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
@@ -296,6 +313,41 @@ try {
   }
   console.log("PASS: K01 public seat map follows O03/O04 sale setup, returns only safe seat fields to guests/all roles, hides unavailable departures and never mutates holds.");
 
+  // K02 extends the same real Draft -> assignment -> Open flow; only its unpaid stale holds may be reclaimed.
+  await db.invoice.update({ where: { invoice_id: holdInvoice.invoice_id }, data: { expires_at: new Date(Date.now() - 1000) } });
+  await db.departureSeat.update({ where: { dep_seat_id: saleSeats[1].dep_seat_id }, data: { locked_until: new Date(Date.now() - 1000) } });
+  const salePickup = await db.departurePickup.findFirstOrThrow({ where: { departure_id: saleId } });
+  const bookingBody = { idempotency_key: "http-booking-key-0001", seats: saleSeats.slice(0, 2).map(seat => ({
+    dep_seat_id: seat.dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id, passenger_name: "Fixture passenger",
+    passenger_phone: "0901234567", emergency_contact: "Fixture contact", health_declaration: true,
+  })) };
+  const book = { ...holdEndpoint, path: `/api/departures/${saleId}/holds`, body: () => bookingBody };
+  const booked = await request(book, actors.get("Customer"));
+  expect(booked, 201); noSecrets(booked.body.data);
+  assert.equal(booked.body.data.status, "Pending"); assert.equal(booked.body.data.total_amount, "1000000");
+  assert.equal(booked.body.data.tickets.length, 2);
+  assert.equal(booked.body.data.responsible_name_snapshot, "RouteMgr");
+  assert.equal(booked.body.data.responsible_role_snapshot, "RouteMgr");
+  assert.ok(!JSON.stringify(booked.body).includes("passenger_phone"));
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: holdInvoice.invoice_id } })).status, "Expired");
+  const retried = await request(book, actors.get("Customer"), { body: { ...bookingBody, seats: [...bookingBody.seats].reverse() } });
+  expect(retried, 201); assert.deepEqual(retried.body, booked.body);
+  const afterHold = await deniedSnapshot();
+  expect(await request(book, actors.get("Customer"), { body: { ...bookingBody,
+    seats: bookingBody.seats.map(seat => ({ ...seat, passenger_name: "Changed passenger" })) } }), 409, "RESOURCE_CONFLICT");
+  expect(await request(book, actors.get("OtherCustomer")), 409, "RESOURCE_CONFLICT");
+  for (const change of [{ responsible_user_id: actors.get("Admin").user_id }, { customer_id: actors.get("OtherCustomer").user_id }, { total_amount: "1" }]) {
+    expect(await request(book, actors.get("Customer"), { body: { ...bookingBody, ...change } }), 422, "INVALID_INPUT");
+  }
+  expect(await request({ ...book, path: "/api/departures/2147483647/holds" }, actors.get("Customer"),
+    { body: { ...bookingBody, idempotency_key: "http-missing-key-0001" } }), 404, "NOT_FOUND");
+  expect(await request({ ...book, path: "/api/departures/01/holds" }, actors.get("Customer")), 422, "INVALID_INPUT");
+  assert.equal(await deniedSnapshot(), afterHold, "Failed K02 requests cannot change invoice/snapshot/tickets/seats");
+  assert.deepEqual((await request(publicMap)).body.data.vehicles[0].seats.map(seat => seat.status), ["Locked", "Locked", "Sold"]);
+  expect(await request({ method: "GET", route: "invoices/[id]", path: `/api/invoices/${booked.body.data.invoice_id}` }, actors.get("Customer")), 200);
+  expect(await request({ method: "GET", route: "invoices/[id]", path: `/api/invoices/${booked.body.data.invoice_id}` }, actors.get("OtherCustomer")), 404, "NOT_FOUND");
+  console.log("PASS: K02 HTTP holds create the assigned employee snapshot, reclaim expired Pending holds, replay normalized retries and reject payload/key/ownership tampering without mutation.");
+
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
   const leaderRead = endpoints.find(e => e.route === "leader/departures");
@@ -339,7 +391,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 32 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log("PASS: Locked and revoked sessions fail all 33 methods for every role; fresh sessions work and absolute expiry remains enforced.");
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };
