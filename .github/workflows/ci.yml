@@ -49,6 +49,9 @@ jobs:
       - name: Run unit & integration tests
         run: npm test
 
+      - name: Verify concurrent assignments (disposable local PostgreSQL)
+        run: npm run test:assignments:concurrency
+
       - name: Build production bundle
         run: npm run build
 

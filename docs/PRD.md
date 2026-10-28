@@ -195,7 +195,7 @@ Leader mở web mobile, quét QR (`ticket_code`). Hệ thống kiểm tra vé `V
 
 ## 6. Mô hình dữ liệu (ERD)
 
-ERD giữ các bảng/trạng thái baseline, kể cả refund/review deferred. Các cột trách nhiệm có nhãn PLANNED dưới đây là thiết kế đích cho yêu cầu 17/10, **chưa có trong schema.prisma/migrations hiện tại**; xem 6.2 và 7.8.
+ERD giữ các bảng/trạng thái baseline, kể cả refund/review deferred. `DEPARTURES.invoice_owner_user_id` đã có migration trong nhánh tích hợp O03/O04 ngày 26/10; các cột snapshot trách nhiệm trên INVOICES có nhãn PLANNED vẫn là thiết kế đích, chưa triển khai trong nhánh này. Xem 6.2 và 7.8; có migration trong repo không đồng nghĩa đã áp dụng vào DB của từng thành viên.
 
 `USERS.role` bên dưới có năm giá trị theo A02 đã merge. Migration chuyển dữ liệu Accountant cũ trước khi thay kiểu enum; không xóa tài khoản hoặc FK. Đã kiểm thử local và áp dụng/xác minh trên Supabase development của người dùng ngày 21/10; không suy ra đã áp dụng trên DB riêng của thành viên khác.
 
@@ -318,7 +318,7 @@ erDiagram
         decimal price_override "Null = use base_price"
         varchar status "Draft, Open, Closed, Confirmed, Running, Ended, Cancelled, Rescheduled"
         boolean is_demo "Default false; development fixture only"
-        int invoice_owner_user_id FK "PLANNED; nullable Draft; Active RouteMgr before Open"
+        int invoice_owner_user_id FK "Nullable legacy; Active RouteMgr before Open"
     }
 
     DEPARTURE_PICKUPS {
@@ -440,7 +440,7 @@ erDiagram
 
     USERS ||--o{ INVOICES : "buys"
     USERS ||--o{ INVOICES : "responsible employee PLANNED"
-    USERS |o--o{ DEPARTURES : "invoice owner PLANNED"
+    USERS |o--o{ DEPARTURES : "invoice owner"
     USERS |o--o| STAFF : "Leader account"
     USERS ||--o{ AUDIT_LOGS : "triggers"
     USERS ||--o{ REVIEWS : "writes"
@@ -492,14 +492,14 @@ erDiagram
 - Bước Auth chỉ thêm `USERS.auth_version` số nguyên không âm, default 0, dùng thu hồi JWT cũ sau đổi role hoặc khóa/mở khóa. Rate counters lưu trong Upstash Redis với TTL, không có bảng `AUTH_RATE_LIMITS`. Không thêm bảng Auth.js account/session vì dùng credentials + JWT.
 - A02 thêm migration `20261021000000_five_roles`: Accountant → Customer + Locked, tăng auth_version và audit trong cùng transaction; thay enum UserRole bằng năm giá trị. Giữ default Customer, RLS/grants, user_id và mọi FK/lịch sử; không gộp migration trách nhiệm hóa đơn của O03/K02. Seed mới tạo năm role, không tái tạo/mở khóa Accountant cũ.
 
-### 6.2. Migration cần có cho người chịu trách nhiệm (chưa triển khai)
+### 6.2. Migration người chịu trách nhiệm: O03 đã tích hợp, snapshot invoice còn kế hoạch
 
 - DEPARTURES.invoice_owner_user_id → USERS.user_id, nullable cho Draft/legacy; service bắt buộc Active RouteMgr khi mở bán và tạo đơn. Chỉ Admin đổi người đã phân công; RouteMgr tự nhận lúc tạo Draft.
 - INVOICES.responsible_user_id → USERS.user_id, responsible_name_snapshot và responsible_role_snapshot; bắt buộc với invoice mới sau cutover. Tham chiếu USERS vì STAFF chỉ mô hình Driver/Assistant/Leader, không ép RouteMgr thành nhân sự đi tour.
 - FK RESTRICT, index cho FK và danh sách invoice theo nhân viên/ngày. Tạo hai relation User→Invoice rõ tên: buyer và responsible employee. Snapshot không thay FK, FK không thay snapshot.
 - Migration theo expand/backfill/enforce: đọc số liệu DB đích trước; nếu có invoice cũ chưa biết nhân viên thì lập danh sách ngoại lệ cho Admin xác minh, không gán bừa người tạo seed/đang đăng nhập. Chỉ siết NOT NULL toàn bảng khi dữ liệu đủ; record legacy chưa xác minh hiển thị rõ thay vì tạo tên giả.
 - Không xóa tài khoản Accountant cũ, Refund/Cancelled hoặc sửa migration đã áp dụng trong thay đổi trách nhiệm hóa đơn. Loại giá trị Accountant khỏi UserRole và chuyển tài khoản thuộc migration A02 riêng; bỏ tính năng không đồng nghĩa xóa dữ liệu.
-- Các cột này và quy tắc backfill mới ở mức đặc tả. Chưa tạo migration hoặc ghi DB trong lượt cập nhật PRD.
+- Checkpoint 26/10: nhánh tích hợp O03/O04 có migration `20261018000000_departure_invoice_owner` từ PR #7: thêm FK nullable RESTRICT và index; giữ nguyên NULL của legacy, không gán nhân viên giả. Kiểm thử cả DB trống và bổ sung migration này sau baseline A02 năm role. Chưa áp dụng Supabase trong đợt tích hợp. Các cột/snapshot INVOICES và backfill thuộc K02, chưa có trong nhánh này.
 
 ## 7. Quy tắc dữ liệu và đồng thời
 
@@ -580,6 +580,17 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Đổi tên/khóa/đổi role nhân viên không ghi đè snapshot hoặc cascade xóa invoice. Payment retry không tra người phụ trách hiện tại để thay danh tính lịch sử; điều kiện tiền/ghế vẫn theo 5.2.
 - Quyền đọc: Customer own; RouteMgr có invoice.responsible_user_id của mình; Admin toàn bộ. Leader chỉ manifest assigned, HRMgr chỉ số lượng vận hành, không hưởng thêm quyền tiền vì có liên kết nhân sự.
 - DTO customer chỉ trả tên/role snapshot cần hiển thị; không trả email, điện thoại riêng, auth_version hoặc hồ sơ nhân viên. Audit đổi phân công lưu actor/old_id/new_id/thời gian; không ghi PII tự do. Từ chối mass assignment các cột trách nhiệm từ payload Customer.
+
+### 7.9. Tạo chuyến và phân công O03/O04 — checkpoint 26/10/2026
+
+- Handler → Business service → repository, cùng transaction cho thay đổi và audit. O03 chỉ tạo/sửa Draft và chuyển Draft → Open; các cạnh trạng thái còn lại thuộc O05. RouteMgr/Admin quản lý Draft; Admin mới được đổi người phụ trách đã có. RouteMgr tạo Draft tự nhận trách nhiệm; Admin tạo phải chọn RouteMgr Active.
+- Draft đã có xe/phân công không được đổi `departure_date` sang giá trị khác: trả `RESOURCE_CONFLICT`; gỡ phân công trước rồi đổi ngày, sau đó phân công lại để chạy đủ kiểm tra lịch. Gửi lại cùng timestamp không phải đổi lịch. Open trở đi không sửa lịch/giá/điểm đón qua API này.
+- Mở bán kiểm tra lại tuyến/điểm đón active, deadline/lịch đón, RouteMgr phụ trách Active, mỗi xe Ready/không bảo dưỡng/không trùng ngày và tập ghế sinh đúng toàn bộ ghế active. Nhân sự đã gán phải Active/đúng loại; Driver có số bằng và hạn bằng còn hiệu lực vào ngày chuyến; Leader có tài khoản Leader Active. Thiếu nhân sự tối thiểu để Confirmed thuộc O05, không chuyển điều kiện đó sang Open.
+- HRMgr/Admin ghi phân công. GET assignments cho HRMgr/Admin đọc toàn bộ; RouteMgr đọc chuyến do mình phụ trách; Leader chỉ đọc chuyến mình được gán vai trò Leader, hồ sơ Active và đúng loại Leader, trạng thái Confirmed/Running/Ended. Không trả email/điện thoại hoặc thông tin tài khoản qua DTO phân công.
+- Gán xe lại giữ nguyên hàng phân công và `dep_seat_id`, chỉ sinh ghế active chưa có. Không gỡ xe khi có ghế Locked/Sold hoặc lịch sử vé, hoặc khi đây là xe cuối của chuyến không còn Draft. Không thay đổi Sold/nhả ghế của booking. Gán lại cùng nhân sự/vai trò/xe trả phân công hiện có; chuyển xe cần gỡ phân công trước.
+- Chống trùng lịch theo **ngày Việt Nam của thời điểm khởi hành**, loại các chuyến Ended/Cancelled/Rescheduled khỏi kiểm tra bận. Chưa có thời điểm kết thúc nên chưa hỗ trợ kiểm tra giao nhau của chuyến nhiều ngày; đây là giới hạn dữ liệu hiện tại.
+- Thứ tự khóa: departure `FOR UPDATE`; tuyến trước điểm đón khi cần; xe theo ID tăng dần; nhân sự theo ID tăng dần; tài khoản liên quan `FOR SHARE` khi kiểm điều kiện. Người phụ trách mở chuyến cũng được giữ `FOR SHARE` tới commit. Hai chuyến khác nhau gán cùng nhân sự phải cùng khóa row STAFF trước kiểm lịch và ghi; không chỉ khóa hai departure riêng. Module O02 cập nhật hồ sơ/credential cần giữ quy ước khóa tương thích.
+- Booking/K02 phải đọc lại người phụ trách và ghi snapshot trong transaction của chính nó theo 7.8; O03 mở bán thành công không thay thế kiểm tra lúc tạo invoice. Chưa coi snapshot hóa đơn/thanh toán/O05 hoặc UI O06/O07 đã hoàn thành.
 
 ## 8. Thanh toán và hoàn tiền
 

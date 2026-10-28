@@ -33,6 +33,11 @@ function page<T>(items: T[], totalItems: number, query: { page: number; pageSize
 const localDay = (instant: Date) => new Date(instant.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
 const dayStart = (day: string) => new Date(`${day}T00:00:00+07:00`);
 const dbDate = (day: string) => new Date(`${day}T00:00:00Z`);
+/** The local (Vietnam) calendar day of an instant: its @db.Date value and its [start, end) instants. */
+export function vietnamDay(instant: Date) {
+  const day = localDay(instant);
+  return { date: dbDate(day), range: { gte: dayStart(day), lt: new Date(dayStart(day).getTime() + DAY_MS) } };
+}
 function maintenanceDto(row: fleet.MaintenanceRow): MaintenanceDto {
   return { ...row, start_date: row.start_date.toISOString().slice(0, 10), end_date: row.end_date.toISOString().slice(0, 10),
     cost: row.cost.toFixed(0) };
@@ -175,13 +180,16 @@ export async function createMaintenance(db: Database, identity: Actor, vehicleId
 
 // Departure assignment (O04) must call this inside its transaction before inserting departure_vehicles.
 // shortcut: departures store only a start instant, so only that local day is checked; add an end date for multi-day trips.
-export async function assertVehicleAssignable(tx: Transaction, vehicleId: number, departureDate: Date) {
+export async function assertVehicleAssignable(tx: Transaction, vehicleId: number, departureDate: Date,
+  departureId?: number) {
   assertId(vehicleId);
   const vehicle = await lockVehicle(tx, vehicleId);
   if (vehicle.status !== "Ready") throw new AppError("VEHICLE_UNAVAILABLE", 409);
-  const day = dbDate(localDay(departureDate));
-  const blocked = await fleet.countMaintenanceOnDay(tx, vehicleId, day);
-  if (blocked) throw new AppError("VEHICLE_UNAVAILABLE", 409);
+  const { date, range } = vietnamDay(departureDate);
+  const blocked = await fleet.countMaintenanceOnDay(tx, vehicleId, date);
+  // The same vehicle cannot serve two open departures on one local day.
+  const busy = await fleet.countAssignments(tx, vehicleId, closedDepartures, range, departureId);
+  if (blocked || busy) throw new AppError("VEHICLE_UNAVAILABLE", 409);
   return vehicle;
 }
 

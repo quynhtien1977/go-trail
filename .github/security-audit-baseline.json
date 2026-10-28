@@ -1,8 +1,8 @@
 {
-  "version": "1.1.0",
-  "reviewedAt": "2026-10-20",
+  "version": "1.2.0",
+  "reviewedAt": "2026-10-28",
   "reviewDeadline": "2026-11-03T23:59:59Z",
-  "notes": "Reviewed 2026-10-20 with Prisma CLI/Client/pg adapter kept at 7.10.0 and the existing lockfile unchanged. The four known root advisories below remain temporary exceptions after reachability review. The user deferred dependency upgrades until current PRs are merged and the team can resync branches from develop. Re-review by 2026-11-03 or before production release, whichever comes first; this does not mean the vulnerabilities are fixed.",
+  "notes": "Re-reviewed 2026-10-28 after Next.js/Zod/shadcn and targeted transitive security updates. Prisma CLI/Client/pg adapter remain at 7.10.0 under the existing user deferral. The original exceptions remain time-bounded; the user explicitly approved the new unpatched Low deepmerge development-tool exception on 2026-10-28. Critical findings remain prohibited. Re-review by the unchanged 2026-11-03 deadline or before production release, whichever comes first; exceptions do not mean vulnerabilities are fixed.",
   "exceptions": [
     {
       "id": "GHSA-vfj7-8cjw-p6xm",
@@ -49,6 +49,16 @@
       "chain": ["prisma", "mysql2"],
       "reachability": "Affected path requires a compressed MySQL connection to a malicious or compromised MySQL server. Go-Trail uses PostgreSQL via pg and does not enable the MySQL compressed protocol. A patch is available through Prisma 7.10.1; the user deferred the coordinated upgrade until open PRs are merged and the team resyncs from develop. Review before any MySQL use or exception expiry.",
       "source": "https://github.com/advisories/GHSA-rgwj-5xj2-c3m3",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-gcqx-w48m-w2h4",
+      "package": "deepmerge",
+      "severity": "low",
+      "chain": ["shadcn", "deepmerge"],
+      "additionalChains": [["shadcn", "@shadcn/registry", "deepmerge"]],
+      "reachability": "Reviewed and explicitly approved by the user on 2026-10-28. Upstream latest deepmerge 4.3.1 has no patched release. Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. The CSS bytes are unchanged after the shadcn security update. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the existing deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
+      "source": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
       "expiresAt": "2026-11-03T23:59:59Z"
     }
   ]

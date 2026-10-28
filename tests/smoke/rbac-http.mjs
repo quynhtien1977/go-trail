@@ -110,7 +110,7 @@ try {
   const staff = await db.staff.create({ data: { user_id: actors.get("Leader").user_id, full_name: "Assigned leader", phone: "0901234567", staff_type: "Leader" } });
   const departures = [];
   for (const status of ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"]) {
-    const departure = await db.departure.create({ data: { trip_id: trip.trip_id, status, min_passengers: 1,
+    const departure = await db.departure.create({ data: { trip_id: trip.trip_id, status, min_passengers: 1, invoice_owner_user_id: actors.get("RouteMgr").user_id,
       departure_date: new Date("2030-01-02"), booking_deadline: new Date("2030-01-01") } });
     const assignment = await db.departureVehicle.create({ data: { departure_id: departure.departure_id, vehicle_id: otherVehicle.vehicle_id } });
     await db.departureStaff.create({ data: { departure_id: departure.departure_id, staff_id: staff.staff_id, role_in_trip: "Leader", dep_vehicle_id: assignment.dep_vehicle_id } });
@@ -138,9 +138,44 @@ try {
   route("staff/vehicles/[id]/seats/[seatId]", `/api/staff/vehicles/${vehicle.vehicle_id}/seats/${seat.seat_id}`, ["HRMgr", "Admin"], { PATCH: () => ({ seat_name: `S${next()}` }), DELETE: undefined });
   route("staff/vehicles/[id]/maintenance", `/api/staff/vehicles/${vehicle.vehicle_id}/maintenance`, ["HRMgr", "Admin"], { GET: undefined,
     POST: () => ({ start_date: "2031-01-01", end_date: "2031-01-02", description: "Fixture maintenance", cost: "100000" }) });
-  assert.equal(endpoints.length, 23);
+  // O03/O04 fixtures are separate from catalog/fleet retirement fixtures above.
+  const operationsTrip = await db.trip.create({ data: { ...tripInput, name: "Operations trail" } });
+  const operationsPickup = await db.pickupPoint.create({ data: { trip_id: operationsTrip.trip_id, name: "Operations pickup", address: "Fixture address" } });
+  const operationsDates = { departure_date: "2032-01-02T02:00:00.000Z", booking_deadline: "2032-01-01T02:00:00.000Z" };
+  const draft = await db.departure.create({ data: { trip_id: operationsTrip.trip_id, status: "Draft", min_passengers: 1,
+    invoice_owner_user_id: actors.get("RouteMgr").user_id,
+    departure_date: new Date(operationsDates.departure_date), booking_deadline: new Date(operationsDates.booking_deadline) } });
+  const operationsVehicle = await db.vehicle.create({ data: { plate_number: "RBAC-OPS", vehicle_type: "Fixture bus", seat_count: 1,
+    seats: { create: [seatInput] } } });
+  const removeVehicle = await db.vehicle.create({ data: { plate_number: "RBAC-REMOVE", vehicle_type: "Fixture bus", seat_count: 1,
+    seats: { create: [seatInput] } } });
+  const assistant = await db.staff.create({ data: { full_name: "Operations assistant", phone: "0901234567", staff_type: "Assistant" } });
+  route("staff/trips/[id]/departures", `/api/staff/trips/${operationsTrip.trip_id}/departures`, ["RouteMgr", "Admin"], { GET: undefined,
+    POST: () => ({ ...operationsDates, min_passengers: 1, invoice_owner_user_id: actors.get("RouteMgr").user_id,
+      pickups: [{ pickup_id: operationsPickup.pickup_id, pickup_time: operationsDates.departure_date }] }) });
+  route("staff/departures/[id]", `/api/staff/departures/${draft.departure_id}`, ["RouteMgr", "Admin"], {
+    GET: undefined, PATCH: () => ({ min_passengers: 2 }) });
+  route("staff/departures/[id]/assignments", `/api/staff/departures/${departures[3].departure_id}/assignments`, ["RouteMgr", "Leader", "HRMgr", "Admin"], { GET: undefined });
+  route("staff/departures/[id]/vehicles", `/api/staff/departures/${draft.departure_id}/vehicles`, ["HRMgr", "Admin"], { POST: () => ({ vehicle_id: operationsVehicle.vehicle_id }) });
+  endpoints.at(-1).success = 200;
+  route("staff/departures/[id]/vehicles/[vehicleId]", `/api/staff/departures/${draft.departure_id}/vehicles/${removeVehicle.vehicle_id}`, ["HRMgr", "Admin"], { DELETE: undefined });
+  endpoints.at(-1).prepareSuccess = async () => {
+    await db.departureVehicle.create({ data: { departure_id: draft.departure_id, vehicle_id: removeVehicle.vehicle_id } });
+  };
+  route("staff/departures/[id]/staff", `/api/staff/departures/${draft.departure_id}/staff`, ["HRMgr", "Admin"], {
+    POST: () => ({ vehicle_id: operationsVehicle.vehicle_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" }) });
+  endpoints.at(-1).success = 200;
+  route("staff/departures/[id]/staff/[assignmentId]", `/api/staff/departures/${draft.departure_id}/staff/2147483647`, ["HRMgr", "Admin"], { DELETE: undefined });
+  const removeStaffEndpoint = endpoints.at(-1);
+  removeStaffEndpoint.prepareSuccess = async () => {
+    const assignment = await db.departureVehicle.findUniqueOrThrow({ where: { departure_id_vehicle_id: { departure_id: draft.departure_id, vehicle_id: operationsVehicle.vehicle_id } } });
+    const crew = await db.departureStaff.upsert({ where: { departure_id_staff_id_role_in_trip: { departure_id: draft.departure_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" } },
+      create: { departure_id: draft.departure_id, dep_vehicle_id: assignment.dep_vehicle_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" }, update: {} });
+    removeStaffEndpoint.path = `/api/staff/departures/${draft.departure_id}/staff/${crew.dep_staff_id}`;
+  };
+  assert.equal(endpoints.length, 32);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 23 protected API methods; new/unclassified API methods fail this gate.");
+  console.log("PASS: explicit A03 policies cover all 32 protected API methods; new/unclassified API methods fail this gate.");
 
   child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
@@ -162,6 +197,9 @@ try {
     const rows = await Promise.all([db.trip.findMany({ orderBy: { trip_id: "asc" } }),
       db.pickupPoint.findMany({ orderBy: { pickup_id: "asc" } }), db.vehicle.findMany({ orderBy: { vehicle_id: "asc" } }),
       db.vehicleSeat.findMany({ orderBy: { seat_id: "asc" } }), db.vehicleMaintenance.findMany({ orderBy: { maintenance_id: "asc" } }),
+      db.departure.findMany({ orderBy: { departure_id: "asc" } }), db.departurePickup.findMany({ orderBy: { dep_pickup_id: "asc" } }),
+      db.departureVehicle.findMany({ orderBy: { dep_vehicle_id: "asc" } }), db.departureStaff.findMany({ orderBy: { dep_staff_id: "asc" } }),
+      db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }),
       db.auditLog.findMany({ orderBy: { log_id: "asc" } }), db.invoice.findMany({ orderBy: { invoice_id: "asc" } }),
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
@@ -178,11 +216,20 @@ try {
   console.log("PASS: anonymous and disallowed roles fail every protected method, including forged Admin JWT roles, without altering business rows, access or audits.");
   for (const endpoint of endpoints) {
     for (const role of endpoint.allowed) {
+      await endpoint.prepareSuccess?.();
       const result = await request(endpoint, actors.get(role));
       expect(result, endpoint.success); noSecrets(result.body.data);
     }
   }
   console.log("PASS: every allowed role executes each permitted method successfully; read DTOs omit credentials, bank fields and session versions.");
+
+  const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
+  expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");
+  expect(await request({ ...assignmentRead, path: `/api/staff/departures/${departures[0].departure_id}/assignments` }, actors.get("Leader")), 403, "FORBIDDEN");
+  await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: null } });
+  expect(await request(assignmentRead, actors.get("RouteMgr")), 403, "FORBIDDEN");
+  await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: actors.get("RouteMgr").user_id } });
+  console.log("PASS: assignment reads enforce RouteMgr ownership and assigned Leader operational-state scope.");
 
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
@@ -227,7 +274,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 23 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log("PASS: Locked and revoked sessions fail all 32 methods for every role; fresh sessions work and absolute expiry remains enforced.");
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };
