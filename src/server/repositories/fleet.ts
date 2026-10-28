@@ -24,9 +24,11 @@ export async function lockVehicleForUpdate(tx: Prisma.TransactionClient, id: num
   return tx.vehicle.findUniqueOrThrow({ where: { vehicle_id: id }, select: vehicleSelect });
 }
 
-export function countAssignments(db: DataClient, vehicleId: number, excludedStatuses: readonly DepartureStatus[], range?: { gte: Date; lt: Date }) {
+export function countAssignments(db: DataClient, vehicleId: number, excludedStatuses: readonly DepartureStatus[],
+  range?: { gte: Date; lt: Date }, exceptDepartureId?: number) {
   return db.departureVehicle.count({ where: { vehicle_id: vehicleId,
-    departure: { status: { notIn: [...excludedStatuses] }, ...(range ? { departure_date: range } : {}) } } });
+    departure: { status: { notIn: [...excludedStatuses] }, ...(range ? { departure_date: range } : {}),
+      ...(exceptDepartureId !== undefined ? { departure_id: { not: exceptDepartureId } } : {}) } } });
 }
 
 export function findSeatAtPosition(db: DataClient, vehicleId: number, seat: Pick<SeatDto, "floor_level" | "x_position" | "y_position">, exceptSeatId?: number) {
