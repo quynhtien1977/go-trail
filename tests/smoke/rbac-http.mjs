@@ -30,7 +30,7 @@ async function apiFiles(dir) {
 async function assertRouteCoverage(endpoints) {
   const expected = endpoints.map(e => `${e.method} ${e.route}`);
   expected.push("GET auth/[...nextauth]", "POST auth/[...nextauth]", "POST auth/register",
-    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures");
+    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -230,6 +230,71 @@ try {
   expect(await request(assignmentRead, actors.get("RouteMgr")), 403, "FORBIDDEN");
   await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: actors.get("RouteMgr").user_id } });
   console.log("PASS: assignment reads enforce RouteMgr ownership and assigned Leader operational-state scope.");
+
+  // K01: use the real O03/O04 HTTP flow before exercising its public read contract.
+  const saleDate = "2033-01-02T02:00:00.000Z", saleDeadline = "2033-01-01T02:00:00.000Z";
+  const createdSale = await request({ method: "POST", route: "staff/trips/[id]/departures",
+    path: `/api/staff/trips/${operationsTrip.trip_id}/departures`, body: () => ({
+      departure_date: saleDate, booking_deadline: saleDeadline, min_passengers: 1,
+      pickups: [{ pickup_id: operationsPickup.pickup_id, pickup_time: saleDate }],
+    }) }, actors.get("RouteMgr"));
+  expect(createdSale, 201);
+  const saleId = createdSale.body.data.departure_id;
+  const saleVehicle = await db.vehicle.create({ data: { plate_number: "PRIVATE-SEAT-BUS", vehicle_type: "Public bus", seat_count: 3,
+    seats: { create: [0, 1, 2].map(index => ({ seat_name: `S0${index + 1}`, floor_level: index === 2 ? 2 : 1,
+      x_position: index === 1 ? 1 : 0, y_position: 0 })) } } });
+  expect(await request({ method: "POST", route: "staff/departures/[id]/vehicles", path: `/api/staff/departures/${saleId}/vehicles`,
+    body: () => ({ vehicle_id: saleVehicle.vehicle_id }) }, actors.get("HRMgr")), 200);
+  expect(await request({ method: "PATCH", route: "staff/departures/[id]", path: `/api/staff/departures/${saleId}`,
+    body: () => ({ status: "Open" }) }, actors.get("RouteMgr")), 200);
+  const saleSeats = await db.departureSeat.findMany({ where: { vehicle: { departure_id: saleId } },
+    orderBy: { seat: { seat_name: "asc" } } });
+  const holdInvoice = await db.invoice.create({ data: { customer_id: actors.get("Customer").user_id, departure_id: saleId,
+    payment_code: "PRIVATE-SEAT-HOLD", total_amount: "1000000", expires_at: new Date(Date.now() + 3600000) } });
+  const paidInvoice = await db.invoice.create({ data: { customer_id: actors.get("OtherCustomer").user_id, departure_id: saleId,
+    payment_code: "PRIVATE-SEAT-PAID", status: "Paid", total_amount: "500000", expires_at: new Date("2033-01-01") } });
+  await db.departureSeat.update({ where: { dep_seat_id: saleSeats[0].dep_seat_id },
+    data: { status: "Locked", invoice_id: holdInvoice.invoice_id, locked_until: new Date(Date.now() - 1000) } });
+  await db.departureSeat.update({ where: { dep_seat_id: saleSeats[1].dep_seat_id },
+    data: { status: "Locked", invoice_id: holdInvoice.invoice_id, locked_until: new Date(Date.now() + 3600000) } });
+  await db.departureSeat.update({ where: { dep_seat_id: saleSeats[2].dep_seat_id },
+    data: { status: "Sold", invoice_id: paidInvoice.invoice_id } });
+  const publicMap = { method: "GET", route: "departures/[id]/seats", path: `/api/departures/${saleId}/seats` };
+  const beforePublicRead = await deniedSnapshot();
+  for (const actor of [undefined, ...roles.map(role => actors.get(role))]) {
+    const result = await request(publicMap, actor);
+    expect(result, 200); noSecrets(result.body.data);
+    assert.deepEqual(Object.keys(result.body.data).sort(), ["departure_id", "vehicles"]);
+    assert.equal(result.body.data.departure_id, saleId);
+    assert.equal(result.body.data.vehicles.length, 1);
+    const bus = result.body.data.vehicles[0];
+    assert.deepEqual(Object.keys(bus).sort(), ["dep_vehicle_id", "seats", "vehicle_type"]);
+    assert.equal(bus.vehicle_type, "Public bus");
+    assert.deepEqual(bus.seats.map(seat => [seat.seat_name, seat.status]), [["S01", "Available"], ["S02", "Locked"], ["S03", "Sold"]]);
+    for (const seat of bus.seats) assert.deepEqual(Object.keys(seat).sort(),
+      ["dep_seat_id", "floor_level", "seat_name", "status", "x_position", "y_position"]);
+  }
+  assert.equal(await deniedSnapshot(), beforePublicRead, "Public seat-map reads cannot clean holds, change invoices/seats or write audits");
+  for (const status of ["Draft", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"]) {
+    await db.departure.update({ where: { departure_id: saleId }, data: { status } });
+    expect(await request(publicMap), 404, "NOT_FOUND");
+  }
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Open", is_demo: true } });
+  expect(await request(publicMap), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: { is_demo: false, booking_deadline: new Date(Date.now() - 1000) } });
+  expect(await request(publicMap), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: {
+    departure_date: new Date(Date.now() - 1000), booking_deadline: new Date(Date.now() - 2000) } });
+  expect(await request(publicMap), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: { departure_date: new Date(saleDate), booking_deadline: new Date(saleDeadline) } });
+  await db.trip.update({ where: { trip_id: operationsTrip.trip_id }, data: { is_active: false } });
+  expect(await request(publicMap), 404, "NOT_FOUND");
+  await db.trip.update({ where: { trip_id: operationsTrip.trip_id }, data: { is_active: true } });
+  expect(await request({ ...publicMap, path: "/api/departures/2147483647/seats" }), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "not-a-number"]) {
+    expect(await request({ ...publicMap, path: `/api/departures/${id}/seats` }), 422, "INVALID_INPUT");
+  }
+  console.log("PASS: K01 public seat map follows O03/O04 sale setup, returns only safe seat fields to guests/all roles, hides unavailable departures and never mutates holds.");
 
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
