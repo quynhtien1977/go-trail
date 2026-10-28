@@ -195,7 +195,7 @@ Leader mở web mobile, quét QR (`ticket_code`). Hệ thống kiểm tra vé `V
 
 ## 6. Mô hình dữ liệu (ERD)
 
-ERD giữ các bảng/trạng thái baseline, kể cả refund/review deferred. `DEPARTURES.invoice_owner_user_id` đã có migration trong nhánh tích hợp O03/O04 ngày 26/10; các cột snapshot trách nhiệm trên INVOICES có nhãn PLANNED vẫn là thiết kế đích, chưa triển khai trong nhánh này. Xem 6.2 và 7.8; có migration trong repo không đồng nghĩa đã áp dụng vào DB của từng thành viên.
+ERD giữ các bảng/trạng thái baseline, kể cả refund/review deferred. `DEPARTURES.invoice_owner_user_id` đã merge qua O03/O04. Snapshot trách nhiệm và idempotency trên INVOICES đã có trong nhánh tích hợp K02 ngày 28/10, được kiểm định local; chưa áp dụng Supabase trong đợt này. Xem 6.2 và 7.8; có migration trong repo không đồng nghĩa đã áp dụng vào DB của từng thành viên.
 
 `USERS.role` bên dưới có năm giá trị theo A02 đã merge. Migration chuyển dữ liệu Accountant cũ trước khi thay kiểu enum; không xóa tài khoản hoặc FK. Đã kiểm thử local và áp dụng/xác minh trên Supabase development của người dùng ngày 21/10; không suy ra đã áp dụng trên DB riêng của thành viên khác.
 
@@ -362,9 +362,10 @@ erDiagram
     INVOICES {
         int invoice_id PK
         int customer_id FK "Buyer"
-        int responsible_user_id FK "PLANNED; copied from departure owner"
-        nvarchar responsible_name_snapshot "PLANNED; name at invoice creation"
-        varchar responsible_role_snapshot "PLANNED; RouteMgr at creation"
+        int responsible_user_id FK "Nullable legacy; copied from departure owner"
+        nvarchar responsible_name_snapshot "Nullable legacy; name at invoice creation"
+        varchar responsible_role_snapshot "Historical text; RouteMgr at creation"
+        varchar idempotency_key "Nullable legacy; unique with customer_id"
         int departure_id FK
         varchar payment_code UK "Transfer content, e.g. TB000123"
         decimal total_amount
@@ -439,7 +440,7 @@ erDiagram
     }
 
     USERS ||--o{ INVOICES : "buys"
-    USERS ||--o{ INVOICES : "responsible employee PLANNED"
+    USERS |o--o{ INVOICES : "responsible employee, optional legacy"
     USERS |o--o{ DEPARTURES : "invoice owner"
     USERS |o--o| STAFF : "Leader account"
     USERS ||--o{ AUDIT_LOGS : "triggers"
@@ -492,14 +493,15 @@ erDiagram
 - Bước Auth chỉ thêm `USERS.auth_version` số nguyên không âm, default 0, dùng thu hồi JWT cũ sau đổi role hoặc khóa/mở khóa. Rate counters lưu trong Upstash Redis với TTL, không có bảng `AUTH_RATE_LIMITS`. Không thêm bảng Auth.js account/session vì dùng credentials + JWT.
 - A02 thêm migration `20261021000000_five_roles`: Accountant → Customer + Locked, tăng auth_version và audit trong cùng transaction; thay enum UserRole bằng năm giá trị. Giữ default Customer, RLS/grants, user_id và mọi FK/lịch sử; không gộp migration trách nhiệm hóa đơn của O03/K02. Seed mới tạo năm role, không tái tạo/mở khóa Accountant cũ.
 
-### 6.2. Migration người chịu trách nhiệm: O03 đã tích hợp, snapshot invoice còn kế hoạch
+### 6.2. Migration người chịu trách nhiệm: O03 đã merge, snapshot K02 đã kiểm định local
 
 - DEPARTURES.invoice_owner_user_id → USERS.user_id, nullable cho Draft/legacy; service bắt buộc Active RouteMgr khi mở bán và tạo đơn. Chỉ Admin đổi người đã phân công; RouteMgr tự nhận lúc tạo Draft.
 - INVOICES.responsible_user_id → USERS.user_id, responsible_name_snapshot và responsible_role_snapshot; bắt buộc với invoice mới sau cutover. Tham chiếu USERS vì STAFF chỉ mô hình Driver/Assistant/Leader, không ép RouteMgr thành nhân sự đi tour.
 - FK RESTRICT, index cho FK và danh sách invoice theo nhân viên/ngày. Tạo hai relation User→Invoice rõ tên: buyer và responsible employee. Snapshot không thay FK, FK không thay snapshot.
 - Migration theo expand/backfill/enforce: đọc số liệu DB đích trước; nếu có invoice cũ chưa biết nhân viên thì lập danh sách ngoại lệ cho Admin xác minh, không gán bừa người tạo seed/đang đăng nhập. Chỉ siết NOT NULL toàn bảng khi dữ liệu đủ; record legacy chưa xác minh hiển thị rõ thay vì tạo tên giả.
 - Không xóa tài khoản Accountant cũ, Refund/Cancelled hoặc sửa migration đã áp dụng trong thay đổi trách nhiệm hóa đơn. Loại giá trị Accountant khỏi UserRole và chuyển tài khoản thuộc migration A02 riêng; bỏ tính năng không đồng nghĩa xóa dữ liệu.
-- Checkpoint 26/10: nhánh tích hợp O03/O04 có migration `20261018000000_departure_invoice_owner` từ PR #7: thêm FK nullable RESTRICT và index; giữ nguyên NULL của legacy, không gán nhân viên giả. Kiểm thử cả DB trống và bổ sung migration này sau baseline A02 năm role. Chưa áp dụng Supabase trong đợt tích hợp. Các cột/snapshot INVOICES và backfill thuộc K02, chưa có trong nhánh này.
+- Checkpoint O03: migration `20261018000000_departure_invoice_owner` từ PR #7 đã merge vào develop qua PR #18: FK nullable RESTRICT và index; giữ nguyên NULL của legacy, không gán nhân viên giả. Rollout DB riêng của từng thành viên vẫn cần xác minh/ủy quyền.
+- Checkpoint K02 ngày 28/10: migration `20261019000000_invoice_hold_snapshot` bổ sung ba cột trách nhiệm, `idempotency_key`, FK/index và UNIQUE `(customer_id, idempotency_key)`. Ba cột snapshot phải cùng NULL hoặc cùng có giá trị; role snapshot là TEXT với CHECK `RouteMgr`, tách khỏi enum UserRole hiện tại để không chặn migration thay enum A02 và giữ ý nghĩa lịch sử. Invoice có idempotency key bắt buộc có snapshot đầy đủ/tên không trống; key đúng format 16–64 ký tự. Legacy không backfill suy đoán; không đổi RLS/grants hoặc xóa lịch sử. Đã kiểm thử cả thứ tự migration trên DB trống và nâng cấp sau A02; chưa chạy remote trong checkpoint này.
 
 ## 7. Quy tắc dữ liệu và đồng thời
 
@@ -511,17 +513,19 @@ SET status = 'Locked',
     locked_until = now() + make_interval(mins => $ttl),
     invoice_id = $invoice_id
 WHERE dep_seat_id = $seat_id
-  AND (status = 'Available' OR (status = 'Locked' AND locked_until < now()));
+  AND (status = 'Available' OR (status = 'Locked' AND locked_until <= now()));
 ```
 - **Không** dùng điều kiện `OR locked_until < now()` đơn lẻ, vì ghế `Sold` còn `locked_until` cũ sẽ bị khớp và bán trùng.
 - Khi chuyển `Sold` hoặc `Available`, luôn đặt `locked_until = NULL`.
 - Khóa nhiều ghế: một transaction, theo thứ tự `dep_seat_id` tăng dần để tránh deadlock.
 - Truy vấn sơ đồ ghế coi ghế `Locked` đã quá `locked_until` là `Available` (không phụ thuộc cron).
 - Khi giữ lại ghế từ một hold hết hạn, transaction booking phải hủy vé `Pending` cũ và xử lý hóa đơn hết hạn trước khi chèn vé mới, để partial unique không phụ thuộc cron dọn trước. Không hủy vé `Valid` hoặc ghi đè ghế `Sold`.
+- K02 thực tế khóa invoice cũ và toàn bộ ghế liên quan, kiểm Pending hết hạn, dọn trong cùng transaction rồi UPDATE từng ghế theo ID tăng dần với điều kiện `Available` và đúng departure. Vì hold hết hạn hợp lệ đã được chuyển Available trước đó, bước UPDATE không thể lấy lại ghế của Paid/Valid/Sold. Một row không khớp rollback cả đơn, snapshot và cleanup trước đó.
 
 ### 7.2. Ràng buộc nên có
 - UNIQUE(`dep_vehicle_id`, `seat_id`) ở `DEPARTURE_SEATS`.
 - Partial UNIQUE(`dep_seat_id`) ở `INVOICE_DETAILS` khi `status <> 'Cancelled'`; giữ lịch sử ticket Pending đã hết hạn và cho phép ghế được đặt lại. Không áp dụng hủy vé Valid trong MVP. UNIQUE(`transaction_id`) ở `PAYMENTS`; UNIQUE(`payment_code`) ở `INVOICES`; UNIQUE(`idempotency_key`) ở `REFUNDS` legacy.
+- UNIQUE(`customer_id`, `idempotency_key`) ở `INVOICES`; NULL dành cho legacy. Giữ key cùng lịch sử invoice, không dùng TTL ngắn hơn vòng đời retry.
 - UNIQUE(`departure_id`, `staff_id`, `role_in_trip`) ở `DEPARTURE_STAFF`.
 - Không điều xe vào chuyến nếu khoảng ngày chuyến giao với `VEHICLE_MAINTENANCE`; không phân công tài xế có `license_expiry` trước ngày chuyến.
 - Mọi tiền dùng `decimal` (VND, số nguyên), không dùng float.
@@ -575,11 +579,15 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 
 ### 7.8. Bất biến người phụ trách hóa đơn
 
-- Assignment người phụ trách và snapshot phải nhất quán với transaction tạo invoice. Serialize việc đổi assignment/khóa tài khoản với booking theo thứ tự khóa thống nhất; không check ngoài transaction rồi dùng dữ liệu cũ. Chốt SQL/lock order chi tiết và test race trước implementation.
+- Assignment người phụ trách và snapshot phải nhất quán với transaction tạo invoice. K02 local ngày 28/10 chốt thứ tự: advisory lock theo customer/key → departure FOR SHARE → trip FOR SHARE → buyer/owner users theo ID tăng dần FOR SHARE → tạo invoice mới → các invoice cũ liên quan FOR UPDATE theo ID tăng dần → toàn bộ ghế yêu cầu và ghế của invoice cũ theo dep_seat_id tăng dần FOR UPDATE. Shared row locks xung đột với writer đổi assignment/account/trip; re-read sau khi chờ và giữ tới commit. Account service giữ advisory lock 717002 riêng; booking dùng không gian hai khóa 717025 + hash customer/key, không thay quy tắc account hiện hành.
 - Retry một request booking không tạo invoice thứ hai hoặc đổi người đứng tên trên invoice cũ. Thất bại khóa bất kỳ ghế nào rollback cả invoice và snapshot.
+- Key so sánh toàn bộ payload đã normalize/sắp theo ghế: departure, seat, pickup, tên/SĐT/liên hệ khẩn cấp/cam kết sức khỏe; cùng key nhưng khác payload trả 409 RESOURCE_CONFLICT. Retry nguyên request trả invoice/snapshot cũ, không gia hạn hold hoặc đổi theo assignment/giá mới. UNIQUE là ràng buộc bền vững; advisory transaction lock tuần tự hóa request trùng trước khi lấy resource locks.
+- Đơn mới chỉ vào chuyến Open thật, tuyến/điểm đón active, trước deadline và ngày khởi hành; pickup phải cùng tuyến/chuyến. Giá lấy trong transaction, VND dùng Decimal, limit/TTL theo settings mặc định 10/15. Recheck thời gian sau khi chờ khóa ghế; quá deadline rollback, TTL bắt đầu từ lần kiểm này. Customer không gửi buyer/price/owner/state; Admin kế thừa quyền theo ma trận 3.2 nhưng tạo đơn cho chính actor, không chỉ định Customer khác.
 - Đổi tên/khóa/đổi role nhân viên không ghi đè snapshot hoặc cascade xóa invoice. Payment retry không tra người phụ trách hiện tại để thay danh tính lịch sử; điều kiện tiền/ghế vẫn theo 5.2.
 - Quyền đọc: Customer own; RouteMgr có invoice.responsible_user_id của mình; Admin toàn bộ. Leader chỉ manifest assigned, HRMgr chỉ số lượng vận hành, không hưởng thêm quyền tiền vì có liên kết nhân sự.
 - DTO customer chỉ trả tên/role snapshot cần hiển thị; không trả email, điện thoại riêng, auth_version hoặc hồ sơ nhân viên. Audit đổi phân công lưu actor/old_id/new_id/thời gian; không ghi PII tự do. Từ chối mass assignment các cột trách nhiệm từ payload Customer.
+- POST `/api/departures/:id/holds` trả 201 với HoldDto trong envelope/no-store hiện hành, gồm tên/role snapshot và ticket summary; không trả responsible_user_id, số điện thoại/liên hệ khẩn cấp hoặc payload nội bộ. Endpoint yêu cầu phiên hợp lệ và canonical Origin. Quyền đọc invoice chi tiết/RouteMgr thuộc module hóa đơn tiếp theo; K02 không mở rộng GET invoice summary hiện hành.
+- Đã kiểm định local: 154 tests, 799 HTTP checks/33 protected methods, 13 nhóm concurrency K02 trên PostgreSQL nhiều kết nối và 4 nhóm hồi quy O03/O04. Đây chưa phải migration Supabase, UI checkout, K03 VietQR, K04 limiter/cron hoặc payment.
 
 ### 7.9. Tạo chuyến và phân công O03/O04 — checkpoint 26/10/2026
 
@@ -822,7 +830,7 @@ Tiền tố mã thanh toán (ví dụ `TB`) và webhook "Tiền vào" được c
 | 4 | Mục 4 chỉ vẽ mũi tên `Cancelled/Rescheduled` từ `Closed`, nhưng mục 8.4 xử lý hóa đơn `Paid`, mà hóa đơn `Paid` đã tồn tại ngay khi chuyến còn `Open` hoặc đã `Confirmed`. | **Superseded 17/10:** không hỗ trợ hủy/dời trong MVP; giữ enum/lịch sử, chặn các cạnh này ở service. |
 
 ### 15.8. Kiểm thử tối thiểu khi tới các bước liên quan
-- **Bước 4 (khóa ghế):** `scripts/seat-race-test.ts` bắn song song N request cùng một ghế, kết quả đúng 1 request thành công.
+- **Bước 4 (khóa ghế):** `rtk npm run test:bookings:concurrency` chạy `tests/integration/booking-concurrency.mjs` trên PostgreSQL local dùng một lần, nhiều kết nối; 8 khách tranh một ghế có đúng một invoice/ticket/hold commit. Bao gồm retry đồng thời, payload khác cùng key, thứ tự nhiều ghế, cleanup, race assignment/account/payment-state và deadline. CI chạy gate này; PGlite không thay thế bằng chứng cạnh tranh thật.
 - **Bước 5 (webhook):** gọi 2 lần với cùng `transaction_id` chỉ tạo 1 `PAYMENTS`; chuyển thiếu tiền hoặc sai nội dung cho `NeedsReview` và không đổi trạng thái ghế/hóa đơn.
 - **Không hủy/hoàn:** Customer/nhân viên/Admin gọi trực tiếp không thể hủy Paid/Valid, nhả Sold hoặc dời/hủy chuyến; Pending hết hạn nhả đúng hold; không tạo Refund. Giữ tests constraint legacy, không viết engine refund.
 - **Người phụ trách:** invoice mới có FK + snapshot đúng assignment; thiếu/Locked/sai role bị chặn; rollback/idempotency; race đổi assignment/khóa nhân viên; đổi tên/role sau lập không sửa snapshot; đọc khác owner bị chặn.

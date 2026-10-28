@@ -52,6 +52,9 @@ jobs:
       - name: Verify concurrent assignments (disposable local PostgreSQL)
         run: npm run test:assignments:concurrency
 
+      - name: Verify concurrent bookings (disposable local PostgreSQL)
+        run: npm run test:bookings:concurrency
+
       - name: Build production bundle
         run: npm run build
 

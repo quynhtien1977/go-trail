@@ -15,6 +15,7 @@
     "test:catalog:http": "node --conditions=react-server --import tsx tests/smoke/catalog-http.mjs",
     "test:rbac:http": "node --conditions=react-server --import tsx tests/smoke/rbac-http.mjs",
     "test:assignments:concurrency": "node --conditions=react-server --import tsx tests/integration/assignment-concurrency.mjs",
+    "test:bookings:concurrency": "node --conditions=react-server --import tsx tests/integration/booking-concurrency.mjs",
     "test:auth:redis": "node --conditions=react-server --import tsx tests/smoke/auth-redis.mjs",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
