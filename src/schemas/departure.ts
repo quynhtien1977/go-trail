@@ -13,8 +13,8 @@ const fields = {
 
 export const createDepartureSchema = z.strictObject({ ...fields, pickups: pickups.default([]),
   invoice_owner_user_id: id.optional(), is_demo: z.boolean().default(false) });
-// Only Draft -> Open is in scope; MVP has no cancel or reschedule (scope 17/10/2026).
-export const updateDepartureSchema = z.strictObject({ ...fields, status: z.literal("Open") }).partial()
+// Every status parses so unsupported edges (Cancelled/Rescheduled, skips, Ended before L02) get a stable 409, not a 422.
+export const updateDepartureSchema = z.strictObject({ ...fields, status: z.enum(departureStatuses) }).partial()
   .refine((value) => Object.values(value).some((item) => item !== undefined));
 export const departureQuerySchema = pageQuerySchema.extend({ status: z.enum(departureStatuses).optional() });
 

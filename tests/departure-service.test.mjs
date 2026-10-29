@@ -240,3 +240,106 @@ test("opening rejects a pickup retired after the Draft was created", async () =>
   assert.equal((await readManagedDeparture(db, admin, draft.departure_id)).status, "Draft");
   assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged" } }), 0);
 });
+
+// O05 fixtures: a two-seat vehicle so the Leader ratio and sold-out close can be exercised.
+let ticket = 0;
+async function openWithTwoSeats(overrides = {}) {
+  const draft = await createDeparture(db, manager, trip.trip_id, { ...base, min_passengers: 2, pickups: schedule(), ...overrides }, now);
+  const vehicle = await db.vehicle.create({ data: { plate_number: `51B-100.${String(++plate).padStart(2, "0")}`, vehicle_type: "Xe 29 chỗ",
+    seat_count: 2, seats: { create: [{ seat_name: "A01", floor_level: 1, x_position: 0, y_position: 0 },
+      { seat_name: "A02", floor_level: 1, x_position: 1, y_position: 0 }] } }, include: { seats: true } });
+  const assigned = await db.departureVehicle.create({ data: { departure_id: draft.departure_id, vehicle_id: vehicle.vehicle_id } });
+  for (const seat of vehicle.seats) await db.departureSeat.create({ data: { dep_vehicle_id: assigned.dep_vehicle_id, seat_id: seat.seat_id } });
+  const opened = await updateDeparture(db, manager, draft.departure_id, { status: "Open" }, now);
+  const seats = await db.departureSeat.findMany({ where: { dep_vehicle_id: assigned.dep_vehicle_id }, orderBy: { dep_seat_id: "asc" } });
+  return { departure: opened, assigned, seats };
+}
+// Stand-in for the payment flow (P02): a Paid invoice with one Valid ticket on a Sold seat.
+async function sell(departure, seat) {
+  const customer = others.find((actor) => actor.role === "Customer");
+  const invoice = await db.invoice.create({ data: { customer_id: customer.user_id, departure_id: departure.departure_id,
+    payment_code: `PAID-${++ticket}`, total_amount: "500000", status: "Paid", expires_at: new Date("2026-11-19T00:00:00Z") } });
+  await db.departureSeat.update({ where: { dep_seat_id: seat.dep_seat_id }, data: { status: "Sold", invoice_id: invoice.invoice_id } });
+  await db.invoiceDetail.create({ data: { invoice_id: invoice.invoice_id, dep_seat_id: seat.dep_seat_id,
+    dep_pickup_id: departure.pickups[0].dep_pickup_id, passenger_name: `Khách ${ticket}`, passenger_phone: "0901234567",
+    emergency_contact: "0907654321", health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: `T-${ticket}` } });
+}
+async function crew(assigned, departureId, role) {
+  const leader = others.find((actor) => actor.role === "Leader");
+  const staff = await db.staff.create({ data: { full_name: `${role} crew`, phone: "0900000000", staff_type: role,
+    ...(role === "Leader" ? { user_id: leader.user_id } : {}),
+    ...(role === "Driver" ? { license_number: "D-1", license_class: "D", license_expiry: new Date("2027-01-01") } : {}) } });
+  await db.departureStaff.create({ data: { departure_id: departureId, dep_vehicle_id: assigned.dep_vehicle_id, staff_id: staff.staff_id, role_in_trip: role } });
+  return staff;
+}
+const transitions = () => db.auditLog.findMany({ where: { action: "DepartureStatusChanged" }, orderBy: { log_id: "asc" } })
+  .then((logs) => logs.map((log) => { const { from, to } = JSON.parse(log.description); return `${from}->${to}`; }));
+
+test("Open closes at the booking deadline or once sold out; skipped, repeated and cancel/reschedule edges change nothing", async () => {
+  const { departure, seats } = await openWithTwoSeats();
+  const id = departure.departure_id;
+  for (const status of ["Draft", "Open", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"]) {
+    await assert.rejects(updateDeparture(db, admin, id, { status }, now), { code: "RESOURCE_CONFLICT" }, status);
+  }
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Archived" }, now), { code: "INVALID_INPUT" });
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Closed", min_passengers: 1 }, new Date("2026-11-19T10:00:00Z")),
+    { code: "INVALID_INPUT" });
+  for (const actor of others) await assert.rejects(updateDeparture(db, actor, id, { status: "Closed" }, now), { code: "FORBIDDEN" });
+  // One seat still unsold and the deadline not reached: sales stay open.
+  await sell(departure, seats[0]);
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Closed" }, new Date("2026-11-19T09:59:59Z")), { code: "RESOURCE_CONFLICT" });
+  assert.equal((await readManagedDeparture(db, manager, id)).status, "Open");
+
+  const closed = await updateDeparture(db, manager, id, { status: "Closed" }, new Date("2026-11-19T10:00:00Z"));
+  assert.equal(closed.status, "Closed");
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Closed" }, new Date("2026-11-19T10:00:00Z")), { code: "RESOURCE_CONFLICT" });
+  assert.deepEqual(await transitions(), ["Draft->Open", "Open->Closed"]);
+
+  const soldOut = await openWithTwoSeats();
+  for (const seat of soldOut.seats) await sell(soldOut.departure, seat);
+  assert.equal((await updateDeparture(db, admin, soldOut.departure.departure_id, { status: "Closed" }, now)).status, "Closed");
+  assert.equal(await db.departureSeat.count({ where: { status: "Sold" } }), 3);
+});
+
+test("Closed confirms only with enough paid passengers, a Driver and Assistant per vehicle and Leaders at the configured ratio", async () => {
+  const { departure, assigned, seats } = await openWithTwoSeats();
+  const id = departure.departure_id;
+  const deadline = new Date("2026-11-19T10:00:00Z");
+  await sell(departure, seats[0]);
+  await updateDeparture(db, manager, id, { status: "Closed" }, deadline);
+  const confirm = (at = deadline) => updateDeparture(db, manager, id, { status: "Confirmed" }, at);
+  const leader = await crew(assigned, id, "Leader");
+  const driver = await crew(assigned, id, "Driver");
+  await crew(assigned, id, "Assistant");
+  // 1 Valid ticket < min_passengers 2.
+  await assert.rejects(confirm(), { code: "RESOURCE_CONFLICT" });
+  await sell(departure, seats[1]);
+
+  await db.departureStaff.deleteMany({ where: { staff_id: driver.staff_id } });
+  await assert.rejects(confirm(), { code: "RESOURCE_CONFLICT" });
+  await db.departureStaff.create({ data: { departure_id: id, dep_vehicle_id: assigned.dep_vehicle_id, staff_id: driver.staff_id, role_in_trip: "Driver" } });
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" }, update: { setting_value: "1" },
+    create: { setting_key: "LEADER_RATIO", setting_value: "1", description: "Test ratio" } });
+  await assert.rejects(confirm(), { code: "RESOURCE_CONFLICT" });
+  await db.systemSetting.update({ where: { setting_key: "LEADER_RATIO" }, data: { setting_value: "2" } });
+  // Crew eligibility is rechecked, not only the head count.
+  await db.staff.update({ where: { staff_id: driver.staff_id }, data: { license_expiry: new Date("2026-11-19") } });
+  await assert.rejects(confirm(), { code: "ACCESS_CONFLICT" });
+  await db.staff.update({ where: { staff_id: driver.staff_id }, data: { license_expiry: new Date("2027-01-01") } });
+  await db.staff.update({ where: { staff_id: leader.staff_id }, data: { status: "Inactive" } });
+  await assert.rejects(confirm(), { code: "ACCESS_CONFLICT" });
+  await db.staff.update({ where: { staff_id: leader.staff_id }, data: { status: "Active" } });
+  assert.equal((await readManagedDeparture(db, manager, id)).status, "Closed");
+  assert.deepEqual(await transitions(), ["Draft->Open", "Open->Closed"]);
+
+  assert.equal((await confirm()).status, "Confirmed");
+  // Runs from the departure's Vietnam calendar day (2026-11-20 starts at 17:00Z the day before).
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, new Date("2026-11-19T16:59:59Z")), { code: "RESOURCE_CONFLICT" });
+  assert.equal((await updateDeparture(db, admin, id, { status: "Running" }, new Date("2026-11-19T17:00:00Z"))).status, "Running");
+  for (const status of ["Ended", "Cancelled", "Rescheduled", "Running"]) {
+    await assert.rejects(updateDeparture(db, admin, id, { status }, new Date("2026-11-20T05:00:00Z")), { code: "RESOURCE_CONFLICT" }, status);
+  }
+  assert.deepEqual(await transitions(), ["Draft->Open", "Open->Closed", "Closed->Confirmed", "Confirmed->Running"]);
+  assert.equal(await db.invoiceDetail.count({ where: { status: "Valid" } }), 2);
+  assert.equal(await db.departureSeat.count({ where: { status: "Sold" } }), 2);
+});
