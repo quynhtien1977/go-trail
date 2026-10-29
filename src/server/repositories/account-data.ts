@@ -5,7 +5,14 @@ export function findInvoiceSummary(db: PrismaClient, invoiceId: number, customer
   return db.invoice.findFirst({
     where: { invoice_id: invoiceId, ...(customerId === undefined ? {} : { customer_id: customerId }) },
     select: { invoice_id: true, departure_id: true, payment_code: true, status: true, total_amount: true,
-      expires_at: true, created_at: true },
+      expires_at: true, created_at: true, responsible_name_snapshot: true, responsible_role_snapshot: true,
+      customer: { select: { full_name: true } },
+      departure: { select: { departure_date: true, trip: { select: { name: true } } } },
+      details: { orderBy: [{ dep_seat_id: "asc" }, { detail_id: "asc" }], select: {
+        detail_id: true, dep_seat_id: true, dep_pickup_id: true, passenger_name: true, unit_price: true, status: true,
+        seat: { select: { seat: { select: { seat_name: true } } } },
+        pickup: { select: { pickup_time: true, pickup: { select: { name: true, address: true } } } },
+      } } },
   });
 }
 

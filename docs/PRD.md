@@ -558,7 +558,7 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Redis thiếu cấu hình/lỗi/quota/timeout thì từ chối Auth có kiểm soát, không fallback RAM. REST timeout 2 giây, không retry counter. Registration trả 503 `AUTH_UNAVAILABLE`; Credentials trả mã lỗi `AUTH_UNAVAILABLE`, không tiết lộ chi tiết Redis/DB. Hết budget login vẫn dùng `CredentialsSignin` chung; registration dùng 429 `RATE_LIMITED`. Kiểm tra phiên hiện có dựa PostgreSQL, không phụ thuộc Redis.
 - Admin thay role/status và audit trong cùng transaction; serialize thay đổi quyền bằng advisory lock để bảo vệ Admin Active cuối cùng. Từ chối chuyển role phá liên kết Leader/STAFF. Cấp tài khoản Leader + STAFF atomic thuộc bước nhân sự tiếp theo.
 - Audit dùng event allowlist: role/status tài khoản, trạng thái chuyến hoặc số tiền của payment/refund/chi phí. Không nhận mô tả tự do, credentials, thông tin ngân hàng hoặc request dump. Các workflow tiền/chuyến gọi helper trong transaction khi triển khai ở bước tương ứng.
-- `GET /api/invoices/:id` hiện là DTO tóm tắt cho owner Customer/Admin; QR/vé/payment theo bước 4–5. `GET /api/leader/departures` chỉ lấy staff Active, assignment Leader và trạng thái Confirmed/Running/Ended, tối đa 100; chưa có manifest hoặc paging. Admin được xem các chuyến trong nhóm trạng thái này.
+- `GET /api/invoices/:id` là DTO cho owner Customer/Admin, được mở rộng trong K03 theo 7.10; không mở quyền cho RouteMgr ở endpoint Customer. `GET /api/leader/departures` chỉ lấy staff Active, assignment Leader và trạng thái Confirmed/Running/Ended, tối đa 100; chưa có manifest hoặc paging. Admin được xem các chuyến trong nhóm trạng thái này.
 
 ### 7.6. Quản lý catalog và khóa tuyến
 
@@ -599,6 +599,16 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Chống trùng lịch theo **ngày Việt Nam của thời điểm khởi hành**, loại các chuyến Ended/Cancelled/Rescheduled khỏi kiểm tra bận. Chưa có thời điểm kết thúc nên chưa hỗ trợ kiểm tra giao nhau của chuyến nhiều ngày; đây là giới hạn dữ liệu hiện tại.
 - Thứ tự khóa: departure `FOR UPDATE`; tuyến trước điểm đón khi cần; xe theo ID tăng dần; nhân sự theo ID tăng dần; tài khoản liên quan `FOR SHARE` khi kiểm điều kiện. Người phụ trách mở chuyến cũng được giữ `FOR SHARE` tới commit. Hai chuyến khác nhau gán cùng nhân sự phải cùng khóa row STAFF trước kiểm lịch và ghi; không chỉ khóa hai departure riêng. Module O02 cập nhật hồ sơ/credential cần giữ quy ước khóa tương thích.
 - Booking/K02 phải đọc lại người phụ trách và ghi snapshot trong transaction của chính nó theo 7.8; O03 mở bán thành công không thay thế kiểm tra lúc tạo invoice. Chưa coi snapshot hóa đơn/thanh toán/O05 hoặc UI O06/O07 đã hoàn thành.
+
+### 7.10. DTO hóa đơn và dữ liệu VietQR K03 — checkpoint local 29/10/2026
+
+- K03/SCRUM-26 (assignee live Tiến An): mở rộng GET invoice hiện có, giữ nguyên các field summary và thêm customer_name, chuyến/ghế/hành khách/điểm đón tối thiểu, tên/role snapshot nhân viên và server_time. Handler → bound accountDataService → repository; không sửa schema hoặc transaction giữ ghế K02.
+- Service xác minh identity/role từ DB; Customer query theo customer_id của actor, Admin đọc toàn bộ. Khác chủ hoặc không tồn tại cùng trả 404; Guest 401, staff khác 403. RouteMgr assigned dùng M01 riêng. Money là chuỗi VND nguyên từ Decimal; tất cả timestamp là UTC ISO.
+- Snapshot nhân viên lấy từ invoice, không JOIN tên/role nhân viên hiện tại; legacy giữ NULL. Không trả responsible_user_id, customer_id, idempotency key, email/điện thoại/cam kết sức khỏe/liên hệ khẩn cấp, credential/session data, ticket QR, raw payment hoặc refund. Tên tuyến/điểm đón/người mua là nhãn hiện hành qua FK, không phải snapshot lịch sử mới.
+- payment là union có status: Ready trả bank_id/account_number/account_name của công ty, amount = total_amount, transfer_content = payment_code và qr_url. Chỉ Pending còn expires_at > server_time mới có hướng dẫn; Expired hoặc Pending đã hết hạn trả Expired, Paid/Cancelled trả NotPayable. Không sửa trạng thái invoice/ticket/ghế khi GET, không gia hạn hoặc tự phục hồi hold.
+- BANK_ID/BANK_ACCOUNT_NUMBER/BANK_ACCOUNT_NAME được đọc server-side lúc cần; thiếu hoặc sai định dạng trả payment.status=Unavailable, hóa đơn vẫn đọc được. BANK_ID nhận BIN/code/tên viết tắt chữ-số; account 1–19 chữ-số, giữ số 0 đầu; tên ASCII không dấu tối đa 80 ký tự, hiển thị uppercase. Số tiền 0/vượt 13 chữ số hoặc payment_code không tương thích QR không được tạo chỉ dẫn sai; không làm tròn/cắt ngắn hay đổi mã/giá đã lưu.
+- qr_url theo [quick link hiện hành của SePay](https://docs.sepay.vn/tao-qr-code-vietqr-dong.html): origin cố định https://vietqr.app, path /img, query acc/bank/amount/des/holder/template=compact được encode. Không nhận tài khoản/số tiền/nội dung/URL từ query của Customer, không gọi provider từ server và không đưa SePay API key vào URL/DTO. URL được tạo không phải bằng chứng tiền đã vào hoặc xác minh chủ tài khoản.
+- K03 chỉ cung cấp DTO/link ảnh VietQR; K04 rate limit, K05 UI, P01/P02 webhook/xác nhận Paid/Valid/Sold và P04 phát hành vé QR vẫn là scope riêng. Cấu hình ngân hàng thật và việc quét/chuyển tiền chưa được kiểm định bằng tiền thật trong checkpoint này.
 
 ## 8. Thanh toán và hoàn tiền
 
@@ -668,8 +678,8 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | Endpoint | Mô tả | Quyền |
 |---|---|---|
 | `GET /api/trips`, `GET /api/departures/:id/seats` | Tuyến, chuyến, sơ đồ ghế | Public |
-| `POST /api/invoices` | Giữ ghế + tạo hóa đơn | Customer |
-| `GET /api/invoices/:id` | Chi tiết, QR thanh toán, trạng thái | Chủ hóa đơn |
+| `POST /api/departures/:id/holds` | Giữ ghế + tạo hóa đơn (K02 hiện hành) | Customer; Admin kế thừa cho chính actor |
+| `GET /api/invoices/:id` | Chi tiết, snapshot nhân viên, trạng thái và dữ liệu/link VietQR (K03) | Chủ hóa đơn Customer, Admin |
 | `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản | SePay (API Key) |
 | `POST /api/checkin` | Quét QR check-in / đánh dấu vắng | Leader |
 | `PATCH /api/departures/:id/status` | Mở/đóng/chốt/kết thúc chuyến; không hủy/dời | RouteMgr, Admin, Leader (kết thúc) |
