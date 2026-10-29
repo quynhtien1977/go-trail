@@ -20,6 +20,9 @@ const next = () => ++sequence;
 const tripInput = { name: "RBAC trail", city: "Tây Ninh", location_name: "RBAC mountain", length_km: "5.00",
   base_price: "500000", description: "Isolated fixture", schedule_content: "Isolated schedule" };
 const seatInput = { seat_name: "A01", floor_level: 1, x_position: 0, y_position: 0 };
+// Fictional receiving account only; never inherit real bank configuration from .env.
+const bankFixture = { BANK_ID: "970436", BANK_ACCOUNT_NUMBER: "0000000000", BANK_ACCOUNT_NAME: "GO TRAIL TEST" };
+const startup = { method: "GET", route: "account/me", path: "/api/account/me" };
 
 async function apiFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -79,6 +82,49 @@ function noSecrets(value) {
     assert.doesNotMatch(key, /password|auth_version|bank_|content_sha256|responsible_user_id/i);
     if (field && typeof field === "object") noSecrets(field);
   }
+}
+
+function invoiceDto(value) {
+  const { payment, ...summary } = value;
+  noSecrets(summary);
+  assert.deepEqual(Object.keys(value).sort(), ["invoice_id", "departure_id", "payment_code", "status", "total_amount", "expires_at", "created_at",
+    "responsible_name_snapshot", "responsible_role_snapshot", "customer_name", "departure", "tickets", "server_time", "payment"].sort());
+  assert.match(value.total_amount, /^(0|[1-9]\d*)$/);
+  for (const key of ["created_at", "expires_at", "server_time"]) assert.equal(new Date(value[key]).toISOString(), value[key]);
+  if (payment.status !== "Ready") {
+    assert.ok(["Expired", "NotPayable", "Unavailable"].includes(payment.status));
+    assert.deepEqual(Object.keys(payment), ["status"]);
+    return;
+  }
+  assert.deepEqual(Object.keys(payment).sort(), ["status", "bank_id", "account_number", "account_name", "amount", "transfer_content", "qr_url"].sort());
+  assert.equal(payment.bank_id, bankFixture.BANK_ID); assert.equal(payment.account_number, bankFixture.BANK_ACCOUNT_NUMBER);
+  assert.equal(payment.account_name, bankFixture.BANK_ACCOUNT_NAME); assert.equal(payment.amount, value.total_amount);
+  assert.equal(payment.transfer_content, value.payment_code);
+  const qr = new URL(payment.qr_url);
+  assert.equal(qr.origin, "https://vietqr.app"); assert.equal(qr.pathname, "/img");
+  assert.deepEqual([...qr.searchParams.keys()].sort(), ["acc", "bank", "amount", "des", "holder", "template"].sort());
+  assert.equal(qr.searchParams.get("acc"), payment.account_number); assert.equal(qr.searchParams.get("bank"), payment.bank_id);
+  assert.equal(qr.searchParams.get("amount"), value.total_amount); assert.equal(qr.searchParams.get("des"), value.payment_code);
+  assert.equal(qr.searchParams.get("holder"), payment.account_name);
+}
+
+async function startServer(bank = {}) {
+  startupError = false;
+  child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
+    env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
+      DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
+      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
+    stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+  });
+  child.stdout.resume(); child.stderr.resume();
+  child.on("error", () => { startupError = true; });
+  let ready = false;
+  for (let i = 0; i < 100; i++) {
+    if (startupError || child.exitCode !== null) throw new Error("Isolated RBAC server stopped; provider output suppressed.");
+    try { if ((await request(startup)).status === 401) { ready = true; break; } } catch { /* startup only */ }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  assert.ok(ready, "Production build must be available before HTTP RBAC checks.");
 }
 
 try {
@@ -193,22 +239,7 @@ try {
   await assertRouteCoverage(endpoints);
   console.log("PASS: explicit A03 policies cover all 33 protected API methods; new/unclassified API methods fail this gate.");
 
-  child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
-    env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
-      DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
-      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "" },
-    stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
-  });
-  child.stdout.resume(); child.stderr.resume();
-  child.on("error", () => { startupError = true; });
-  const startup = { method: "GET", route: "account/me", path: "/api/account/me" };
-  let ready = false;
-  for (let i = 0; i < 100; i++) {
-    if (startupError || child.exitCode !== null) throw new Error("Isolated RBAC server stopped; provider output suppressed.");
-    try { if ((await request(startup)).status === 401) { ready = true; break; } } catch { /* startup only */ }
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  assert.ok(ready, "Production build must be available before HTTP RBAC checks.");
+  await startServer();
   const deniedSnapshot = async () => {
     const rows = await Promise.all([db.trip.findMany({ orderBy: { trip_id: "asc" } }),
       db.pickupPoint.findMany({ orderBy: { pickup_id: "asc" } }), db.vehicle.findMany({ orderBy: { vehicle_id: "asc" } }),
@@ -235,10 +266,11 @@ try {
     for (const role of endpoint.allowed) {
       await endpoint.prepareSuccess?.();
       const result = await request(endpoint, actors.get(role));
-      expect(result, endpoint.success); noSecrets(result.body.data);
+      expect(result, endpoint.success);
+      if (endpoint.route === "invoices/[id]") invoiceDto(result.body.data); else noSecrets(result.body.data);
     }
   }
-  console.log("PASS: every allowed role executes each permitted method successfully; read DTOs omit credentials, bank fields and session versions.");
+  console.log("PASS: every allowed role executes each permitted method successfully; DTOs omit credentials/session versions and expose receiving-bank fields only in the authorized invoice payment contract.");
 
   const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
   expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");
@@ -347,6 +379,49 @@ try {
   expect(await request({ method: "GET", route: "invoices/[id]", path: `/api/invoices/${booked.body.data.invoice_id}` }, actors.get("Customer")), 200);
   expect(await request({ method: "GET", route: "invoices/[id]", path: `/api/invoices/${booked.body.data.invoice_id}` }, actors.get("OtherCustomer")), 404, "NOT_FOUND");
   console.log("PASS: K02 HTTP holds create the assigned employee snapshot, reclaim expired Pending holds, replay normalized retries and reject payload/key/ownership tampering without mutation.");
+
+  // K03: same production route and actual K02 invoice; test unconfigured and configured servers.
+  const invoiceRead = { method: "GET", route: "invoices/[id]", path: `/api/invoices/${booked.body.data.invoice_id}` };
+  const noBank = await request(invoiceRead, actors.get("Customer"));
+  expect(noBank, 200); invoiceDto(noBank.body.data);
+  assert.deepEqual(noBank.body.data.payment, { status: "Unavailable" });
+  child.kill(); await once(child, "exit");
+  await startServer(bankFixture);
+  const beforeInvoiceRead = await deniedSnapshot();
+  let paymentInstructions;
+  for (const role of ["Customer", "Admin"]) {
+    const result = await request(invoiceRead, actors.get(role));
+    expect(result, 200); invoiceDto(result.body.data);
+    assert.equal(result.body.data.payment.status, "Ready");
+    assert.equal(result.body.data.responsible_name_snapshot, "RouteMgr");
+    assert.equal(result.body.data.responsible_role_snapshot, "RouteMgr");
+    assert.equal(result.body.data.tickets.length, 2);
+    for (const ticket of result.body.data.tickets) {
+      assert.deepEqual(Object.keys(ticket).sort(), ["detail_id", "dep_seat_id", "dep_pickup_id", "seat_name", "passenger_name", "unit_price", "status", "pickup_name", "pickup_address", "pickup_time"].sort());
+    }
+    paymentInstructions = result.body.data.payment;
+  }
+  const injectedQuery = await request({ ...invoiceRead, path: `${invoiceRead.path}?amount=1&bank=ATTACKER&acc=123&customer_id=${actors.get("OtherCustomer").user_id}` }, actors.get("Customer"));
+  expect(injectedQuery, 200); assert.deepEqual(injectedQuery.body.data.payment, paymentInstructions);
+  expect(await request(invoiceRead, actors.get("OtherCustomer")), 404, "NOT_FOUND");
+  expect(await request(invoiceRead, actors.get("OtherCustomer"), { claims: { role: "Admin" } }), 404, "NOT_FOUND");
+  for (const role of ["RouteMgr", "Leader", "HRMgr"]) expect(await request(invoiceRead, actors.get(role)), 403, "FORBIDDEN");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) expect(await request({ ...invoiceRead, path: `/api/invoices/${id}` }, actors.get("Customer")), 422, "INVALID_INPUT");
+  expect(await request({ ...invoiceRead, path: "/api/invoices/2147483647" }, actors.get("Customer")), 404, "NOT_FOUND");
+  const paidRead = await request({ ...invoiceRead, path: `/api/invoices/${paidInvoice.invoice_id}` }, actors.get("OtherCustomer"));
+  expect(paidRead, 200); invoiceDto(paidRead.body.data); assert.deepEqual(paidRead.body.data.payment, { status: "NotPayable" });
+  assert.equal(await deniedSnapshot(), beforeInvoiceRead, "K03 read/denied/query-tampered requests must never change money, seats, invoices or audits");
+  await db.user.update({ where: { user_id: actors.get("RouteMgr").user_id }, data: { full_name: "Renamed employee" } });
+  const renamedRead = await request(invoiceRead, actors.get("Customer"));
+  expect(renamedRead, 200); assert.equal(renamedRead.body.data.responsible_name_snapshot, "RouteMgr");
+  await db.user.update({ where: { user_id: actors.get("RouteMgr").user_id }, data: { full_name: "RouteMgr" } });
+  await db.invoice.update({ where: { invoice_id: booked.body.data.invoice_id }, data: { expires_at: new Date(Date.now() - 1000) } });
+  const beforeExpiryRead = await deniedSnapshot();
+  const expiredRead = await request(invoiceRead, actors.get("Customer"));
+  expect(expiredRead, 200); invoiceDto(expiredRead.body.data);
+  assert.equal(expiredRead.body.data.status, "Pending"); assert.deepEqual(expiredRead.body.data.payment, { status: "Expired" });
+  assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
+  console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
 
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
