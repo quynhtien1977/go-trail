@@ -219,6 +219,12 @@ try {
       create: { departure_id: draft.departure_id, dep_vehicle_id: assignment.dep_vehicle_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" }, update: {} });
     removeStaffEndpoint.path = `/api/staff/departures/${draft.departure_id}/staff/${crew.dep_staff_id}`;
   };
+  const personnel = await db.staff.create({ data: { full_name: "Personnel fixture", phone: "0901234567", staff_type: "Assistant" } });
+  route("staff/personnel", "/api/staff/personnel", ["HRMgr", "Admin"], { GET: undefined, POST: () => ({
+    full_name: `Fixture driver ${next()}`, phone: "0901234567", staff_type: "Driver", license_number: `D-${next()}`,
+    license_class: "D", license_expiry: "2036-12-31" }) });
+  route("staff/personnel/[id]", `/api/staff/personnel/${personnel.staff_id}`, ["HRMgr", "Admin"], {
+    GET: undefined, PATCH: () => ({ phone: "0907654321" }), DELETE: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -235,9 +241,9 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 33);
+  assert.equal(endpoints.length, 38);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 33 protected API methods; new/unclassified API methods fail this gate.");
+  console.log("PASS: explicit A03 policies cover all 38 protected API methods; new/unclassified API methods fail this gate.");
 
   await startServer();
   const deniedSnapshot = async () => {
@@ -466,7 +472,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 33 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log("PASS: Locked and revoked sessions fail all 38 methods for every role; fresh sessions work and absolute expiry remains enforced.");
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };
