@@ -91,6 +91,20 @@ export async function assertOpeningAssignments(tx: Transaction, departureId: num
   }
 }
 
+// Closed -> Confirmed rechecks the opening rules, then requires a Driver and an Assistant per vehicle
+// and enough Leaders for the paid passengers at the configured ratio.
+export async function assertConfirmingAssignments(tx: Transaction, departureId: number, departureDate: Date,
+  passengers: number, leaderRatio: number) {
+  await assertOpeningAssignments(tx, departureId, departureDate);
+  const resources = await assignments.listResources(tx, departureId);
+  const count = (staff: { role_in_trip: string }[], role: AssignmentRole) => staff.filter((item) => item.role_in_trip === role).length;
+  if (resources.some((resource) => !count(resource.staff, "Driver") || !count(resource.staff, "Assistant"))) {
+    throw new AppError("RESOURCE_CONFLICT", 409);
+  }
+  const leaders = resources.reduce((sum, resource) => sum + count(resource.staff, "Leader"), 0);
+  if (leaders < Math.ceil(passengers / leaderRatio)) throw new AppError("RESOURCE_CONFLICT", 409);
+}
+
 export async function assignVehicle(db: Database, identity: Actor, departureId: number, input: unknown) {
   assertId(departureId);
   const { vehicle_id } = parse(assignVehicleSchema, input);

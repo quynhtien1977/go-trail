@@ -53,6 +53,15 @@ export async function replacePickups(tx: Transaction, departureId: number, picku
   await tx.departurePickup.deleteMany({ where: { departure_id: departureId } });
   await tx.departurePickup.createMany({ data: pickups.map((item) => ({ ...item, departure_id: departureId })) });
 }
+export function countUnsoldSeats(db: DataClient, departureId: number) {
+  return db.departureSeat.count({ where: { vehicle: { departure_id: departureId }, status: { not: "Sold" } } });
+}
+export function countValidTickets(db: DataClient, departureId: number) {
+  return db.invoiceDetail.count({ where: { status: "Valid", seat: { vehicle: { departure_id: departureId } } } });
+}
+export function readSetting(db: DataClient, key: string) {
+  return db.systemSetting.findUnique({ where: { setting_key: key }, select: { setting_value: true } });
+}
 export function updateDeparture(tx: Transaction, departureId: number, data: Prisma.DepartureUncheckedUpdateInput) {
   return tx.departure.update({ where: { departure_id: departureId }, data });
 }
