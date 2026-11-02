@@ -6,6 +6,7 @@ import { AppError } from "@/server/errors";
 import { inTransaction, type Database, type Transaction } from "@/server/repositories/database";
 import * as bookings from "@/server/repositories/bookings";
 import { bindDb } from "./bind-db";
+import { consumeBookingRateLimit } from "./booking-rate-limit";
 
 function dto(row: bookings.HoldRow): HoldDto {
   return { invoice_id: row.invoice_id, departure_id: row.departure_id, payment_code: row.payment_code, status: row.status,
@@ -30,13 +31,17 @@ function replay(row: bookings.HoldRow, departureId: number, requested: HoldSeats
   return dto(row);
 }
 
-// Key -> departure -> trip -> users ASC -> invoices ASC -> all affected seats ASC.
-// Assignment/status/account writers use conflicting locks; snapshots stay stable until commit.
-export async function holdSeats(db: Database, identity: Actor, departureId: number, input: unknown, now?: Date): Promise<HoldDto> {
+function parseHold(departureId: number, input: unknown): HoldSeatsInput {
   if (!Number.isInteger(departureId) || departureId < 1 || departureId > 2147483647) throw new AppError("INVALID_INPUT", 422);
   const parsed = holdSeatsSchema.safeParse(input);
   if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
-  const { idempotency_key, seats } = parsed.data;
+  return parsed.data;
+}
+
+// Key -> departure -> trip -> users ASC -> invoices ASC -> all affected seats ASC.
+// Assignment/status/account writers use conflicting locks; snapshots stay stable until commit.
+export async function holdSeats(db: Database, identity: Actor, departureId: number, input: unknown, now?: Date): Promise<HoldDto> {
+  const { idempotency_key, seats } = parseHold(departureId, input);
   const requested = [...seats].sort((a, b) => a.dep_seat_id - b.dep_seat_id);
   const seatIds = requested.map(seat => seat.dep_seat_id);
   return inTransaction(db, async tx => {
@@ -101,4 +106,13 @@ export async function holdSeats(db: Database, identity: Actor, departureId: numb
   });
 }
 
-export const bookingService = bindDb({ holdSeats });
+// Redis admission precedes all resource locks; the core transaction revalidates identity.
+export async function holdRateLimitedSeats(db: Database, identity: Actor, departureId: number, input: unknown, trustedSource?: string): Promise<HoldDto> {
+  const actor = await requireActor(db, identity);
+  requireRole(actor, ["Customer"]);
+  const request = parseHold(departureId, input);
+  await consumeBookingRateLimit(actor.user_id, trustedSource);
+  return holdSeats(db, actor, departureId, request);
+}
+
+export const bookingService = bindDb({ holdSeats: holdRateLimitedSeats });
