@@ -2,8 +2,9 @@ import { z } from "zod";
 
 const id = z.number().int().positive().max(2147483647);
 export const assignVehicleSchema = z.strictObject({ vehicle_id: id });
+// replace_dep_staff_id swaps an existing assignment of the same role and vehicle atomically.
 export const assignStaffSchema = z.strictObject({ staff_id: id, vehicle_id: id,
-  role_in_trip: z.enum(["Driver", "Assistant", "Leader"]) });
+  role_in_trip: z.enum(["Driver", "Assistant", "Leader"]), replace_dep_staff_id: id.optional() });
 
 export type AssignmentDto = {
   departure_id: number; status: string;

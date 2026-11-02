@@ -64,10 +64,6 @@ function assertSchedule(dates: { departure_date: Date; booking_deadline: Date },
       || Math.abs(item.pickup_time.getTime() - dates.departure_date.getTime()) > DAY_MS) throw new AppError("INVALID_INPUT", 422);
   }
 }
-async function leaderRatio(tx: Transaction) {
-  const value = Number((await departures.readSetting(tx, "LEADER_RATIO"))?.setting_value);
-  return Number.isSafeInteger(value) && value > 0 ? value : 15;
-}
 async function assertTransition(tx: Transaction, current: departures.DepartureRow, status: DepartureStatus, now: Date) {
   if (nextStatus[current.status] !== status) throw new AppError("RESOURCE_CONFLICT", 409);
   if (status === "Closed") {
@@ -75,14 +71,16 @@ async function assertTransition(tx: Transaction, current: departures.DepartureRo
     if (now < current.booking_deadline && await departures.countUnsoldSeats(tx, current.departure_id)) {
       throw new AppError("RESOURCE_CONFLICT", 409);
     }
-  } else if (status === "Confirmed") {
-    const passengers = await departures.countValidTickets(tx, current.departure_id);
-    if (passengers < current.min_passengers) throw new AppError("RESOURCE_CONFLICT", 409);
-    await assertConfirmingAssignments(tx, current.departure_id, current.departure_date, passengers, await leaderRatio(tx));
+    return;
+  }
+  if (status === "Confirmed") {
+    if (await departures.countValidTickets(tx, current.departure_id) < current.min_passengers) throw new AppError("RESOURCE_CONFLICT", 409);
   } else if (now < vietnamDay(current.departure_date).range.gte) {
     // A departure starts running on its Vietnam calendar day, not earlier.
     throw new AppError("RESOURCE_CONFLICT", 409);
   }
+  // Confirmed and Running both require a complete, still-eligible crew: crew may have changed since confirmation.
+  await assertConfirmingAssignments(tx, current.departure_id, current.departure_date);
 }
 async function assertTripPickups(tx: Transaction, tripId: number, schedule: Schedule) {
   if (!schedule.length) return;

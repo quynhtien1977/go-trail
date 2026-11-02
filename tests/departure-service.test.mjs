@@ -3,6 +3,7 @@ import { before, beforeEach, after, test } from "node:test";
 import { createTestDatabase } from "./helpers/test-database.mjs";
 import { listPublicDepartures } from "../src/server/services/catalog.ts";
 import { createDeparture, listManagedDepartures, readManagedDeparture, updateDeparture } from "../src/server/services/departures.ts";
+import { assignStaff, assignVehicle, unassignStaff, unassignVehicle } from "../src/server/services/assignments.ts";
 
 let database, db, manager, admin, otherManager, others, trip, pickup, pickup2;
 const now = new Date("2026-10-18T00:00:00Z");
@@ -342,4 +343,75 @@ test("Closed confirms only with enough paid passengers, a Driver and Assistant p
   assert.deepEqual(await transitions(), ["Draft->Open", "Open->Closed", "Closed->Confirmed", "Confirmed->Running"]);
   assert.equal(await db.invoiceDetail.count({ where: { status: "Valid" } }), 2);
   assert.equal(await db.departureSeat.count({ where: { status: "Sold" } }), 2);
+});
+
+test("a Confirmed crew never drops below Driver/Assistant/Leader minimums, swaps are atomic and Running rechecks then freezes the crew", async () => {
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" }, update: { setting_value: "15" },
+    create: { setting_key: "LEADER_RATIO", setting_value: "15", description: "Test ratio" } });
+  const hr = others.find((actor) => actor.role === "HRMgr");
+  const { departure, assigned, seats } = await openWithTwoSeats();
+  const id = departure.departure_id;
+  const vehicleId = (await db.departureVehicle.findUniqueOrThrow({ where: { dep_vehicle_id: assigned.dep_vehicle_id } })).vehicle_id;
+  for (const seat of seats) await sell(departure, seat);
+  await updateDeparture(db, manager, id, { status: "Closed" }, now);
+  const leader = await crew(assigned, id, "Leader");
+  const driver = await crew(assigned, id, "Driver");
+  const helper = await crew(assigned, id, "Assistant");
+  await updateDeparture(db, manager, id, { status: "Confirmed" }, now);
+  const slot = async (staff) => (await db.departureStaff.findFirstOrThrow({ where: { departure_id: id, staff_id: staff.staff_id } })).dep_staff_id;
+  const crewIds = () => db.departureStaff.findMany({ where: { departure_id: id }, orderBy: { staff_id: "asc" } })
+    .then((rows) => rows.map((row) => `${row.role_in_trip}:${row.staff_id}`));
+  const before = await crewIds();
+
+  // Removing the only Driver, Assistant or required Leader would leave the confirmed departure short.
+  for (const staff of [driver, helper, leader]) {
+    await assert.rejects(unassignStaff(db, hr, id, await slot(staff)), { code: "RESOURCE_CONFLICT" }, staff.full_name);
+  }
+  // A new vehicle would join without crew; the only vehicle cannot be removed.
+  const spare = await db.vehicle.create({ data: { plate_number: "51B-999.99", vehicle_type: "Xe 16 chỗ", seat_count: 1,
+    seats: { create: [{ seat_name: "A01", floor_level: 1, x_position: 0, y_position: 0 }] } } });
+  await assert.rejects(assignVehicle(db, hr, id, { vehicle_id: spare.vehicle_id }), { code: "RESOURCE_CONFLICT" });
+  await assert.rejects(unassignVehicle(db, hr, id, vehicleId), { code: "RESOURCE_CONFLICT" });
+  assert.deepEqual(await crewIds(), before);
+
+  // Extra crew above the minimum can still be removed.
+  const extra = await crew(assigned, id, "Assistant");
+  await unassignStaff(db, hr, id, await slot(extra));
+  assert.deepEqual(await crewIds(), before);
+
+  // Replacing the Driver swaps in one transaction; a bad swap leaves the old Driver in place.
+  const expired = await db.staff.create({ data: { full_name: "Driver expired", phone: "0900000000", staff_type: "Driver",
+    license_number: "D-2", license_class: "D", license_expiry: new Date("2026-11-19") } });
+  await assert.rejects(assignStaff(db, hr, id, { staff_id: expired.staff_id, vehicle_id: vehicleId, role_in_trip: "Driver",
+    replace_dep_staff_id: await slot(driver) }), { code: "ACCESS_CONFLICT" });
+  const spareDriver = await db.staff.create({ data: { full_name: "Driver spare", phone: "0900000000", staff_type: "Driver",
+    license_number: "D-3", license_class: "D", license_expiry: new Date("2027-01-01") } });
+  await assert.rejects(assignStaff(db, hr, id, { staff_id: spareDriver.staff_id, vehicle_id: vehicleId, role_in_trip: "Driver",
+    replace_dep_staff_id: await slot(helper) }), { code: "INVALID_INPUT" });
+  await assert.rejects(assignStaff(db, hr, id, { staff_id: spareDriver.staff_id, vehicle_id: vehicleId, role_in_trip: "Driver" }),
+    { code: "RESOURCE_CONFLICT" });
+  assert.deepEqual(await crewIds(), before);
+  const swapped = await assignStaff(db, hr, id, { staff_id: spareDriver.staff_id, vehicle_id: vehicleId, role_in_trip: "Driver",
+    replace_dep_staff_id: await slot(driver) });
+  assert.deepEqual(swapped.vehicles[0].staff.filter((item) => item.role_in_trip === "Driver").map((item) => item.staff_id), [spareDriver.staff_id]);
+
+  // Running rechecks the crew even if it changed outside this flow, then freezes it.
+  const running = new Date("2026-11-19T17:00:00Z");
+  const driverSlot = await db.departureStaff.findFirstOrThrow({ where: { departure_id: id, role_in_trip: "Driver" } });
+  await db.departureStaff.delete({ where: { dep_staff_id: driverSlot.dep_staff_id } });
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, running), { code: "RESOURCE_CONFLICT" });
+  await db.departureStaff.create({ data: { departure_id: id, dep_vehicle_id: assigned.dep_vehicle_id, staff_id: spareDriver.staff_id, role_in_trip: "Driver" } });
+  const leaderUser = others.find((actor) => actor.role === "Leader");
+  await db.user.update({ where: { user_id: leaderUser.user_id }, data: { status: "Locked" } });
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, running), { code: "ACCESS_CONFLICT" });
+  await db.user.update({ where: { user_id: leaderUser.user_id }, data: { status: "Active" } });
+  assert.equal((await readManagedDeparture(db, manager, id)).status, "Confirmed");
+  assert.equal((await updateDeparture(db, manager, id, { status: "Running" }, running)).status, "Running");
+
+  const frozen = await crewIds();
+  await assert.rejects(unassignStaff(db, hr, id, await slot(helper)), { code: "RESOURCE_CONFLICT" });
+  await assert.rejects(assignStaff(db, hr, id, { staff_id: driver.staff_id, vehicle_id: vehicleId, role_in_trip: "Driver",
+    replace_dep_staff_id: await slot(spareDriver) }), { code: "RESOURCE_CONFLICT" });
+  await assert.rejects(assignVehicle(db, hr, id, { vehicle_id: spare.vehicle_id }), { code: "RESOURCE_CONFLICT" });
+  assert.deepEqual(await crewIds(), frozen);
 });
