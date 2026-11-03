@@ -11,6 +11,8 @@ import { bindDb } from "./bind-db";
 
 // Running/Ended trips keep their crew and seats; MVP has no cancel or reschedule.
 const assignableStatuses = ["Draft", "Open", "Closed", "Confirmed"];
+// A vehicle added after confirmation would have no crew, so vehicles are fixed from Confirmed on.
+const vehicleStatuses = ["Draft", "Open", "Closed"];
 const closedDepartures = ["Ended", "Cancelled", "Rescheduled"] as const;
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input);
@@ -26,11 +28,26 @@ async function hrManager(db: AuthDatabase, identity: Actor) {
   return actor;
 }
 // Writes lock the departure, then shared vehicle/staff resources, then account rows.
-async function lockDeparture(tx: Transaction, departureId: number) {
+async function lockDeparture(tx: Transaction, departureId: number, allowed = assignableStatuses) {
   const departure = await departures.lockDeparture(tx, departureId);
   if (!departure) throw new AppError("NOT_FOUND", 404);
-  if (!assignableStatuses.includes(departure.status)) throw new AppError("RESOURCE_CONFLICT", 409);
+  if (!allowed.includes(departure.status)) throw new AppError("RESOURCE_CONFLICT", 409);
   return departure;
+}
+async function leaderRatio(tx: Transaction) {
+  const value = Number((await departures.readSetting(tx, "LEADER_RATIO"))?.setting_value);
+  return Number.isSafeInteger(value) && value > 0 ? value : 15;
+}
+// Holds from Confirmed on: every vehicle has a Driver and an Assistant, and Leaders cover the paid passengers.
+async function assertCrewCounts(tx: Transaction, departureId: number) {
+  const resources = await assignments.listResources(tx, departureId);
+  const count = (staff: { role_in_trip: string }[], role: AssignmentRole) => staff.filter((item) => item.role_in_trip === role).length;
+  if (resources.some((resource) => !count(resource.staff, "Driver") || !count(resource.staff, "Assistant"))) {
+    throw new AppError("RESOURCE_CONFLICT", 409);
+  }
+  const leaders = resources.reduce((sum, resource) => sum + count(resource.staff, "Leader"), 0);
+  const passengers = await departures.countValidTickets(tx, departureId);
+  if (leaders < Math.ceil(passengers / await leaderRatio(tx))) throw new AppError("RESOURCE_CONFLICT", 409);
 }
 async function readAssignments(db: AuthDatabase, departureId: number): Promise<AssignmentDto> {
   const row = await assignments.findAssignments(db, departureId);
@@ -91,12 +108,19 @@ export async function assertOpeningAssignments(tx: Transaction, departureId: num
   }
 }
 
+// Closed -> Confirmed and Confirmed -> Running recheck the opening rules (vehicles, seats, crew eligibility)
+// and the crew head counts, so a departure never confirms or starts with an empty crew slot.
+export async function assertConfirmingAssignments(tx: Transaction, departureId: number, departureDate: Date) {
+  await assertOpeningAssignments(tx, departureId, departureDate);
+  await assertCrewCounts(tx, departureId);
+}
+
 export async function assignVehicle(db: Database, identity: Actor, departureId: number, input: unknown) {
   assertId(departureId);
   const { vehicle_id } = parse(assignVehicleSchema, input);
   return inTransaction(db, async (tx) => {
     await hrManager(tx, identity);
-    const departure = await lockDeparture(tx, departureId);
+    const departure = await lockDeparture(tx, departureId, vehicleStatuses);
     const vehicle = await assertVehicleAssignable(tx, vehicle_id, departure.departure_date, departureId);
     await assignments.ensureVehicleSeats(tx, departureId, vehicle_id,
       vehicle.seats.filter((seat) => seat.is_active).map((seat) => seat.seat_id));
@@ -119,41 +143,62 @@ export async function unassignVehicle(db: Database, identity: Actor, departureId
     const crew = resources.find((item) => item.dep_vehicle_id === assignment.dep_vehicle_id)!.staff;
     for (const staff of crew.sort((a, b) => a.staff_id - b.staff_id)) await assignments.lockStaff(tx, staff.staff_id);
     await assignments.removeVehicle(tx, assignment.dep_vehicle_id);
+    if (departure.status === "Confirmed") await assertCrewCounts(tx, departureId);
     return readAssignments(tx, departureId);
   });
 }
 
 export async function assignStaff(db: Database, identity: Actor, departureId: number, input: unknown) {
   assertId(departureId);
-  const { staff_id, vehicle_id, role_in_trip } = parse(assignStaffSchema, input);
+  const { staff_id, vehicle_id, role_in_trip, replace_dep_staff_id } = parse(assignStaffSchema, input);
   return inTransaction(db, async (tx) => {
     await hrManager(tx, identity);
     const departure = await lockDeparture(tx, departureId);
     const vehicle = await assignments.findVehicle(tx, departureId, vehicle_id);
     if (!vehicle) throw new AppError("INVALID_INPUT", 422);
-    await assertStaffEligible(tx, staff_id, role_in_trip, departure.departure_date);
-    const { range } = vietnamDay(departure.departure_date);
-    if (await assignments.countBusyStaff(tx, departureId, staff_id, range, closedDepartures)) throw new AppError("RESOURCE_CONFLICT", 409);
-    const existing = await assignments.findStaffAssignment(tx, departureId, staff_id, role_in_trip);
-    if (existing) {
-      if (existing.dep_vehicle_id !== vehicle.dep_vehicle_id) throw new AppError("RESOURCE_CONFLICT", 409);
-      return readAssignments(tx, departureId);
-    }
-    if (role_in_trip === "Driver" && await assignments.countDrivers(tx, vehicle.dep_vehicle_id)) throw new AppError("RESOURCE_CONFLICT", 409);
-    await assignments.insertStaff(tx, { departure_id: departureId, staff_id, role_in_trip, dep_vehicle_id: vehicle.dep_vehicle_id });
+    await placeStaff(tx, departure, vehicle.dep_vehicle_id, staff_id, role_in_trip, replace_dep_staff_id);
+    // Recheck after every path, including no-op retries, so no assignment change commits a confirmed crew below the minimum.
+    if (departure.status === "Confirmed") await assertCrewCounts(tx, departureId);
     return readAssignments(tx, departureId);
   });
+}
+async function placeStaff(tx: Transaction, departure: { departure_id: number; departure_date: Date }, depVehicleId: number,
+  staffId: number, role: AssignmentRole, replaceId?: number) {
+  const departureId = departure.departure_id;
+  if (replaceId !== undefined) {
+    // Swap in one transaction so a confirmed crew never passes through an empty Driver/Assistant/Leader slot.
+    const old = await assignments.findStaffAssignmentById(tx, departureId, replaceId);
+    if (!old) throw new AppError("NOT_FOUND", 404);
+    if (old.role_in_trip !== role || old.dep_vehicle_id !== depVehicleId) throw new AppError("INVALID_INPUT", 422);
+    if (old.staff_id === staffId) return;
+    // Replacing with someone already in this role would merge two slots into one; check before removing anyone.
+    if (await assignments.findStaffAssignment(tx, departureId, staffId, role)) throw new AppError("RESOURCE_CONFLICT", 409);
+    for (const id of [old.staff_id, staffId].sort((a, b) => a - b)) await assignments.lockStaff(tx, id);
+    await assignments.removeStaff(tx, departureId, replaceId);
+  }
+  await assertStaffEligible(tx, staffId, role, departure.departure_date);
+  const { range } = vietnamDay(departure.departure_date);
+  if (await assignments.countBusyStaff(tx, departureId, staffId, range, closedDepartures)) throw new AppError("RESOURCE_CONFLICT", 409);
+  const existing = await assignments.findStaffAssignment(tx, departureId, staffId, role);
+  if (existing) {
+    if (existing.dep_vehicle_id !== depVehicleId) throw new AppError("RESOURCE_CONFLICT", 409);
+    return;
+  }
+  if (role === "Driver" && await assignments.countDrivers(tx, depVehicleId)) throw new AppError("RESOURCE_CONFLICT", 409);
+  await assignments.insertStaff(tx, { departure_id: departureId, staff_id: staffId, role_in_trip: role, dep_vehicle_id: depVehicleId });
 }
 
 export async function unassignStaff(db: Database, identity: Actor, departureId: number, assignmentId: number) {
   assertId(departureId); assertId(assignmentId);
   return inTransaction(db, async (tx) => {
     await hrManager(tx, identity);
-    await lockDeparture(tx, departureId);
+    const departure = await lockDeparture(tx, departureId);
     const assignment = await assignments.findStaffAssignmentById(tx, departureId, assignmentId);
     if (!assignment) throw new AppError("NOT_FOUND", 404);
     await assignments.lockStaff(tx, assignment.staff_id);
     await assignments.removeStaff(tx, departureId, assignmentId);
+    // A confirmed departure may lose crew only above the minimum; replace with replace_dep_staff_id instead.
+    if (departure.status === "Confirmed") await assertCrewCounts(tx, departureId);
     return readAssignments(tx, departureId);
   });
 }
