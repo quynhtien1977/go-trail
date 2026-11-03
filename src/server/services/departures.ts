@@ -3,7 +3,6 @@ import type { z } from "zod";
 import { inTransaction, type Database, type Transaction } from "@/server/repositories/database";
 import * as departures from "@/server/repositories/departures";
 import { assertConfirmingAssignments, assertOpeningAssignments } from "./assignments";
-import { vietnamDay } from "./fleet";
 import type { Page } from "@/schemas/catalog";
 import { createDepartureSchema, departureQuerySchema, updateDepartureSchema, type ManagedDepartureDto } from "@/schemas/departure";
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
@@ -67,7 +66,7 @@ function assertSchedule(dates: { departure_date: Date; booking_deadline: Date },
 async function assertTransition(tx: Transaction, current: departures.DepartureRow, status: DepartureStatus, now: Date) {
   if (nextStatus[current.status] !== status) throw new AppError("RESOURCE_CONFLICT", 409);
   if (status === "Closed") {
-    // Sales close at the deadline, or earlier once every seat is sold; pending holds keep the departure Open.
+    // Pending holds do not count as sold out; reaching the deadline still closes sales.
     if (now < current.booking_deadline && await departures.countUnsoldSeats(tx, current.departure_id)) {
       throw new AppError("RESOURCE_CONFLICT", 409);
     }
@@ -75,9 +74,11 @@ async function assertTransition(tx: Transaction, current: departures.DepartureRo
   }
   if (status === "Confirmed") {
     if (await departures.countValidTickets(tx, current.departure_id) < current.min_passengers) throw new AppError("RESOURCE_CONFLICT", 409);
-  } else if (now < vietnamDay(current.departure_date).range.gte) {
-    // A departure starts running on its Vietnam calendar day, not earlier.
-    throw new AppError("RESOURCE_CONFLICT", 409);
+  } else {
+    // Operations can start at the first pickup, including the previous local evening, or the departure time.
+    const startsAt = current.pickups.reduce((earliest, pickup) => Math.min(earliest, pickup.pickup_time.getTime()),
+      current.departure_date.getTime());
+    if (now.getTime() < startsAt) throw new AppError("RESOURCE_CONFLICT", 409);
   }
   // Confirmed and Running both require a complete, still-eligible crew: crew may have changed since confirmation.
   await assertConfirmingAssignments(tx, current.departure_id, current.departure_date);

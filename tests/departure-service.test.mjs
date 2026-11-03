@@ -334,9 +334,9 @@ test("Closed confirms only with enough paid passengers, a Driver and Assistant p
   assert.deepEqual(await transitions(), ["Draft->Open", "Open->Closed"]);
 
   assert.equal((await confirm()).status, "Confirmed");
-  // Runs from the departure's Vietnam calendar day (2026-11-20 starts at 17:00Z the day before).
-  await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, new Date("2026-11-19T16:59:59Z")), { code: "RESOURCE_CONFLICT" });
-  assert.equal((await updateDeparture(db, admin, id, { status: "Running" }, new Date("2026-11-19T17:00:00Z"))).status, "Running");
+  // The first scheduled pickup is 00:30 Vietnam time, before the 08:00 departure.
+  await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, new Date("2026-11-19T17:29:59.999Z")), { code: "RESOURCE_CONFLICT" });
+  assert.equal((await updateDeparture(db, admin, id, { status: "Running" }, new Date("2026-11-19T17:30:00Z"))).status, "Running");
   for (const status of ["Ended", "Cancelled", "Rescheduled", "Running"]) {
     await assert.rejects(updateDeparture(db, admin, id, { status }, new Date("2026-11-20T05:00:00Z")), { code: "RESOURCE_CONFLICT" }, status);
   }
@@ -396,7 +396,7 @@ test("a Confirmed crew never drops below Driver/Assistant/Leader minimums, swaps
   assert.deepEqual(swapped.vehicles[0].staff.filter((item) => item.role_in_trip === "Driver").map((item) => item.staff_id), [spareDriver.staff_id]);
 
   // Running rechecks the crew even if it changed outside this flow, then freezes it.
-  const running = new Date("2026-11-19T17:00:00Z");
+  const running = new Date("2026-11-19T17:30:00Z");
   const driverSlot = await db.departureStaff.findFirstOrThrow({ where: { departure_id: id, role_in_trip: "Driver" } });
   await db.departureStaff.delete({ where: { dep_staff_id: driverSlot.dep_staff_id } });
   await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, running), { code: "RESOURCE_CONFLICT" });
@@ -476,4 +476,68 @@ test("swapping a confirmed Leader for one already in the crew is rejected before
     [b.staff_id, c.staff_id, fresh.staff_id].sort((x, y) => x - y));
   await swap(fresh, fresh);
   assert.deepEqual(await crewRows(), afterSwap);
+});
+
+test("Pending holds are not sold out, but the booking deadline still closes sales without releasing holds", async () => {
+  const { departure, seats } = await openWithTwoSeats();
+  await sell(departure, seats[0]);
+  const invoice = await db.invoice.create({ data: { customer_id: others.find((actor) => actor.role === "Customer").user_id,
+    departure_id: departure.departure_id, payment_code: "PENDING-CLOSE", total_amount: "500000", status: "Pending",
+    expires_at: new Date("2026-11-19T10:10:00Z") } });
+  await db.departureSeat.update({ where: { dep_seat_id: seats[1].dep_seat_id },
+    data: { status: "Locked", invoice_id: invoice.invoice_id, locked_until: invoice.expires_at } });
+  await db.invoiceDetail.create({ data: { invoice_id: invoice.invoice_id, dep_seat_id: seats[1].dep_seat_id,
+    dep_pickup_id: departure.pickups[0].dep_pickup_id, passenger_name: "Pending fixture", passenger_phone: "0901234567",
+    emergency_contact: "0907654321", health_declaration: true, unit_price: "500000", status: "Pending" } });
+  const held = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: seats[1].dep_seat_id } });
+  const logs = await transitions();
+  await assert.rejects(updateDeparture(db, manager, departure.departure_id, { status: "Closed" },
+    new Date("2026-11-19T09:59:59.999Z")), { code: "RESOURCE_CONFLICT" });
+  assert.deepEqual(await transitions(), logs);
+  assert.equal((await updateDeparture(db, manager, departure.departure_id, { status: "Closed" },
+    new Date("2026-11-19T10:00:00Z"))).status, "Closed");
+  assert.deepEqual(await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: held.dep_seat_id } }), held);
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: invoice.invoice_id } })).status, "Pending");
+  assert.equal(await db.invoiceDetail.count({ where: { invoice_id: invoice.invoice_id, status: "Pending" } }), 1);
+});
+
+for (const scenario of [
+  { name: "waits beyond local midnight for the earliest scheduled pickup", departure: "2026-11-20T08:00:00+07:00",
+    pickups: ["2026-11-20T07:30:00+07:00", "2026-11-20T06:00:00+07:00"], startsAt: "2026-11-19T23:00:00Z" },
+  { name: "can start at a pickup on the previous Vietnam day", departure: "2026-11-20T00:30:00+07:00",
+    pickups: ["2026-11-19T23:30:00+07:00"], startsAt: "2026-11-19T16:30:00Z" },
+  { name: "uses departure time when all pickups are later", departure: "2026-11-20T08:00:00+07:00",
+    pickups: ["2026-11-20T08:30:00+07:00"], startsAt: "2026-11-20T01:00:00Z" },
+]) {
+  test(`Running ${scenario.name}`, async () => {
+    const { departure, assigned, seats } = await openWithTwoSeats({ departure_date: scenario.departure, min_passengers: 1,
+      pickups: scenario.pickups.map((pickup_time, index) => ({ pickup_id: [pickup, pickup2][index].pickup_id, pickup_time })) });
+    const id = departure.departure_id;
+    await sell(departure, seats[0]);
+    for (const role of ["Driver", "Assistant", "Leader"]) await crew(assigned, id, role);
+    const deadline = new Date(base.booking_deadline);
+    await updateDeparture(db, manager, id, { status: "Closed" }, deadline);
+    await updateDeparture(db, manager, id, { status: "Confirmed" }, deadline);
+    const logs = await transitions();
+    const boundary = new Date(scenario.startsAt);
+    await assert.rejects(updateDeparture(db, manager, id, { status: "Running" }, new Date(boundary.getTime() - 1)),
+      { code: "RESOURCE_CONFLICT" });
+    assert.equal((await readManagedDeparture(db, manager, id)).status, "Confirmed");
+    assert.deepEqual(await transitions(), logs);
+    assert.equal((await updateDeparture(db, admin, id, { status: "Running" }, boundary)).status, "Running");
+    assert.deepEqual(await transitions(), [...logs, "Confirmed->Running"]);
+    assert.equal(await db.departureSeat.count({ where: { status: "Sold" } }), 1);
+  });
+}
+
+test("Running falls back to departure time for legacy Confirmed records without pickups", async () => {
+  // Legacy operational data may predate the required pickup schedule at Draft -> Open.
+  const draft = await createDeparture(db, manager, trip.trip_id, base, now);
+  const { assigned } = await withSeats(draft.departure_id);
+  for (const role of ["Driver", "Assistant", "Leader"]) await crew(assigned, draft.departure_id, role);
+  await db.departure.update({ where: { departure_id: draft.departure_id }, data: { status: "Confirmed" } });
+  const at = new Date(base.departure_date);
+  await assert.rejects(updateDeparture(db, manager, draft.departure_id, { status: "Running" }, new Date(at.getTime() - 1)),
+    { code: "RESOURCE_CONFLICT" });
+  assert.equal((await updateDeparture(db, manager, draft.departure_id, { status: "Running" }, at)).status, "Running");
 });
