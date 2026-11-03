@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+tools/**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -32,6 +33,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -43,4 +45,13 @@ next-env.d.ts
 .codegraph/
 .agents/
 
-docs/
+docs/*
+
+# Private agent instructions and generated/local files
+/src/generated/prisma/
+/scratch/
+
+tools/
+tasks/
+
+!docs/PRD.md

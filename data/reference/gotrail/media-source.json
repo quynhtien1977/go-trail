@@ -1,0 +1,1377 @@
+{
+  "schema_version": 1,
+  "trips": [
+    {
+      "trip_source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7222.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7323.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/06/trail-bus-da-bac-hoa-binh-nguoi-dan-duong-1-e1762507170523.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7222.JPG_compressed.jpeg",
+          "alt_text": "ĐA DẠNG ĐỊA HÌNH - THỬ THÁCH THỰC SỰ CHO NHÀ CHINH PHỤC",
+          "caption": null,
+          "title": "ĐA DẠNG ĐỊA HÌNH - THỬ THÁCH THỰC SỰ CHO NHÀ CHINH PHỤC",
+          "body": "Bước chân đầu tiên đầy thử sức ở đoạn đường Chùa dốc đứng. Thách thức với đường Đá Trắng gồ ghề, hiểm trở. Vượt lên bằng ý chí ở đoạn đường Cột Điện nối dài."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7323.JPG_compressed-1.jpeg",
+          "alt_text": "TẬN HƯỞNG SỰ HẬU ĐÃI TỪ THIÊN NHIÊN TRÊN NÓC NHÀ NAM BỘ",
+          "caption": null,
+          "title": "TẬN HƯỞNG SỰ HẬU ĐÃI TỪ THIÊN NHIÊN TRÊN NÓC NHÀ NAM BỘ",
+          "body": "Khoảnh khắc chễm chệ trên đỉnh núi, giữa mây trời bồng bềnh như cổ tích, ôm trọn toàn cảnh Tây Ninh từ trên cao với những cánh đồng bao la, ngọn núi nhấp nhô và hồ nước xanh trong vắt."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7089.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7073.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7144.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7167.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7218.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7232.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7239.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7347.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7351.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7417.JPG_compressed.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7222.JPG_compressed-1.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 11,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7323.JPG_compressed-2.jpeg",
+          "alt_text": "Trekking Núi Bà Đen",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-e1742370003781.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-e1742370003781.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/Screenshot-2025-03-24-at-17.33.06-e1742812419977.png",
+          "alt_text": "CHINH PHỤC ĐỈNH 837M",
+          "caption": null,
+          "title": "CHINH PHỤC ĐỈNH 837M",
+          "body": "Đứng trên đỉnh Núi Chứa Chan, thu trọn vào tầm mắt cảnh sắc Xuân Lộc thanh bình, nơi giao thoa giữa trời và đất Đông Nam Bộ."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/PHOR8084-scaled-e1761105954650.jpg",
+          "alt_text": "CUNG LEO NÚI THÁCH THỨC",
+          "caption": null,
+          "title": "CUNG LEO NÚI THÁCH THỨC",
+          "body": "Độ dốc cao, vách đá cheo leo và thời tiết khắc nghiệt là thử thách giúp các trailer rèn kỹ thuật, thích nghi và vượt qua giới hạn bản thân."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/Tron-goi-trekking-Lao-Than-1.590K-Ak-wuy-trong-toi-Noi-3tr-di-Toi-Me-oi-trekking-Lao-Than-tron-goi-7tr-a-8.jpg",
+          "alt_text": "HOÀ MÌNH VÀO THIÊN NHIÊN",
+          "caption": null,
+          "title": "HOÀ MÌNH VÀO THIÊN NHIÊN",
+          "body": "Bước đi dưới những tán rừng xanh, cảm nhận gió núi mát lành, thả lỏng tinh thần và tận hưởng từng khoảnh khắc thư giãn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/51-e1742351959694.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/IMG_0071-scaled.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/PHOR7924-scaled.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/19.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/PHOR7766-scaled.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/PHOR8084-scaled-e1761105954650.jpg",
+          "alt_text": "Trekking Núi Chứa Chan",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-1-1024x1024.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/1-1.jpg",
+          "alt_text": "\"THÁNH ĐỊA\" DÂN CHẠY",
+          "caption": null,
+          "title": "\"THÁNH ĐỊA\" DÂN CHẠY",
+          "body": "Cung trekking với địa hình đa dạng, từ đường mòn rừng, suối đá đến những đoạn dốc đá gập ghềnh, thích hợp cho cả người mới và dân leo núi chuyên nghiệp"
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/2-1.jpg",
+          "alt_text": "CHECK-IN ĐỈNH LA BÀN",
+          "caption": null,
+          "title": "CHECK-IN ĐỈNH LA BÀN",
+          "body": "Cảm nhận làn gió mát rượi, phóng tầm mắt ôm trọn bán đảo Long Sơn và TP. Vũng Tàu bé xíu phía xa, mọi lo toan dường như tan biến."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/4-1.jpg",
+          "alt_text": "TĨNH TÂM GIỮA RỪNG",
+          "caption": null,
+          "title": "TĨNH TÂM GIỮA RỪNG",
+          "body": "Đi vào rừng, chạm vào không gian tĩnh lặng của những ngôi chùa cổ như chùa Hang, chùa Tây Phương... cũng tạo nên khoảnh khắc bình yên hiếm có."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/3-1.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/29-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/30-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/31-2-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/32-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/33-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/34-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/36-1-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/37-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/38-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/39-scaled.jpg",
+          "alt_text": "Trekking Núi Dinh",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843429565_62f31e2a8f408d4a21adad4cdca40111.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843147497_4c0b99810e63fdf82ebef01703154d48.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/12/Artboard-5.png",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843474279_b4376eed1ac8ab80876537a06cfd4d3c.jpg_compressed.jpeg",
+          "alt_text": "NƠI NÚI - BIỂN TÁC THÀNH KHÔNG KHÍ TRONG LÀNH",
+          "caption": null,
+          "title": "NƠI NÚI - BIỂN TÁC THÀNH KHÔNG KHÍ TRONG LÀNH",
+          "body": "Đối cái ngột ngạt của thị thành để lấy cả bầu không khí mát lành - kết quả của sự pha trộn giữa cái xanh mát của núi rừng cùng vị mặn của biển."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843512051_6564449714cf003d6e170f65fa687e1f.jpg_compressed.jpeg",
+          "alt_text": "CUNG ĐƯỜNG VỪA VẶN CHO NGƯỜI MỚI",
+          "caption": null,
+          "title": "CUNG ĐƯỜNG VỪA VẶN CHO NGƯỜI MỚI",
+          "body": "Cung đường nhẹ, dễ tiếp cận, thử thách vừa đủ với 1000 bậc thang xuyên tán rừng mát rượi siêu chill."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843269895_88a9bf973fd002ecdce0fb282f1c5668.jpg_compressed.jpeg",
+          "alt_text": "THƯỞNG THỨC VIEW TRIỆU ĐÔ TỪ ĐỈNH THỊ VẢI",
+          "caption": null,
+          "title": "THƯỞNG THỨC VIEW TRIỆU ĐÔ TỪ ĐỈNH THỊ VẢI",
+          "body": "Đứng trên đỉnh núi và thu trọn vào tầm mắt sông Thị Vải uốn lượn phía dưới."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843592744_1ed040f4abb3b1e196ec84a623a86046.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843570164_7dac92f78f8fd8e24b4ec038400b3d9d.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843540755_26380b4fd9842f6a6a2e9a1cb3c7176c.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843512051_6564449714cf003d6e170f65fa687e1f.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843502794_c090743c819a243bd0697669c09805d2.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843474279_b4376eed1ac8ab80876537a06cfd4d3c.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843472318_a1ba020675bca4b326541241365000a0.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843200839_596b22d451e5b4238a349f6c43db1145.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843215967_5cb607da024cf2ef3fc4a497b81bc62b.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843269895_88a9bf973fd002ecdce0fb282f1c5668.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843300166_47898b8203012be473d1387a21f6208c.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 11,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843392756_2e25146fb8984a349e357a060d8db096.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 12,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843417541_83f58af4c2dbba2dfb7c1b1f2b5c231e.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 13,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843451500_e13fe9c4f70e4282c4b41cc5c91ac9fc.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 14,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843184008_2b182a68de3b02b03af9fa9f7f325bfa.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 15,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843147497_4c0b99810e63fdf82ebef01703154d48.jpg_compressed-1.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 16,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843601999_efe420b5b9a0668b6653aeeafc903e69.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 17,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843597324_a595ab8173605b42feb197b80ba30996.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 18,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843264675_ddb467809c12c993dc72b88749b9d8b7.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 19,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843262410_1a75f407ab10a4917d56d771281937c3.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 20,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843429565_62f31e2a8f408d4a21adad4cdca40111.jpg_compressed.jpeg",
+          "alt_text": "Trekking Núi Thị Vải",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/24-1-1024x1024.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/24-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/27.jpg",
+          "alt_text": "VÉ XE KHỨ HỒI",
+          "caption": null,
+          "title": "VÉ XE KHỨ HỒI",
+          "body": "Vé xe khứ hồi từ TP.HCM đến núi Tà Cú và ngược lại"
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/19-1.jpg",
+          "alt_text": "Ăn trưa tại bãi biển Kê Gà",
+          "caption": null,
+          "title": "Ăn trưa tại bãi biển Kê Gà",
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/51-e1742351959694.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/18-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/24-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/19-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/20-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/21-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/27.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/26.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/25.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/23-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/22-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/11/17-1.jpg",
+          "alt_text": "Trekking Tà Cú - Hải Đăng Kê Gà",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/14.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/12.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/9-e1742365472324.jpg",
+          "alt_text": "ĐẠP XE XUYÊN RỪNG",
+          "caption": null,
+          "title": "ĐẠP XE XUYÊN RỪNG",
+          "body": "Khởi động hành trình với những vòng xe lăn qua con đường rừng xanh mướt, tận hưởng không khí trong lành và cảnh vật thiên nhiên hoang sơ."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/13-e1742365554443.jpg",
+          "alt_text": "KHÁM PHÁ CÁNH ĐỒNG TÀ LÀI",
+          "caption": null,
+          "title": "KHÁM PHÁ CÁNH ĐỒNG TÀ LÀI",
+          "body": "Không gian yên bình giữa núi rừng, nơi bạn có thể thư giãn giữa cánh đồng xanh mướt và dòng suối nhỏ trong veo."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/10-1-e1742365611465.jpg",
+          "alt_text": "TRUNG TÂM GẤU CÁT TIÊN",
+          "caption": null,
+          "title": "TRUNG TÂM GẤU CÁT TIÊN",
+          "body": "Tìm hiểu về công tác bảo tồn động vật hoang dã và chứng kiến những chú gấu được chăm sóc trong môi trường tự nhiên."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/8-1-e1742365647355.jpg",
+          "alt_text": "CHECK-IN CÂY KƠ NIA",
+          "caption": null,
+          "title": "CHECK-IN CÂY KƠ NIA",
+          "body": "Một biểu tượng của rừng già, cây Kơ Nia sừng sững giữa thiên nhiên với những tán lá rộng che phủ một góc rừng."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/51-e1742351959694.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/30.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/32.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/31-1.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/29.jpg",
+          "alt_text": "Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/30-1024x1024.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/Thiet-ke-chua-co-ten-20-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/03/hyundai-universe.jpg",
+          "alt_text": "VÉ XE KHỨ HỒI",
+          "caption": null,
+          "title": "VÉ XE KHỨ HỒI",
+          "body": "Đảm bảo giấc ngủ thoải mái nhất có thể cho du khách trên chặng đường dài, đảm bảo sức khỏe cho hành trình trekking vào sáng hôm sau. Xe thường là loại 40-45 chỗ, có điều hòa, chăn đắp cá nhân và nước uống."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/7.jpg",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/6.jpg",
+          "alt_text": "Check-in chóp Lảo Thẩn cao 2860m",
+          "caption": null,
+          "title": "Check-in chóp Lảo Thẩn cao 2860m",
+          "body": "Chóp Lảo Thẩn (thường được ghi nhận với độ cao 2.860m, mặc dù một số nguồn ghi là 2.862m) chính là điểm đến cuối cùng, là phần thưởng xứng đáng nhất cho mọi nỗ trình trekking."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/4.jpg",
+          "alt_text": "Check-in mỏm \"TIÊN ÔNG CÂU CÁ\"",
+          "caption": null,
+          "title": "Check-in mỏm \"TIÊN ÔNG CÂU CÁ\"",
+          "body": "Nơi để bạn hoá thân thành một vị tiên đang ngồi câu cá giữa chốn bồng lai tiên cảnh."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/1.jpg",
+          "alt_text": "Băng qua rừng cây trơ trụi",
+          "caption": null,
+          "title": "Băng qua rừng cây trơ trụi",
+          "body": "Khung cảnh mang đậm vẻ đẹp hoang sơ, ma mị và đầy tính điện ảnh."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/9.jpg",
+          "alt_text": "Mỏm Chênh Vênh",
+          "caption": null,
+          "title": "Mỏm Chênh Vênh",
+          "body": "Đúng như tên gọi, tảng đá này nhô ra khỏi triền núi, tạo cảm giác đứng giữa không trung."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/10.jpg",
+          "alt_text": "Bao gồm hai bữa ăn sáng và trưa",
+          "caption": null,
+          "title": "Bao gồm hai bữa ăn sáng và trưa",
+          "body": "Đoàn sẽ ăn sáng tại nhà a Hờ (Porter của Inspire Trails) và ăn trưa ở Lán 2 trước khi chinh phục chóp Lảo Thẩn 2860m"
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/5.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/4.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/15.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/19.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/z4009079428957_142d18b0068a4604e3ed34e1814f8540-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/29-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/16-2-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/28-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/27-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/26-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/25-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 11,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/19-1-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 12,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/24-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 13,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/23-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 14,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/22-1-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 15,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/21-1-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 16,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/09/16-1-scaled.jpg",
+          "alt_text": "Trekking Săn Mây Núi Lảo Thẩn",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    },
+    {
+      "trip_source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "media": [
+        {
+          "placement": "Cover",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472622327870_d41e5d011eccbfd0303690c94cc53c05-768x1024.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Hero",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472622327870_d41e5d011eccbfd0303690c94cc53c05.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2025/12/Artboard-5.png",
+          "alt_text": "NGƯỜI DẪN ĐƯỜNG",
+          "caption": null,
+          "title": "NGƯỜI DẪN ĐƯỜNG",
+          "body": "Đồng hành suốt hành trình, giúp bạn khám phá những góc đẹp nhất của cung đường và đảm bảo chuyến đi an toàn, trọn vẹn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946514760_bde7f5440d16849da736d0bf18acd020.jpg",
+          "alt_text": "TREKKING XUYÊN RỪNG THÔNG GIÀ",
+          "caption": null,
+          "title": "TREKKING XUYÊN RỪNG THÔNG GIÀ",
+          "body": "Khám phá rừng thông 3 lá, cao vút đến độ mấy chục mét, gần như che hết cả bầu trời và làm cho khung cảnh của Langbiang thêm phần bí ẩn."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946330888_061a0284e8500303219c1af379167707.jpg",
+          "alt_text": "TRỞ VỀ MỘT ĐÀ LẠT LÃNG MẠN CĂN NGUYÊN",
+          "caption": null,
+          "title": "TRỞ VỀ MỘT ĐÀ LẠT LÃNG MẠN CĂN NGUYÊN",
+          "body": "Lang Biang là nơi hiếm hoi còn cất giữ một Đà Lạt với sự lãng mạn rất nguyên bản. Bắt đầu từ tiếng gió lùa qua rừng thông, từ con dốc đất đỏ và một bầu không khí lãng mạn thời Đà Lạt xưa cũ."
+        },
+        {
+          "placement": "Highlight",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472621243458_abdf3506726120a791a3140b39d9158c.jpg",
+          "alt_text": "THƯỞNG THỨC VIEW TRIỆU ĐÔ TẠI NÓC NHÀ ĐÀ LẠT",
+          "caption": null,
+          "title": "THƯỞNG THỨC VIEW TRIỆU ĐÔ TẠI NÓC NHÀ ĐÀ LẠT",
+          "body": "Chạm đỉnh Lang Biang – nóc nhà Đà Lạt, bắt trọn bức tranh sơn cước đầy hữu tình và chiếc view trọn vẹn thành phố Đà Lạt mộng mơ."
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 0,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472622327870_d41e5d011eccbfd0303690c94cc53c05.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 1,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946330888_061a0284e8500303219c1af379167707.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 2,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946514760_bde7f5440d16849da736d0bf18acd020.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 3,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472621243458_abdf3506726120a791a3140b39d9158c.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 4,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472621908496_e1643a5336cb8bc2a74b5d6c133745ad.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 5,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472637039702_e4b52cd5945e84f67571d3ac1cf8e998.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 6,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472637215601_bf2eff6bce6fec63133fa33eaf5347aa.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 7,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472638263750_d4e096781babfea4d6f463f396b80500.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 8,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472639997598_b562ab7bc2fd20275b2ed5839215b80f.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 9,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946658298_147ddd98f3b46034b1bdf1e507753ef4.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 10,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960782326_a676a210d28f9e4d2b0fd68a00ebc9e3.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 11,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521959937875_994cc083b7fcc62b350078bc36946e99.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 12,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960216528_72a1f4f899eb254f90e34eb13902d411.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 13,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960367384_4793254237172e1fdfeeb62ec6597756.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 14,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960458813_75f243be456bc6af6958b6443cc9f620.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 15,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960722797_848c2ff309dd356cdf3dc56ee9f12c9f.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        },
+        {
+          "placement": "Schedule",
+          "sort_order": 16,
+          "source_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521960058719_9812e014a45322fc48cd8b3d256f1db5.jpg",
+          "alt_text": "Trekking Đỉnh Lang Biang",
+          "caption": null,
+          "title": null,
+          "body": null
+        }
+      ]
+    }
+  ]
+}

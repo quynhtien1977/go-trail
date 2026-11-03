@@ -1,119 +1,117 @@
 # Go-Trail
 
-Hệ thống đặt vé xe khứ hồi kèm Leader dẫn đoàn trekking/dã ngoại. Dự án phục vụ đồ án nhóm, tập trung vào quản lý chuyến, đặt ghế, thanh toán và vận hành đoàn.
+Ứng dụng đặt vé xe khứ hồi kèm Leader dẫn đoàn trekking
 
-## Trạng thái hiện tại
+## Trạng thái dự án
 
-Repo đang ở giai đoạn khởi tạo: có scaffold Next.js, TypeScript, Tailwind CSS và ESLint. Trang chủ vẫn là giao diện mặc định của Next.js. Database, đăng nhập và các tính năng nghiệp vụ bên dưới nằm trong kế hoạch triển khai.
+Đã có schema/database, dữ liệu mẫu, Auth/RBAC/audit, backend catalog và quản lý tuyến/điểm đón, giao diện đăng nhập/đăng ký, portal theo role, trang chủ và About Us. GitHub Actions đã kiểm tra chất lượng tự động.
 
-## Phạm vi MVP
-
-- Xem tuyến, lịch khởi hành và sơ đồ ghế. Khách phải đăng nhập để giữ ghế và mua vé.
-- Một tài khoản đặt nhiều ghế; mỗi ghế có thông tin hành khách và điểm đón riêng.
-- Thanh toán chuyển khoản bằng VietQR, xác nhận qua webhook SePay.
-- Quản lý vé QR, hủy vé và hoàn tiền theo chính sách. Kế toán/Admin duyệt và xác nhận hoàn tiền thủ công.
-- Quản lý xe, tài xế, phụ xe, Leader và phân công theo chuyến.
-- Leader check-in hành khách bằng QR trên điện thoại, đánh dấu vắng và kết thúc chuyến.
-- Đánh giá sau chuyến, báo cáo doanh thu/lãi lỗ và nhật ký kiểm toán.
-
-Voucher, vé phụ, thuê xe ngoài, tracklog, VNPay/MoMo và hoàn tiền tự động qua ngân hàng nằm ngoài MVP.
-
-## Vai trò
-
-| Role | Trách nhiệm chính |
-| --- | --- |
-| `Customer` | Đặt vé, thanh toán, quản lý vé và đánh giá |
-| `Leader` | Xem chuyến được phân công, check-in và kết thúc chuyến |
-| `RouteMgr` | Quản lý tuyến, chuyến và danh sách hành khách |
-| `HRMgr` | Quản lý nhân sự, đội xe, phân công và chi phí chuyến |
-| `Accountant` | Đối soát thanh toán, hoàn tiền và báo cáo tài chính |
-| `Admin` | Quản lý tài khoản, cấu hình, audit và toàn bộ hệ thống |
-
-Driver và Assistant có hồ sơ nhân sự nhưng không đăng nhập hệ thống.
+Backend catalog có metadata media theo tuyến; giao diện catalog/chi tiết đang tích hợp và nghiệm thu. Quản lý xe/nhân sự/chuyến, booking, thanh toán SePay và check-in QR đang được phát triển.
 
 ## Công nghệ
 
-| Thành phần | Công nghệ | Trạng thái |
-| --- | --- | --- |
-| Framework | Next.js 16.4.0, App Router | Đã cài |
-| UI runtime | React 19.3.0 | Đã cài |
-| Ngôn ngữ | TypeScript 5, strict mode | Đã cấu hình |
-| Styling | Tailwind CSS 4 | Đã cài |
-| Kiểm tra mã | ESLint 9 | Đã cấu hình |
-| Database / ORM | PostgreSQL trên Supabase, Prisma | Dự kiến |
-| Xác thực | Auth.js, credentials + JWT sessions | Dự kiến |
-| Form / components | React Hook Form, Zod, shadcn/ui | Dự kiến |
-| Thanh toán | VietQR + webhook SePay | Dự kiến |
+Next.js App Router · React · TypeScript · Tailwind CSS · shadcn/ui · Prisma · PostgreSQL/Supabase · Auth.js · Upstash Redis.
 
-Dùng npm và giữ `package-lock.json` để thống nhất dependency giữa các máy.
+## Cài đặt và chạy
 
-## Chạy local
+### 1. Lấy mã nguồn
 
-Yêu cầu Node.js **20.9.0 trở lên** theo phiên bản Next.js đã cài, cùng npm. Sau khi clone repo, chạy tại thư mục gốc:
+Cài **Node.js 24** theo `.node-version` và dùng npm với `package-lock.json`.
+
+```bash
+git clone --branch develop https://github.com/quynhtien1977/go-trail.git
+cd go-trail
+```
+
+Tạo `.env` từ file mẫu (PowerShell trên Windows):
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### 2. Cấu hình môi trường
+
+Mỗi thành viên tạo **một project Supabase development riêng**. Điền các biến sau trong `.env`:
+
+| Biến | Giá trị cần điền |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string của DB riêng, lấy ở mục **Connect** trong Supabase |
+| `DIRECT_URL` | Direct hoặc **Session pooler** của cùng DB cho migration/seed; có thể dùng Session pooler cho cả hai URL khi chạy local |
+| `AUTH_SECRET` | Secret ngẫu nhiên riêng, ít nhất 32 ký tự |
+| `NEXTAUTH_URL` | `http://localhost:3000` |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Redis REST endpoint và token dùng cho development |
+| `AUTH_RATE_LIMIT_NAMESPACE` | Tên riêng cho mỗi thành viên, ví dụ `go-trail:dev:ten-ban` |
+| `SEED_PASSWORD` | Mật khẩu tài khoản mẫu, ít nhất 16 ký tự và tối đa 72 byte UTF-8 |
+
+Seed dùng `DIRECT_URL` nếu đã điền, nếu không thì dùng `DATABASE_URL`; không cần khai báo thêm project ref. URL PostgreSQL cần đúng mật khẩu DB; mã hóa các ký tự đặc biệt trong mật khẩu nếu có. Không dùng Supabase API URL thay connection string.
+
+Redis có thể dùng riêng hoặc dùng Redis development của nhóm với namespace riêng. Giữ URL ảnh public có sẵn trong `.env.example`; SePay, cron và thông tin ngân hàng chưa cần cấu hình ở bước này. Không chia sẻ `.env` hoặc đưa secrets lên GitHub.
+
+### 3. Khởi tạo DB và chạy ứng dụng
+
+Kiểm tra cả hai URL trỏ đúng DB development của mình, rồi chạy:
 
 ```bash
 npm ci
+npm run db:deploy
+npm run db:seed
 npm run dev
 ```
 
-Mở [localhost:3000](http://localhost:3000). Scaffold hiện tại chạy được mà chưa cần kết nối database hoặc cấu hình thanh toán.
+Mở [localhost:3000](http://localhost:3000). Auth/portal cần DB đã migration và Redis hoạt động.
 
-Các lệnh kiểm tra:
+Seed tạo **8 tuyến tham khảo, 13 điểm đón, 5 tài khoản theo role, 3 nhân sự, 1 xe/16 ghế và 3 chuyến demo**, cùng cấu hình/chính sách hoàn tiền legacy. Các chuyến demo không phải lịch mở bán thật.
+
+Đăng nhập bằng email `<role viết thường>@go-trail.example.test`: `customer`, `leader`, `routemgr`, `hrmgr` hoặc `admin`; mật khẩu là `SEED_PASSWORD` đã điền. Đăng ký tại `/register` luôn tạo Customer. Migration 5 role chuyển Accountant cũ thành Customer bị khóa và thu hồi phiên; seed không tự mở lại tài khoản này.
+
+Seed có thể chạy lại và giữ các giá trị đã có; đổi `SEED_PASSWORD` không đổi mật khẩu tài khoản đã tạo.
+
+Ảnh tuyến được phục vụ từ Supabase Storage. Seed nạp thêm **148 vị trí ảnh của 8 tuyến** vào DB riêng từ manifest dùng chung; không tải binary ảnh về repo. Thành viên chạy app/seed không cần `SUPABASE_SERVICE_ROLE_KEY`; biến này chỉ dành cho người phụ trách upload dữ liệu ảnh.
+
+Chỉ seed DB development của mình. Seed/importer từ chối khi `NODE_ENV=production`; URL không tự cho biết một DB là development hay production.
+
+## Khi nhận code mới
 
 ```bash
-npm run lint
-npx tsc --noEmit
-npm run build
+npm ci
+npm run db:deploy
+npm run dev
 ```
 
-Sau khi build, chạy `npm run start` để mở production server local. Repo hiện chưa có test runner hoặc script `npm test`.
+`db:deploy` chỉ áp dụng migrations chưa chạy trên DB của mình, không tạo lại toàn bộ DB. Chạy `db:seed` khi cần dữ liệu mẫu hoặc có hướng dẫn seed mới; migration và seed là hai việc riêng.
 
-## Biến môi trường
+## Lệnh thường dùng
 
-Khi triển khai backend, tạo `.env` tại thư mục gốc và điền cấu hình của đúng môi trường:
+| Lệnh | Mục đích |
+| --- | --- |
+| `npm run dev` | Chạy development |
+| `npm run lint` | Kiểm tra ESLint |
+| `npm run typecheck` | Sinh Prisma Client và kiểm tra TypeScript |
+| `npm test` | Tests trên DB PGlite cô lập, không dùng DB Supabase của thành viên |
+| `npm run test:catalog:http` | HTTP smoke catalog trên production build có sẵn, DB cô lập |
+| `npm run test:rbac:http` | Kiểm ma trận 5 role qua HTTP trên production build có sẵn, DB cô lập; không cần secrets bên ngoài |
+| `npm run build` | Build production |
+| `npm run db:status` | Xem migrations của DB đang cấu hình |
+| `npm run db:media` | Kiểm tra import metadata media bằng transaction rollback; `--apply` để áp dụng vào DB development của mình khi có manifest hoàn chỉnh |
+| `npm run audit:check` | Kiểm tra dependency theo baseline của nhóm |
 
-```dotenv
-DATABASE_URL=
-DIRECT_URL=
-AUTH_SECRET=
-SEPAY_API_KEY=
-CRON_SECRET=
-BANK_ID=
-BANK_ACCOUNT_NUMBER=
-BANK_ACCOUNT_NAME=
-SEED_PASSWORD=
-```
+## Cấu trúc dự án
 
-- `DATABASE_URL`: PostgreSQL connection string cho Prisma; không phải Supabase project API URL.
-- `DIRECT_URL`: tùy chọn kết nối direct/session cho migrations khi runtime dùng transaction pooler; sẽ được nối khi cấu hình Prisma.
-- `AUTH_SECRET`: secret ngẫu nhiên cho Auth.js.
-- `SEPAY_API_KEY`: secret xác thực webhook tiền vào, khớp cấu hình SePay.
-- `CRON_SECRET`: secret riêng để bảo vệ các tác vụ nền.
-- `BANK_*`: thông tin tài khoản công ty nhận thanh toán VietQR.
-- `SEED_PASSWORD`: mật khẩu tài khoản demo khi chạy seed trên môi trường phát triển.
+| Thư mục | Nội dung |
+| --- | --- |
+| `src/app/` | Pages và API |
+| `src/server/` | Auth, phân quyền và nghiệp vụ backend |
+| `src/schemas/` | Validation |
+| `prisma/` | Schema, migrations và seed |
+| `data/reference/` | Snapshot catalog dùng chung cho dữ liệu mẫu |
+| `tests/` | Unit/integration tests và HTTP smoke |
 
-Các biến được sử dụng khi tính năng tương ứng được triển khai. Giữ env thật ngoài Git và không đặt tiền tố `NEXT_PUBLIC_` cho secrets hoặc connection strings. Thông tin ngân hàng khách nhận hoàn tiền được lưu theo yêu cầu hoàn tiền, không đặt trong env.
+## Làm việc trong nhóm
 
-## Kiến trúc dự kiến
-
-Route Handlers xác thực, kiểm quyền, validate request rồi gọi services. Logic booking, payment, refund và departure đặt trong `src/server/services/`; Prisma quản lý schema, migrations và seed trong `prisma/`.
-
-- Kiểm quyền trên server theo role, chủ sở hữu dữ liệu và phân công chuyến.
-- Giữ ghế và xử lý tiền trong DB transaction, có cơ chế idempotency.
-- Khóa nhiều ghế theo thứ tự cố định; một ghế thất bại thì rollback toàn bộ đơn.
-- Webhook trùng không được tạo thêm payment hoặc xác nhận vé lần nữa.
-- Tiền VND dùng Decimal; thời gian lưu UTC, hiển thị theo `Asia/Ho_Chi_Minh`.
-- Thay đổi về tiền, trạng thái chuyến và quyền truy cập phải có audit log.
-
-## Lộ trình triển khai
-
-1. Schema Prisma, migration và seed dữ liệu mẫu.
-2. Auth, phân quyền và audit log.
-3. Quản lý tuyến, xe, nhân sự, chuyến và phân công.
-4. Chọn/giữ ghế, tạo hóa đơn và trang thanh toán.
-5. Webhook SePay, xử lý thanh toán cần đối soát và vé QR.
-6. Check-in Leader, kết thúc chuyến và đánh giá.
-7. Hủy vé, chính sách hoàn tiền và xử lý hủy/dời chuyến.
-8. Dashboard, báo cáo, cảnh báo và cron.
-
-Trước khi tạo migration, nhóm cần chốt ràng buộc bán lại ghế, thứ tự tạo hóa đơn/khóa ghế, giá trị cấu hình hệ thống và các chuyển trạng thái hủy/dời chuyến. Quy tắc xử lý chuyển thừa tiền cũng cần thống nhất trước khi triển khai payment.
+- Tạo branch theo nhiệm vụ từ `develop`, ví dụ `feat/trip-catalog`; mở PR vào `develop`. `main` dành cho bản ổn định/release.
+- PR cần mô tả thay đổi, cách kiểm thử, đồng đội review và CI của đúng head mới nhất PASS.
+- Khi thay cấu trúc DB, PR phải có `schema.prisma` và migration tương ứng. Không sửa migration đã áp dụng; không dùng SQL Editor để thay schema riêng rồi bỏ quên migration.
+- Người tạo migration dùng DB local có thể bỏ và shadow DB riêng; các thành viên khác áp dụng file migration bằng `db:deploy`. Không chạy reset trên DB có dữ liệu cần giữ.
+- Mỗi người có dữ liệu chạy thử riêng; chia sẻ dữ liệu khởi tạo qua seed/catalog trong repository.
+- CI kiểm tra chất lượng; chưa tự deploy hoặc migration DB của thành viên.
+- PRD và ghi chú kỹ thuật nội bộ được quản lý riêng, không nằm trong bản clone GitHub; nhận từ người phụ trách trước khi làm nghiệp vụ.

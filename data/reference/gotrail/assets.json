@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7222.JPG_compressed.jpeg",
+      "role": "cover",
+      "alt": "Trekking Núi Bà Đen - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-4.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Núi Bà Đen",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/PHOR7323.JPG_compressed-1.jpeg",
+      "role": "gallery",
+      "alt": "Cung đường leo núi Bà Đen",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/06/trail-bus-da-bac-hoa-binh-nguoi-dan-duong-1-e1762507170523.jpg",
+      "role": "gallery",
+      "alt": "Leader dẫn đường Go Trail",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ba-den/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/03/IMG_2095-scaled.jpg",
+      "role": "gallery",
+      "alt": "Đoàn trekker Go Trail tại Bà Đen",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-e1742370003781.jpg",
+      "role": "cover",
+      "alt": "Trekking Núi Chứa Chan - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-2.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Núi Chứa Chan",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/PHOR8084-scaled-e1761105954650.jpg",
+      "role": "gallery",
+      "alt": "Trekker trên sườn núi Chứa Chan",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/IMG_6931-3-e1742812148549.jpg",
+      "role": "gallery",
+      "alt": "Cung đường Chứa Chan mùa cỏ lau",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-chua-chan/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/51-e1742351959694.jpg",
+      "role": "gallery",
+      "alt": "Leader đồng hành cùng đoàn Chứa Chan",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/35-1-1024x1024.jpg",
+      "role": "cover",
+      "alt": "Trekking Núi Dinh - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-2.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Núi Dinh",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/1-1.jpg",
+      "role": "gallery",
+      "alt": "Đỉnh La Bàn nhìn ra bán đảo Long Sơn",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/2-1.jpg",
+      "role": "gallery",
+      "alt": "Cung đường mòn xuyên rừng Núi Dinh",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-nui-dinh/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/4-1.jpg",
+      "role": "gallery",
+      "alt": "Suối mát trong rừng Núi Dinh",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843429565_62f31e2a8f408d4a21adad4cdca40111.jpg_compressed.jpeg",
+      "role": "cover",
+      "alt": "Trekking Núi Thị Vải - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-2.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Núi Thị Vải",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843474279_b4376eed1ac8ab80876537a06cfd4d3c.jpg_compressed.jpeg",
+      "role": "gallery",
+      "alt": "Bậc thang đá lên núi Thị Vải",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843512051_6564449714cf003d6e170f65fa687e1f.jpg_compressed.jpeg",
+      "role": "gallery",
+      "alt": "Cảnh quan rừng núi Thị Vải",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-thi-vai/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/03/z7475843269895_88a9bf973fd002ecdce0fb282f1c5668.jpg_compressed.jpeg",
+      "role": "gallery",
+      "alt": "Điểm vọng cảnh trên đỉnh Thị Vải",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/11/24-1-1024x1024.jpg",
+      "role": "cover",
+      "alt": "Trekking Tà Cú - Hải Đăng Kê Gà - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-2.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Tà Cú - Hải Đăng Kê Gà",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/11/27.jpg",
+      "role": "gallery",
+      "alt": "Cung đường ven biển và Hải đăng Kê Gà",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/11/19-1.jpg",
+      "role": "gallery",
+      "alt": "Đoàn khách trải nghiệm Tà Cú Kê Gà",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-ta-cu-ke-ga/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/51-e1742351959694.jpg",
+      "role": "gallery",
+      "alt": "Leader dẫn đường Go Trail",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/14.jpg",
+      "role": "cover",
+      "alt": "Hiking & Cycling Vườn Quốc Gia Cát Tiên - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-2.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Hiking & Cycling Vườn Quốc Gia Cát Tiên",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/9-e1742365472324.jpg",
+      "role": "gallery",
+      "alt": "Cây Tung đại thụ hàng trăm năm tuổi tại Cát Tiên",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/13-e1742365554443.jpg",
+      "role": "gallery",
+      "alt": "Đạp xe trên đường mòn xuyên rừng Cát Tiên",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/bus-trail-cat-tien/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/03/10-1-e1742365611465.jpg",
+      "role": "gallery",
+      "alt": "Ghềnh đá Bến Cự dòng sông Đồng Nai",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/09/30-1024x1024.jpg",
+      "role": "cover",
+      "alt": "Trekking Săn Mây Núi Lảo Thẩn - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-3.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Săn Mây Núi Lảo Thẩn",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/09/7.jpg",
+      "role": "gallery",
+      "alt": "Chóp đỉnh Lảo Thẩn 2860m ngập trong mây",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/09/6.jpg",
+      "role": "gallery",
+      "alt": "Đồi cỏ cháy và lối mòn trekking Y Tý",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lao-than/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2025/09/4.jpg",
+      "role": "gallery",
+      "alt": "Biển mây bồng bềnh lúc bình minh Lảo Thẩn",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472622327870_d41e5d011eccbfd0303690c94cc53c05-768x1024.jpg",
+      "role": "cover",
+      "alt": "Trekking Đỉnh Lang Biang - Ảnh đại diện bìa",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "image_url": "https://gotrail.vn/wp-content/themes/inspiretrails/assets-v2/images/icons/bus/i-do-kho-3.svg",
+      "role": "difficulty",
+      "alt": "Icon cấp độ khó Trekking Đỉnh Lang Biang",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946514760_bde7f5440d16849da736d0bf18acd020.jpg",
+      "role": "gallery",
+      "alt": "Rừng thông cao nguyên Lang Biang",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7521946330888_061a0284e8500303219c1af379167707.jpg",
+      "role": "gallery",
+      "alt": "Đoàn trekking giữa rừng rêu Lang Biang",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    },
+    {
+      "source_url": "https://gotrail.vn/bus/trail-bus-lang-biang/",
+      "image_url": "https://gotrail.vn/wp-content/uploads/2026/02/z7472621243458_abdf3506726120a791a3140b39d9158c.jpg",
+      "role": "gallery",
+      "alt": "Tầm nhìn từ sườn núi Lang Biang xuống thung lũng",
+      "fetched_at": "2026-10-11T04:15:00Z"
+    }
+  ]
+}

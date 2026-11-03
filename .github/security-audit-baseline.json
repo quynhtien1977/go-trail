@@ -1,0 +1,82 @@
+{
+  "version": "1.3.0",
+  "reviewedAt": "2026-11-02",
+  "reviewDeadline": "2026-11-03T23:59:59Z",
+  "notes": "Re-reviewed 2026-10-28 after Next.js/Zod/shadcn and targeted transitive security updates. Prisma CLI/Client/pg adapter remain at 7.10.0 under the existing user deferral. The original exceptions remain time-bounded; the user explicitly approved the new unpatched Low deepmerge development-tool exception on 2026-10-28. On 2026-11-02, the project lead authorized the proposed minimatch 3.1.5-only temporary exception after modern minimatch copies were patched to 11.0.4 and compatibility checks passed. Critical findings remain prohibited. Re-review by the unchanged 2026-11-03 deadline or before production release, whichever comes first; exceptions do not mean vulnerabilities are fixed.",
+  "exceptions": [
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "chain": [
+        "eslint-config-next",
+        "@next/eslint-plugin-next",
+        "fast-glob",
+        "micromatch",
+        "braces"
+      ],
+      "additionalChains": [
+        ["shadcn", "fast-glob", "micromatch", "braces"],
+        ["shadcn", "@shadcn/registry", "fast-glob", "micromatch", "braces"],
+        ["shadcn", "ts-morph", "@ts-morph/common", "fast-glob", "micromatch", "braces"]
+      ],
+      "reachability": "ESLint and shadcn execute during development/build. shadcn remains in dependencies as before, but the application imports only its static Tailwind CSS, not its JavaScript CLI in request handlers. Glob patterns come from repository-controlled files/configuration; HTTP input is never passed to braces. No patched braces release is available. Do not run these tools with untrusted patterns or registries; review upstream before this exception expires.",
+      "source": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "severity": "high",
+      "chain": ["prisma", "@prisma/config", "deepmerge-ts"],
+      "reachability": "Used by Prisma CLI configuration loaded from repository-controlled files. Go-Trail request handlers do not import prisma/config or merge attacker-controlled recursive object graphs. A fix is available through Prisma 7.10.1, but the user explicitly deferred this coordinated dependency upgrade until open PRs are merged and the team resyncs from develop. Keep this exception time-bounded and do not load untrusted Prisma config.",
+      "source": "https://github.com/advisories/GHSA-ggr8-5vv4-36mx",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "severity": "high",
+      "chain": ["prisma", "mysql2"],
+      "reachability": "MySQL driver bundled by Prisma CLI. Go-Trail uses PostgreSQL via the pg adapter and does not open MySQL connections or use mysql_clear_password. A patch is available through Prisma 7.10.1; the user deferred the upgrade until current PRs are merged and the team resyncs from develop. This exception must be reviewed before enabling any MySQL path and before expiry.",
+      "source": "https://github.com/advisories/GHSA-3f6p-5ww8-9rcr",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-rgwj-5xj2-c3m3",
+      "package": "mysql2",
+      "severity": "moderate",
+      "chain": ["prisma", "mysql2"],
+      "reachability": "Affected path requires a compressed MySQL connection to a malicious or compromised MySQL server. Go-Trail uses PostgreSQL via pg and does not enable the MySQL compressed protocol. A patch is available through Prisma 7.10.1; the user deferred the coordinated upgrade until open PRs are merged and the team resyncs from develop. Review before any MySQL use or exception expiry.",
+      "source": "https://github.com/advisories/GHSA-rgwj-5xj2-c3m3",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-gcqx-w48m-w2h4",
+      "package": "deepmerge",
+      "severity": "low",
+      "chain": ["shadcn", "deepmerge"],
+      "additionalChains": [["shadcn", "@shadcn/registry", "deepmerge"]],
+      "reachability": "Reviewed and explicitly approved by the user on 2026-10-28. Upstream latest deepmerge 4.3.1 has no patched release. Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. The CSS bytes are unchanged after the shadcn security update. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the existing deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
+      "source": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    },
+    {
+      "id": "GHSA-g3hv-75wg-m249",
+      "package": "minimatch",
+      "severity": "moderate",
+      "allowedVersions": ["3.1.5"],
+      "chain": ["eslint", "minimatch"],
+      "additionalChains": [
+        ["eslint", "@eslint/config-array", "minimatch"],
+        ["eslint", "@eslint/eslintrc", "minimatch"],
+        ["eslint-config-next", "eslint-plugin-import", "minimatch"],
+        ["eslint-config-next", "eslint-plugin-jsx-a11y", "minimatch"],
+        ["eslint-config-next", "eslint-plugin-react", "minimatch"]
+      ],
+      "reachability": "Reviewed and authorized by the project lead on 2026-11-02. All modern minimatch 10 copies are patched to 11.0.4. Only legacy 3.1.5 remains in ESLint and its plugins, whose callable CommonJS API is incompatible with minimatch 11 (verified TypeError on a legacy call). Upstream legacy-v3 tag remains 3.1.5. The reported firstPhasePreProcess/optimizationLevel path is absent from the installed v3 source; npm still reports this version under the advisory's broad affected range, so this is a temporary risk acceptance, not a claim the advisory is fixed. Glob input comes from repository-controlled lint configuration; application request handlers do not import minimatch or expose arbitrary glob matching. The audit gate checks every reported affected node against the authoritative lockfile and accepts only exact 3.1.5; any affected 10.x, unknown version or missing evidence still blocks CI. Re-review before release, untrusted glob/config input, changing lint dependencies, or expiry.",
+      "source": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+      "expiresAt": "2026-11-03T23:59:59Z"
+    }
+  ]
+}
