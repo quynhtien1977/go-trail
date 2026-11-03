@@ -156,27 +156,36 @@ export async function assignStaff(db: Database, identity: Actor, departureId: nu
     const departure = await lockDeparture(tx, departureId);
     const vehicle = await assignments.findVehicle(tx, departureId, vehicle_id);
     if (!vehicle) throw new AppError("INVALID_INPUT", 422);
-    if (replace_dep_staff_id !== undefined) {
-      // Swap in one transaction so a confirmed crew never passes through an empty Driver/Assistant/Leader slot.
-      const old = await assignments.findStaffAssignmentById(tx, departureId, replace_dep_staff_id);
-      if (!old) throw new AppError("NOT_FOUND", 404);
-      if (old.role_in_trip !== role_in_trip || old.dep_vehicle_id !== vehicle.dep_vehicle_id) throw new AppError("INVALID_INPUT", 422);
-      if (old.staff_id === staff_id) return readAssignments(tx, departureId);
-      for (const id of [old.staff_id, staff_id].sort((a, b) => a - b)) await assignments.lockStaff(tx, id);
-      await assignments.removeStaff(tx, departureId, replace_dep_staff_id);
-    }
-    await assertStaffEligible(tx, staff_id, role_in_trip, departure.departure_date);
-    const { range } = vietnamDay(departure.departure_date);
-    if (await assignments.countBusyStaff(tx, departureId, staff_id, range, closedDepartures)) throw new AppError("RESOURCE_CONFLICT", 409);
-    const existing = await assignments.findStaffAssignment(tx, departureId, staff_id, role_in_trip);
-    if (existing) {
-      if (existing.dep_vehicle_id !== vehicle.dep_vehicle_id) throw new AppError("RESOURCE_CONFLICT", 409);
-      return readAssignments(tx, departureId);
-    }
-    if (role_in_trip === "Driver" && await assignments.countDrivers(tx, vehicle.dep_vehicle_id)) throw new AppError("RESOURCE_CONFLICT", 409);
-    await assignments.insertStaff(tx, { departure_id: departureId, staff_id, role_in_trip, dep_vehicle_id: vehicle.dep_vehicle_id });
+    await placeStaff(tx, departure, vehicle.dep_vehicle_id, staff_id, role_in_trip, replace_dep_staff_id);
+    // Recheck after every path, including no-op retries, so no assignment change commits a confirmed crew below the minimum.
+    if (departure.status === "Confirmed") await assertCrewCounts(tx, departureId);
     return readAssignments(tx, departureId);
   });
+}
+async function placeStaff(tx: Transaction, departure: { departure_id: number; departure_date: Date }, depVehicleId: number,
+  staffId: number, role: AssignmentRole, replaceId?: number) {
+  const departureId = departure.departure_id;
+  if (replaceId !== undefined) {
+    // Swap in one transaction so a confirmed crew never passes through an empty Driver/Assistant/Leader slot.
+    const old = await assignments.findStaffAssignmentById(tx, departureId, replaceId);
+    if (!old) throw new AppError("NOT_FOUND", 404);
+    if (old.role_in_trip !== role || old.dep_vehicle_id !== depVehicleId) throw new AppError("INVALID_INPUT", 422);
+    if (old.staff_id === staffId) return;
+    // Replacing with someone already in this role would merge two slots into one; check before removing anyone.
+    if (await assignments.findStaffAssignment(tx, departureId, staffId, role)) throw new AppError("RESOURCE_CONFLICT", 409);
+    for (const id of [old.staff_id, staffId].sort((a, b) => a - b)) await assignments.lockStaff(tx, id);
+    await assignments.removeStaff(tx, departureId, replaceId);
+  }
+  await assertStaffEligible(tx, staffId, role, departure.departure_date);
+  const { range } = vietnamDay(departure.departure_date);
+  if (await assignments.countBusyStaff(tx, departureId, staffId, range, closedDepartures)) throw new AppError("RESOURCE_CONFLICT", 409);
+  const existing = await assignments.findStaffAssignment(tx, departureId, staffId, role);
+  if (existing) {
+    if (existing.dep_vehicle_id !== depVehicleId) throw new AppError("RESOURCE_CONFLICT", 409);
+    return;
+  }
+  if (role === "Driver" && await assignments.countDrivers(tx, depVehicleId)) throw new AppError("RESOURCE_CONFLICT", 409);
+  await assignments.insertStaff(tx, { departure_id: departureId, staff_id: staffId, role_in_trip: role, dep_vehicle_id: depVehicleId });
 }
 
 export async function unassignStaff(db: Database, identity: Actor, departureId: number, assignmentId: number) {

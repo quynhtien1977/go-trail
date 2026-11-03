@@ -415,3 +415,65 @@ test("a Confirmed crew never drops below Driver/Assistant/Leader minimums, swaps
   await assert.rejects(assignVehicle(db, hr, id, { vehicle_id: spare.vehicle_id }), { code: "RESOURCE_CONFLICT" });
   assert.deepEqual(await crewIds(), frozen);
 });
+
+test("swapping a confirmed Leader for one already in the crew is rejected before anything is removed", async () => {
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" }, update: { setting_value: "1" },
+    create: { setting_key: "LEADER_RATIO", setting_value: "1", description: "Test ratio" } });
+  const hr = others.find((actor) => actor.role === "HRMgr");
+  const { departure, assigned, seats } = await openWithTwoSeats();
+  const id = departure.departure_id;
+  const vehicleId = (await db.departureVehicle.findUniqueOrThrow({ where: { dep_vehicle_id: assigned.dep_vehicle_id } })).vehicle_id;
+  for (const seat of seats) await sell(departure, seat);
+  let leaders = 0;
+  const leaderStaff = async (account = true) => {
+    const user = account ? await db.user.create({ data: { email: `leader${++leaders}@swap.example.test`, password_hash: "unused-test-hash",
+      full_name: `Leader ${leaders}`, phone: "0901234567", role: "Leader" } }) : null;
+    return db.staff.create({ data: { full_name: `Leader staff ${leaders}`, phone: "0900000000", staff_type: "Leader", user_id: user?.user_id } });
+  };
+  const place = (staff, slot, role = staff.staff_type) => db.departureStaff.create({ data: { departure_id: id,
+    dep_vehicle_id: slot.dep_vehicle_id, staff_id: staff.staff_id, role_in_trip: role } });
+  await crew(assigned, id, "Driver");
+  await crew(assigned, id, "Assistant");
+  const a = await leaderStaff(), b = await leaderStaff(), c = await leaderStaff();
+  await place(a, assigned);
+  await place(b, assigned);
+  // A second vehicle with its own crew, carrying Leader C.
+  const bus = await db.vehicle.create({ data: { plate_number: "51B-888.88", vehicle_type: "Xe 16 chỗ", seat_count: 1,
+    seats: { create: [{ seat_name: "A01", floor_level: 1, x_position: 0, y_position: 0 }] } }, include: { seats: true } });
+  const second = await db.departureVehicle.create({ data: { departure_id: id, vehicle_id: bus.vehicle_id } });
+  await db.departureSeat.create({ data: { dep_vehicle_id: second.dep_vehicle_id, seat_id: bus.seats[0].seat_id } });
+  await crew(second, id, "Driver");
+  await crew(second, id, "Assistant");
+  await place(c, second);
+  // 3 Valid tickets at ratio 1: A, B and C are all required, so merging A into B must never commit.
+  await sell(departure, await db.departureSeat.findFirstOrThrow({ where: { dep_vehicle_id: second.dep_vehicle_id } }));
+  const deadline = new Date("2026-11-19T10:00:00Z");
+  await updateDeparture(db, manager, id, { status: "Closed" }, deadline);
+  assert.equal((await updateDeparture(db, manager, id, { status: "Confirmed" }, deadline)).status, "Confirmed");
+
+  const slotOf = async (staff) => (await db.departureStaff.findFirstOrThrow({ where: { departure_id: id, staff_id: staff.staff_id } })).dep_staff_id;
+  const crewRows = () => db.departureStaff.findMany({ where: { departure_id: id }, orderBy: { dep_staff_id: "asc" } });
+  const before = await crewRows();
+  const swap = async (staff, replaced, vehicle = vehicleId, role = "Leader") =>
+    assignStaff(db, hr, id, { staff_id: staff.staff_id, vehicle_id: vehicle, role_in_trip: role, replace_dep_staff_id: await slotOf(replaced) });
+
+  // B is already a Leader on the same vehicle; C is a Leader on the other vehicle.
+  await assert.rejects(swap(b, a), { code: "RESOURCE_CONFLICT" });
+  await assert.rejects(swap(c, a), { code: "RESOURCE_CONFLICT" });
+  // The replaced slot must match the requested vehicle and role.
+  await assert.rejects(swap(b, a, bus.vehicle_id), { code: "INVALID_INPUT" });
+  await assert.rejects(swap(await leaderStaff(), a, vehicleId, "Assistant"), { code: "INVALID_INPUT" });
+  // An ineligible replacement (no Leader account) rolls the removal back.
+  await assert.rejects(swap(await leaderStaff(false), a), { code: "ACCESS_CONFLICT" });
+  assert.deepEqual(await crewRows(), before);
+  assert.equal((await readManagedDeparture(db, manager, id)).status, "Confirmed");
+
+  // A valid new Leader still swaps in, keeping 2 Leaders; repeating the swap is a no-op.
+  const fresh = await leaderStaff();
+  await swap(fresh, a);
+  const afterSwap = await crewRows();
+  assert.deepEqual(afterSwap.filter((row) => row.role_in_trip === "Leader").map((row) => row.staff_id).sort((x, y) => x - y),
+    [b.staff_id, c.staff_id, fresh.staff_id].sort((x, y) => x - y));
+  await swap(fresh, fresh);
+  assert.deepEqual(await crewRows(), afterSwap);
+});
