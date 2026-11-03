@@ -6,7 +6,9 @@ export function json(data: unknown, status = 200): Response {
 }
 export function errorResponse(error: unknown): Response {
   if (error instanceof AppError) return Response.json({ error: { code: error.code, message: error.message } }, {
-    status: error.status, headers: { "Cache-Control": "private, no-store" },
+    status: error.status, headers: { "Cache-Control": "private, no-store",
+      ...(error.status === 429 && typeof error.retryAfter === "number" && Number.isSafeInteger(error.retryAfter) && error.retryAfter > 0 && error.retryAfter <= 900
+        ? { "Retry-After": String(error.retryAfter) } : {}) },
   });
   console.error("API_REQUEST_FAILED");
   return Response.json({ error: { code: "INTERNAL_ERROR", message: "Không thể xử lý yêu cầu lúc này." } }, {

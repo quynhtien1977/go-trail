@@ -15,7 +15,7 @@ const database = await createTestDatabase({ beforeMigration: "20261021000000_fiv
 const db = database.client;
 const secret = randomBytes(32).toString("hex");
 const actors = new Map();
-let child, startupError = false, sequence = 0, requests = 0;
+let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
 const tripInput = { name: "RBAC trail", city: "Tây Ninh", location_name: "RBAC mountain", length_km: "5.00",
   base_price: "500000", description: "Isolated fixture", schedule_content: "Isolated schedule" };
@@ -57,8 +57,8 @@ await once(lease, "listening");
 const port = lease.address().port;
 await new Promise(resolve => lease.close(resolve));
 const base = `http://127.0.0.1:${port}`, origin = `https://localhost:${port}`;
-async function request(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.() } = {}) {
-  const headers = new Headers();
+async function request(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
+  const headers = new Headers(extraHeaders);
   if (actor) {
     const token = await encode({ secret, maxAge: 8 * 60 * 60, token: { sub: String(actor.user_id), role: actor.role,
       auth_version: actor.auth_version, authenticated_at: Math.floor(Date.now() / 1000), ...claims } });
@@ -71,7 +71,7 @@ async function request(endpoint, actor, { claims = {}, originHeader = origin, bo
   requests++;
   assert.match(response.headers.get("content-type") ?? "", /application\/json/, `${endpoint.method} ${endpoint.route}: JSON required, never a login redirect`);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
-  return { status: response.status, body: await response.json(), label: `${endpoint.method} ${endpoint.route}` };
+  return { status: response.status, body: await response.json(), retryAfter: response.headers.get("retry-after"), label: `${endpoint.method} ${endpoint.route}` };
 }
 function expect(result, status, code) {
   assert.equal(result.status, status, result.label);
@@ -110,11 +110,12 @@ function invoiceDto(value) {
 
 async function startServer(bank = {}) {
   startupError = false;
-  child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
+  child = spawn(process.execPath, ["--import", "./tests/helpers/preload-redis.mjs", "node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
-      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
-    stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1",
+      BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
+    stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
   child.stdout.resume(); child.stderr.resume();
   child.on("error", () => { startupError = true; });
@@ -125,6 +126,24 @@ async function startServer(bank = {}) {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert.ok(ready, "Production build must be available before HTTP RBAC checks.");
+}
+
+async function setRedisUnavailable(unavailable) {
+  const server = child, id = next();
+  await new Promise((resolve, reject) => {
+    const finish = (error) => {
+      clearTimeout(timer); server.off("message", onMessage);
+      if (error) reject(error); else resolve();
+    };
+    const onMessage = (message) => {
+      if (message?.type === "test-redis-availability-ack" && message.id === id) finish();
+    };
+    const timer = setTimeout(() => finish(new Error("Test Redis control did not acknowledge availability")), 5000);
+    server.on("message", onMessage);
+    server.send({ type: "test-redis-availability", id, unavailable }, (error) => {
+      if (error) finish(new Error("Test Redis control channel unavailable"));
+    });
+  });
 }
 
 try {
@@ -429,6 +448,38 @@ try {
   assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
   console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
 
+  // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
+  const beforeQuota = await deniedSnapshot();
+  stage = "K04-outage";
+  await setRedisUnavailable(true);
+  const unavailable = await request(book, actors.get("Customer"));
+  expect(unavailable, 503, "BOOKING_UNAVAILABLE");
+  assert.doesNotMatch(JSON.stringify(unavailable.body), /Redis|upstash|token|Prisma|ECONN|DATABASE_URL/i);
+  assert.equal(unavailable.retryAfter, null);
+  expect(await request(invoiceRead, actors.get("Customer")), 200);
+  assert.equal(await deniedSnapshot(), beforeQuota, "Redis outage must not alter booking data; invoice reads remain available");
+  stage = "K04-recovery";
+  await setRedisUnavailable(false);
+  const recovered = await request(book, actors.get("Customer"));
+  expect(recovered, 201); assert.equal(recovered.body.data.invoice_id, booked.body.data.invoice_id);
+  assert.equal(recovered.body.data.expires_at, expiredRead.body.data.expires_at);
+  assert.equal(await deniedSnapshot(), beforeQuota);
+  stage = "K04-quota";
+  // Recovery consumed the first of ten attempts; keep the same process, counter and SDK client.
+  for (let i = 0; i < 9; i++) {
+    const result = await request(book, actors.get("Customer"), { extraHeaders: {
+      "x-forwarded-for": `192.0.2.${i + 1}`, "x-vercel-forwarded-for": `198.51.100.${i + 1}`,
+    } });
+    expect(result, 201); assert.equal(result.body.data.invoice_id, booked.body.data.invoice_id);
+    assert.equal(result.body.data.expires_at, expiredRead.body.data.expires_at);
+  }
+  const limited = await request(book, actors.get("Customer"), { body: { ...bookingBody, idempotency_key: "quota-rotated-key-0001" } });
+  expect(limited, 429, "RATE_LIMITED"); assert.match(limited.retryAfter, /^[1-9]\d?$/);
+  expect(await request(book, actors.get("Customer"), { body: { ...bookingBody, role: "Admin" } }), 422, "INVALID_INPUT");
+  assert.equal(await deniedSnapshot(), beforeQuota, "Rate-limited retries must not write or renew a hold");
+  console.log("PASS: K04 HTTP limits rotated/retried requests with 429/Retry-After; Redis outage fails closed with 503, preserves existing reads and recovers without duplicate invoices or renewed holds.");
+  stage = "matrix";
+
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
   const leaderRead = endpoints.find(e => e.route === "leader/departures");
@@ -485,6 +536,16 @@ try {
   expect(await request(startup, newCustomer), 200);
   expect(await request({ method: "GET", route: "staff/vehicles", path: "/api/staff/vehicles" }, newCustomer, { claims: { role: "Accountant" } }), 403, "FORBIDDEN");
   console.log(`PASS: actual Accountant migration and Admin unlock never revive pre-cutover sessions or retired privileges (${requests} HTTP checks).`);
+} catch (error) {
+  // Keep the original assertion diagnosable even if a DB/socket cleanup also fails.
+  console.error("RBAC_HTTP_FAILURE", {
+    stage,
+    name: error?.name,
+    lines: (error?.stack ?? "").match(/rbac-http\.mjs:(\d+):(\d+)/g),
+    actual: typeof error?.actual === "number" ? error.actual : undefined,
+    expected: typeof error?.expected === "number" ? error.expected : undefined,
+  });
+  throw error;
 } finally {
   if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   await database.close();
