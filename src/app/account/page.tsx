@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
+import { AccountTicketsEntry } from "@/components/payments/account-tickets-entry";
 
 export const dynamic = "force-dynamic";
 
@@ -91,41 +92,7 @@ export default async function AccountPage() {
             </div>
           </div>
 
-          {/* Bookings / Trips Section */}
-          <div className="md:col-span-2 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                </svg>
-                Vé xe & Chuyến trekking đã đặt
-              </h2>
-              <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-semibold">
-                0 chuyến
-              </span>
-            </div>
-
-            {/* Empty State */}
-            <div className="p-8 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-800 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-amber-50 dark:bg-amber-950/40 text-[#febb02] flex items-center justify-center mx-auto text-xl">
-                🚌
-              </div>
-              <div className="space-y-1">
-                <p className="font-bold text-zinc-800 dark:text-zinc-200">
-                  Bạn chưa có chuyến trekking nào sắp tới
-                </p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                  Các chuyến xe bus khứ hồi đi Bà Đen, Chứa Chan, Núi Dinh kèm Leader đang mở bán.
-                </p>
-              </div>
-              <Link
-                href="/#system-trailbus"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#d97706] dark:text-[#febb02] hover:underline pt-2"
-              >
-                Khám phá danh sách chuyến xe →
-              </Link>
-            </div>
-          </div>
+          <AccountTicketsEntry />
         </div>
       </main>
     </div>
