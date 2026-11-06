@@ -113,6 +113,53 @@ try {
   pass("opposite multi-seat input orders acquire seats consistently; the loser rolls back completely.");
 
   f = await fixture();
+  const sold = await f.hold("Buyer1", [1], "sold-second-seat-001");
+  await pool.query("UPDATE invoices SET status='Paid' WHERE invoice_id=$1", [sold.invoice_id]);
+  await pool.query("UPDATE invoice_details SET status='Valid',ticket_code='K06-SOLD' WHERE invoice_id=$1", [sold.invoice_id]);
+  await pool.query("UPDATE departure_seats SET status='Sold',locked_until=NULL WHERE invoice_id=$1", [sold.invoice_id]);
+  const beforeSoldConflict = await db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } });
+  const soldConflict = await blocked("SELECT dep_seat_id FROM departure_seats WHERE dep_seat_id=$1 FOR UPDATE", [f.seats[1].dep_seat_id],
+    () => [f.hold("Buyer0", [0, 1], "sold-second-loser-01")], async () => {
+      // The request must hold the first row while waiting for the second, rather than failing before contention.
+      await assert.rejects(pool.query("SELECT dep_seat_id FROM departure_seats WHERE dep_seat_id=$1 FOR UPDATE NOWAIT", [f.seats[0].dep_seat_id]),
+        { code: "55P03" });
+    });
+  assert.equal(soldConflict[0].status, "rejected"); assert.equal(soldConflict[0].reason.code, "RESOURCE_CONFLICT");
+  assert.deepEqual(await db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }), beforeSoldConflict);
+  assert.equal(await db.invoice.count(), 1); assert.equal(await db.invoiceDetail.count(), 1);
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: sold.invoice_id } })).status, "Paid");
+  assert.equal((await db.invoiceDetail.findFirstOrThrow()).status, "Valid");
+  pass("a later Sold seat rejects a waiting multi-seat request; no partial invoice or change to either seat survives.");
+
+  f = await fixture();
+  const beforeFailure = await db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } });
+  // Inject a database failure only after the first seat was actually acquired in this transaction.
+  await pool.query(`CREATE FUNCTION k06_fail_later_seat() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.dep_seat_id = ${f.seats[1].dep_seat_id} AND NEW.status = 'Locked' THEN
+        IF NOT EXISTS (SELECT 1 FROM departure_seats WHERE dep_seat_id = ${f.seats[0].dep_seat_id}
+          AND status = 'Locked' AND invoice_id = NEW.invoice_id) THEN
+          RAISE EXCEPTION 'K06_FIRST_SEAT_NOT_ACQUIRED';
+        END IF;
+        RAISE EXCEPTION 'K06_LATER_SEAT_FAILURE';
+      END IF;
+      RETURN NEW;
+    END $$;
+    CREATE TRIGGER k06_fail_later_seat BEFORE UPDATE ON departure_seats
+      FOR EACH ROW EXECUTE FUNCTION k06_fail_later_seat()`);
+  try {
+    await assert.rejects(f.hold("Buyer0", [1, 0], "later-seat-fails-001"), error => {
+      assert.match(error.message, /K06_LATER_SEAT_FAILURE/);
+      return true;
+    });
+    assert.equal(await db.invoice.count(), 0); assert.equal(await db.invoiceDetail.count(), 0);
+    assert.deepEqual(await db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }), beforeFailure);
+  } finally {
+    await pool.query("DROP TRIGGER k06_fail_later_seat ON departure_seats; DROP FUNCTION k06_fail_later_seat()");
+  }
+  pass("a database failure after acquiring the first seat rolls back all seats, invoice, tickets and owner snapshot.");
+
+  f = await fixture();
   const old = await f.hold("Buyer0", [0, 1, 2], "old-expired-key-0001");
   const reclaim = await blocked("SELECT invoice_id FROM invoices WHERE invoice_id=$1 FOR UPDATE", [old.invoice_id],
     () => [f.hold("Buyer1", [0], "reclaim-left-key-0001", new Date(now.getTime() + 960000)),
@@ -120,7 +167,13 @@ try {
   assert.ok(reclaim.every(r => r.status === "fulfilled"));
   assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: old.invoice_id } })).status, "Expired");
   assert.equal(await db.invoiceDetail.count({ where: { invoice_id: old.invoice_id, status: "Cancelled" } }), 3);
-  assert.equal((await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[2].dep_seat_id } })).status, "Available");
+  for (const [index, result] of reclaim.entries()) {
+    const seat = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[index].dep_seat_id } });
+    assert.equal(seat.status, "Locked"); assert.equal(seat.invoice_id, result.value.invoice_id);
+    assert.equal(seat.locked_until.toISOString(), result.value.expires_at);
+  }
+  const released = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[2].dep_seat_id } });
+  assert.equal(released.status, "Available"); assert.equal(released.invoice_id, null); assert.equal(released.locked_until, null);
   pass("concurrent reclamation expires one old invoice, cancels only Pending tickets and releases all its old holds.");
 
   for (const [label, mutation, expected] of [
@@ -167,7 +220,15 @@ try {
     });
   assert.equal(createdBeforeAssignment[0].status, "fulfilled"); assert.equal((await assignmentChange)[0].status, "fulfilled");
   assert.equal(createdBeforeAssignment[0].value.responsible_name_snapshot, "Owner");
-  assert.equal((await f.hold("Buyer1", [1], "booking-after-asg-01")).responsible_name_snapshot, "NewOwner");
+  const createdAfterAssignment = await f.hold("Buyer1", [1], "booking-after-asg-01");
+  assert.equal(createdAfterAssignment.responsible_name_snapshot, "NewOwner");
+  // Re-read committed rows after reassignment; an old response object cannot prove historical durability.
+  const snapshot = invoiceId => db.invoice.findUniqueOrThrow({ where: { invoice_id: invoiceId },
+    select: { responsible_user_id: true, responsible_name_snapshot: true, responsible_role_snapshot: true } });
+  assert.deepEqual(await snapshot(createdBeforeAssignment[0].value.invoice_id), {
+    responsible_user_id: f.actors.Owner.user_id, responsible_name_snapshot: "Owner", responsible_role_snapshot: "RouteMgr" });
+  assert.deepEqual(await snapshot(createdAfterAssignment.invoice_id), {
+    responsible_user_id: f.actors.NewOwner.user_id, responsible_name_snapshot: "NewOwner", responsible_role_snapshot: "RouteMgr" });
   pass("actual Admin reassignment waits for booking and changes only subsequent invoice snapshots.");
 
   f = await fixture();

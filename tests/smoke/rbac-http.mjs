@@ -57,7 +57,7 @@ await once(lease, "listening");
 const port = lease.address().port;
 await new Promise(resolve => lease.close(resolve));
 const base = `http://127.0.0.1:${port}`, origin = `https://localhost:${port}`;
-async function request(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
+async function sendRequest(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
   const headers = new Headers(extraHeaders);
   if (actor) {
     const token = await encode({ secret, maxAge: 8 * 60 * 60, token: { sub: String(actor.user_id), role: actor.role,
@@ -69,6 +69,10 @@ async function request(endpoint, actor, { claims = {}, originHeader = origin, bo
   const response = await fetch(base + endpoint.path, { method: endpoint.method, headers,
     body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(10000) });
   requests++;
+  return response;
+}
+async function request(endpoint, actor, options) {
+  const response = await sendRequest(endpoint, actor, options);
   assert.match(response.headers.get("content-type") ?? "", /application\/json/, `${endpoint.method} ${endpoint.route}: JSON required, never a login redirect`);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
   return { status: response.status, body: await response.json(), retryAfter: response.headers.get("retry-after"), label: `${endpoint.method} ${endpoint.route}` };
@@ -274,6 +278,7 @@ try {
       db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }),
       db.auditLog.findMany({ orderBy: { log_id: "asc" } }), db.invoice.findMany({ orderBy: { invoice_id: "asc" } }),
       db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
+      db.payment.findMany({ orderBy: { payment_id: "asc" } }), db.refund.findMany({ orderBy: { refund_id: "asc" } }),
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
@@ -447,6 +452,56 @@ try {
   assert.equal(expiredRead.body.data.status, "Pending"); assert.deepEqual(expiredRead.body.data.payment, { status: "Expired" });
   assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
   console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
+
+  // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
+  const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
+    dep_seat_id: saleSeats[2].dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id,
+    passenger_name: "Policy fixture", passenger_phone: "0901234567", emergency_contact: "Fixture contact",
+    health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: "C00-VALID-TICKET" } });
+  const beforePolicyAttempts = await deniedSnapshot();
+  const noCancel = { method: "PATCH", route: "staff/departures/[id]", path: `/api/staff/departures/${saleId}` };
+  for (const role of roles) {
+    const actor = actors.get(role), canOperate = ["RouteMgr", "Admin"].includes(role);
+    for (const status of ["Cancelled", "Rescheduled"]) {
+      expect(await request(noCancel, actor, { body: { status } }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+    for (const body of [{ departure_date: "2033-01-03T02:00:00.000Z" },
+      { pickups: [{ pickup_id: operationsPickup.pickup_id, pickup_time: "2033-01-03T02:00:00.000Z" }] }]) {
+      expect(await request(noCancel, actor, { body }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+  }
+  // Unsupported methods/routes have framework 404/405 responses rather than the application's JSON contract.
+  // Keep the strict JSON/no-store assertions above for every implemented endpoint.
+  const forbidden = [
+    ["PATCH", `/api/invoices/${paidInvoice.invoice_id}`, { status: "Cancelled" }],
+    ["DELETE", `/api/invoices/${paidInvoice.invoice_id}`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/cancel`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/refund`],
+    ["PATCH", `/api/tickets/${paidTicket.detail_id}`, { status: "Cancelled", departure_id: draft.departure_id }],
+    ["POST", `/api/tickets/${paidTicket.detail_id}/cancel`],
+    ["POST", `/api/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["POST", `/api/admin/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["DELETE", `/api/staff/departures/${saleId}`],
+    ["POST", `/api/staff/departures/${saleId}/cancel`],
+    ["POST", `/api/staff/departures/${saleId}/reschedule`, { departure_date: "2033-01-03T02:00:00.000Z" }],
+  ];
+  for (const role of roles) {
+    for (const [method, path, body] of forbidden) {
+      const result = await sendRequest({ method, path }, actors.get(role), { body });
+      assert.ok([403, 404, 405].includes(result.status), `${role} ${method} ${path}: must reject without a redirect`);
+      await result.arrayBuffer();
+    }
+  }
+  assert.equal(await deniedSnapshot(), beforePolicyAttempts,
+    "C00 forbidden requests cannot mutate Paid/Valid/Sold, Pending holds, departure schedules, payments, refunds or audits");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: paidInvoice.invoice_id } })).status, "Paid");
+  assert.equal((await db.invoiceDetail.findUniqueOrThrow({ where: { detail_id: paidTicket.detail_id } })).status, "Valid");
+  const soldPolicySeat = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: saleSeats[2].dep_seat_id } });
+  assert.equal(soldPolicySeat.status, "Sold"); assert.equal(soldPolicySeat.locked_until, null);
+  assert.equal(await db.refund.count(), 0);
+  console.log("PASS: C00 all five roles, including Admin, cannot cancel/refund/reschedule through direct HTTP calls; Paid/Valid/Sold and all financial/history rows stay unchanged.");
 
   // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
   const beforeQuota = await deniedSnapshot();
