@@ -33,7 +33,8 @@ async function apiFiles(dir) {
 async function assertRouteCoverage(endpoints) {
   const expected = endpoints.map(e => `${e.method} ${e.route}`);
   expected.push("GET auth/[...nextauth]", "POST auth/[...nextauth]", "POST auth/register",
-    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats");
+    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats",
+    "GET departures/[id]/pickups");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -370,10 +371,33 @@ try {
   }
   console.log("PASS: K01 public seat map follows O03/O04 sale setup, returns only safe seat fields to guests/all roles, hides unavailable departures and never mutates holds.");
 
+  // Checkout consumes departure pickup IDs directly from the public HTTP contract, never from staff APIs.
+  const pickupRead = { method: "GET", route: "departures/[id]/pickups", path: `/api/departures/${saleId}/pickups` };
+  const beforePickupRead = await deniedSnapshot();
+  let publicPickups;
+  for (const actor of [undefined, ...roles.map(role => actors.get(role))]) {
+    const result = await request(pickupRead, actor);
+    expect(result, 200); noSecrets(result.body.data);
+    assert.deepEqual(Object.keys(result.body.data).sort(), ["departure_id", "pickups"]);
+    assert.equal(result.body.data.departure_id, saleId); assert.equal(result.body.data.pickups.length, 1);
+    for (const item of result.body.data.pickups) assert.deepEqual(Object.keys(item).sort(),
+      ["dep_pickup_id", "pickup_id", "name", "address", "pickup_time"].sort());
+    publicPickups = result.body.data;
+  }
+  expect(await request({ ...pickupRead, path: "/api/departures/2147483647/pickups" }), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...pickupRead, path: `/api/departures/${id}/pickups` }), 422, "INVALID_INPUT");
+  }
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Closed" } });
+  expect(await request(pickupRead), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Open" } });
+  assert.equal(await deniedSnapshot(), beforePickupRead, "Public pickup reads cannot change invoices, seats, assignments or audits");
+  console.log("PASS: public departure pickup API is readable by guests/all roles, returns only assigned schedule fields and feeds real K02 holds without mutations.");
+
   // K02 extends the same real Draft -> assignment -> Open flow; only its unpaid stale holds may be reclaimed.
   await db.invoice.update({ where: { invoice_id: holdInvoice.invoice_id }, data: { expires_at: new Date(Date.now() - 1000) } });
   await db.departureSeat.update({ where: { dep_seat_id: saleSeats[1].dep_seat_id }, data: { locked_until: new Date(Date.now() - 1000) } });
-  const salePickup = await db.departurePickup.findFirstOrThrow({ where: { departure_id: saleId } });
+  const salePickup = publicPickups.pickups[0];
   const bookingBody = { idempotency_key: "http-booking-key-0001", seats: saleSeats.slice(0, 2).map(seat => ({
     dep_seat_id: seat.dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id, passenger_name: "Fixture passenger",
     passenger_phone: "0901234567", emergency_contact: "Fixture contact", health_declaration: true,

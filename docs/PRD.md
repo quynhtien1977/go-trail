@@ -693,6 +693,7 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | `GET /api/trips`, `GET /api/departures/:id/seats` | Tuyến, chuyến, sơ đồ ghế | Public |
 | `POST /api/departures/:id/holds` | Giữ ghế + tạo hóa đơn (K02 hiện hành) | Customer; Admin kế thừa cho chính actor |
 | `GET /api/invoices/:id` | Chi tiết, snapshot nhân viên, trạng thái và dữ liệu/link VietQR (K03) | Chủ hóa đơn Customer, Admin |
+| `GET /api/departures/:id/pickups` | Điểm đón đã gán cho chuyến đang mở bán: dep_pickup_id, pickup_id, tên, địa chỉ, giờ UTC; chỉ pickup active cùng tuyến; dùng dep_pickup_id để giữ ghế | Public (Guest/Customer), cùng điều kiện hiển thị như sơ đồ ghế |
 | `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản | SePay (API Key) |
 | `POST /api/checkin` | Quét QR check-in / đánh dấu vắng | Leader |
 | `PATCH /api/departures/:id/status` | Mở/đóng/chốt/kết thúc chuyến; không hủy/dời | RouteMgr, Admin, Leader (kết thúc) |
