@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "../next-env.d.ts", "../src/types/next-auth.d.ts",
+    "../src/lib/payment-ui.ts", "../src/components/payments/**/*.tsx", "../src/components/payments/**/*.ts",
+    "../src/app/account/tickets/**/*.tsx", "../src/app/admin/reconciliation/**/*.tsx",
+    "../src/components/booking/invoice-payment.tsx"
+  ],
+  "exclude": ["../node_modules"]
+}

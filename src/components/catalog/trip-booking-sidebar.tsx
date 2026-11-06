@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { DepartureSeatPicker } from "@/components/booking/departure-seat-picker";
+import type { DeparturePickupSource } from "@/lib/booking-checkout";
 import { formatVnd, formatVietnamDateTime } from "@/lib/catalog-client";
 import type { TripDto, DepartureDto, Page } from "@/schemas/catalog";
 import {
@@ -28,6 +30,7 @@ interface TripBookingSidebarProps {
   selectedDepId: string | null;
   onSelectDeparture: (depId: string) => void;
   zaloGroupUrl: string;
+  departurePickups?: DeparturePickupSource;
 }
 
 export function TripBookingSidebar({
@@ -44,8 +47,10 @@ export function TripBookingSidebar({
   selectedDepId,
   onSelectDeparture,
   zaloGroupUrl,
+  departurePickups,
 }: TripBookingSidebarProps) {
   const [showContactModal, setShowContactModal] = useState(false);
+  const [bookingLocked, setBookingLocked] = useState(false);
 
   // Lắng nghe phím ESC để đóng modal tư vấn
   useEffect(() => {
@@ -205,6 +210,7 @@ export function TripBookingSidebar({
                     <button
                       key={dep.departure_id}
                       type="button"
+                      disabled={bookingLocked}
                       onClick={() => onSelectDeparture(String(dep.departure_id))}
                       className={`w-full p-3 rounded-[6px] border text-left flex items-center justify-between transition-all cursor-pointer ${
                         isSelected
@@ -289,139 +295,15 @@ export function TripBookingSidebar({
             <h5 className="text-[20px] font-bold text-black m-0">Vị trí ngồi</h5>
           </div>
 
-          {/* Sơ đồ xe 45 chỗ GoTrail Full View - Clone 1:1 theo ảnh mẫu gotrail.vn */}
-          <div className="w-full max-w-[340px] mx-auto border border-[#dee2e6] rounded-[20px] p-5 sm:p-6 bg-[#F8F9FA] shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-            {/* Biểu tượng vô lăng bác tài ở góc trên bên trái */}
-            <div className="mb-4 pl-0.5">
-              <svg
-                className="w-10 h-10 text-[#6c757d]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-label="Vô lăng bác tài"
-              >
-                <circle cx="12" cy="12" r="9" strokeWidth="2.2" />
-                <circle cx="12" cy="12" r="3" fill="currentColor" />
-                <line x1="12" y1="15" x2="12" y2="21" strokeWidth="2.2" />
-                <line x1="9" y1="12" x2="3" y2="12" strokeWidth="2.2" />
-                <line x1="15" y1="12" x2="21" y2="12" strokeWidth="2.2" />
-              </svg>
-            </div>
+          {selectedDeparture && !departuresLoading && !departuresError ? (
+            <DepartureSeatPicker key={selectedDeparture.departure_id} tripId={trip.trip_id} tripName={trip.name}
+              departureId={selectedDeparture.departure_id} departureDate={selectedDeparture.departure_date} price={effectivePriceStr}
+              departurePickups={departurePickups} onBookingLockChange={setBookingLocked} />
+          ) : (
+            <p className="text-sm text-[#5C636A]">Vui lòng chọn chuyến để xem sơ đồ ghế.</p>
+          )}
 
-            {/* Bảng ghế xe 45 chỗ: Hàng 1-10 gồm 4 ghế (cặp A-B và C-D), Hàng 11 gồm 5 ghế (A11, B11, V11, C11, D11) */}
-            <div className="space-y-2.5">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((row) => {
-                const seatA = `A${row}`;
-                const seatB = `B${row}`;
-                const seatC = `C${row}`;
-                const seatD = `D${row}`;
-
-                const renderSeat = (code: string) => (
-                  <button
-                    key={code}
-                    type="button"
-                    disabled
-                    aria-label={`Ghế ${code} (tham khảo)`}
-                    className="w-[42px] h-[40px] rounded-[6px] bg-white border border-[#ced4da] text-[#495057] text-[13px] font-normal shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex items-center justify-center cursor-not-allowed select-none transition-colors"
-                  >
-                    {code}
-                  </button>
-                );
-
-                return (
-                  <div key={row} className="flex items-center justify-between">
-                    {/* Cặp ghế bên trái (A, B) */}
-                    <div className="flex gap-2">
-                      {renderSeat(seatA)}
-                      {renderSeat(seatB)}
-                    </div>
-
-                    {/* Lối đi ở giữa khoang xe (trống trơn theo đúng ảnh mẫu gotrail.vn) */}
-                    <div className="w-8 sm:w-10" />
-
-                    {/* Cặp ghế bên phải (C, D) */}
-                    <div className="flex gap-2">
-                      {renderSeat(seatC)}
-                      {renderSeat(seatD)}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Hàng 11: Băng ghế sau cùng gồm 5 ghế liền nhau (A11, B11, V11, C11, D11) */}
-              <div className="flex items-center justify-between pt-0.5">
-                {["A11", "B11", "V11", "C11", "D11"].map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    disabled
-                    aria-label={`Ghế ${code} (tham khảo)`}
-                    className="w-[42px] h-[40px] rounded-[6px] bg-white border border-[#ced4da] text-[#495057] text-[13px] font-normal shadow-[0_1px_2px_rgba(0,0,0,0.06)] flex items-center justify-center cursor-not-allowed select-none transition-colors"
-                  >
-                    {code}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Chú thích trạng thái ghế (Legend 1:1 ảnh mẫu) */}
-            <div className="flex items-center justify-center gap-4 sm:gap-5 mt-6 pt-1 text-[11px] sm:text-[12px] text-[#495057]">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block w-[13px] h-[13px] bg-white border border-[#ced4da] rounded-[2px]" />
-                <span>Còn trống</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block w-[13px] h-[13px] bg-[#6c757d] rounded-[2px]" />
-                <span>Đã bán</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block w-[13px] h-[13px] bg-white border-[2px] border-[#feaa00] rounded-[2px]" />
-                <span>Đang chọn</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Bảng tóm tắt đặt vé (1:1 chuẩn table gotrail.vn) */}
-          <div className="mt-4 overflow-hidden rounded-[4px] border border-[#dee2e6]">
-            <table className="w-full text-center align-middle text-[13px] border-collapse">
-              <thead className="bg-[#f8f9fa] border-b border-[#dee2e6]">
-                <tr className="text-[#495057] font-semibold">
-                  <th className="py-2 px-3 border-r border-[#dee2e6] w-[35%] text-center">Loại Vé</th>
-                  <th className="py-2 px-3 border-r border-[#dee2e6] w-[25%] text-center">Số Ghế</th>
-                  <th className="py-2 px-3 w-[40%] text-center">Giá Tiền</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-[#dee2e6]">
-                  <td className="py-2 px-3 border-r border-[#dee2e6] text-[#495057] text-center">
-                    Vé tiêu chuẩn
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#dee2e6] text-[#6c757d] text-center">
-                    -
-                  </td>
-                  <td className="py-2 px-3 text-center text-[#495057]">
-                    {formatVnd(effectivePriceStr)}
-                  </td>
-                </tr>
-                <tr className="border-t border-[#dee2e6] bg-[#f8f9fa]/50">
-                  <td className="py-2.5 px-3 font-bold text-neutral-800 border-r border-[#dee2e6] text-center">
-                    Tổng vé
-                  </td>
-                  <td colSpan={2} className="py-2.5 px-3 text-right font-bold text-[15px] text-[#186734]">
-                    {formatVnd(effectivePriceStr)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Chú thích thông tin xe (1:1 chuẩn gotrail.vn + nhãn tham khảo an toàn Gate C) */}
-          <p className="text-[12px] text-[#6c757d] italic text-left mt-2 mb-0 leading-relaxed">
-            * Sơ đồ xe 45 chỗ, vị trí ghế có thể thay đổi dựa theo số lượng ghế thực tế của đoàn. (Sơ đồ tham khảo)
-          </p>
+          {bookingLocked && <p role="status" className="mt-3 text-sm text-[#8A5A00]">Đang kiểm tra yêu cầu giữ ghế. Vui lòng hoàn tất kiểm tra yêu cầu trước khi đổi chuyến.</p>}
 
           {/* NÚT VÀNG CTA CHÍNH */}
           <div className="pt-4">
@@ -446,7 +328,7 @@ export function TripBookingSidebar({
                 <button
                   type="button"
                   onClick={() => setShowContactModal(true)}
-                  className="w-full block text-center py-3.5 bg-[#FEBB02] hover:bg-[#E5A800] text-black font-extrabold text-[18px] rounded-[6px] uppercase tracking-wider transition-all shadow-sm active:scale-[0.99] cursor-pointer"
+                  className="w-full block text-center py-3 bg-white border border-[#186734] hover:bg-neutral-50 text-[#186734] font-bold text-[14px] rounded-[6px] transition-colors cursor-pointer"
                 >
                   LIÊN HỆ TƯ VẤN CHUYẾN NÀY
                 </button>
@@ -515,7 +397,7 @@ export function TripBookingSidebar({
             </div>
 
             <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-[13px] text-amber-900 space-y-1.5">
-              <p className="font-bold m-0">Tính năng thanh toán tự động qua cổng SePay đang được chuẩn bị.</p>
+              <p className="font-bold m-0">Bạn cần hỗ trợ đăng ký hoặc chọn điểm đón?</p>
               <p className="m-0 text-amber-800">
                 Để đăng ký tham gia chuyến đi và nhận hướng dẫn chi tiết, vui lòng liên hệ ngay với đội ngũ GoTrail qua Zalo hoặc Hotline!
               </p>
