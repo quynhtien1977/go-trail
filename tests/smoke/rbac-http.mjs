@@ -249,6 +249,14 @@ try {
     license_class: "D", license_expiry: "2036-12-31" }) });
   route("staff/personnel/[id]", `/api/staff/personnel/${personnel.staff_id}`, ["HRMgr", "Admin"], {
     GET: undefined, PATCH: () => ({ phone: "0907654321" }), DELETE: undefined });
+  // C03: a RouteMgr only reaches the customers of invoices they are responsible for, so the directory needs one.
+  const directoryInvoice = await db.invoice.create({ data: { customer_id: actors.get("OtherCustomer").user_id,
+    departure_id: departures[1].departure_id, payment_code: "RBAC-DIRECTORY", total_amount: "500000",
+    expires_at: new Date("2030-01-01"), responsible_user_id: actors.get("RouteMgr").user_id,
+    responsible_name_snapshot: "RouteMgr fixture", responsible_role_snapshot: "RouteMgr" } });
+  route("staff/customers", "/api/staff/customers", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
+  route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -265,9 +273,9 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 38);
+  assert.equal(endpoints.length, 41);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 38 protected API methods; new/unclassified API methods fail this gate.");
+  console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
 
   await startServer();
   const deniedSnapshot = async () => {
@@ -477,6 +485,79 @@ try {
   assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
   console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
 
+  // C03: the customer directory and booking history over HTTP, with RouteMgr scoping and no PII beyond the contract.
+  const beforeDirectory = await deniedSnapshot();
+  const directoryList = { method: "GET", route: "staff/customers", path: "/api/staff/customers" };
+  const directoryRead = { method: "GET", route: "staff/customers/[id]", path: `/api/staff/customers/${actors.get("OtherCustomer").user_id}` };
+  const ownBookings = { method: "GET", route: "account/bookings", path: "/api/account/bookings" };
+  const summaryKeys = ["user_id", "full_name", "email", "phone", "status", "created_at", "invoice_count", "last_booking_at"].sort();
+  const historyKeys = ["invoice_id", "departure_id", "status", "total_amount", "created_at", "expires_at",
+    "responsible_name_snapshot", "responsible_role_snapshot", "trip_name", "departure_date", "tickets"].sort();
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const listed = await request(directoryList, actor);
+    expect(listed, 200); noSecrets(listed.body.data);
+    assert.deepEqual(Object.keys(listed.body.data).sort(), ["items", "pagination"]);
+    assert.deepEqual(Object.keys(listed.body.data.pagination).sort(), ["page", "pageSize", "totalItems", "totalPages"].sort());
+    assert.ok(listed.body.data.items.some(item => item.user_id === actors.get("OtherCustomer").user_id));
+    for (const item of listed.body.data.items) {
+      assert.deepEqual(Object.keys(item).sort(), summaryKeys);
+      assert.match(String(item.user_id), /^[1-9]\d*$/);
+    }
+    // Staff accounts are not customers and never appear in the directory.
+    for (const staffRole of ["Leader", "RouteMgr", "HRMgr", "Admin"]) {
+      assert.ok(!listed.body.data.items.some(item => item.user_id === actors.get(staffRole).user_id), `${staffRole} must not be listed as a customer`);
+    }
+  }
+  // Admin sees every customer; a RouteMgr only those tied to an invoice they are responsible for.
+  const adminList = await request(directoryList, actors.get("Admin"));
+  const managerList = await request(directoryList, actors.get("RouteMgr"));
+  assert.ok(adminList.body.data.pagination.totalItems >= managerList.body.data.pagination.totalItems);
+  for (const item of managerList.body.data.items) assert.ok(item.invoice_count >= 1, "a scoped directory never lists customers without a managed invoice");
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const detail = await request(directoryRead, actor);
+    expect(detail, 200); noSecrets(detail.body.data);
+    assert.deepEqual(Object.keys(detail.body.data).sort(), ["bookings", "customer"]);
+    assert.deepEqual(Object.keys(detail.body.data.customer).sort(), summaryKeys);
+    assert.ok(!JSON.stringify(detail.body.data).includes("ticket_code"), "C03 never returns ticket codes; P04 owns QR issuance");
+    for (const booking of detail.body.data.bookings) {
+      assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+      assert.match(booking.total_amount, /^(0|[1-9]\d*)$/);
+      for (const key of ["created_at", "expires_at", "departure_date"]) assert.equal(new Date(booking[key]).toISOString(), booking[key]);
+      for (const ticket of booking.tickets) {
+        assert.deepEqual(Object.keys(ticket).sort(), ["detail_id", "seat_name", "passenger_name", "status", "check_in_status"].sort());
+      }
+    }
+  }
+  const scopedDetail = await request(directoryRead, actors.get("RouteMgr"));
+  assert.deepEqual(scopedDetail.body.data.bookings.map(booking => booking.invoice_id), [directoryInvoice.invoice_id]);
+  // Out-of-scope and non-customer ids are indistinguishable from missing ones.
+  expect(await request({ ...directoryRead, path: `/api/staff/customers/${actors.get("HRMgr").user_id}` }, actors.get("RouteMgr")), 404, "NOT_FOUND");
+  expect(await request({ ...directoryRead, path: "/api/staff/customers/2147483647" }, actors.get("Admin")), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...directoryRead, path: `/api/staff/customers/${id}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  for (const query of ["page=0", "pageSize=51", "status=Deleted", "q=", "unknown=1", "page=1&page=2"]) {
+    expect(await request({ ...directoryList, path: `/api/staff/customers?${query}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  // A Customer reads their own history only, and never another customer's invoices.
+  const own = await request(ownBookings, actors.get("Customer"));
+  expect(own, 200); noSecrets(own.body.data);
+  assert.deepEqual(Object.keys(own.body.data).sort(), ["bookings", "customer_id"]);
+  assert.equal(own.body.data.customer_id, actors.get("Customer").user_id);
+  assert.ok(!own.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(!JSON.stringify(own.body.data).includes("ticket_code"));
+  for (const booking of own.body.data.bookings) assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+  const otherOwn = await request(ownBookings, actors.get("OtherCustomer"));
+  expect(otherOwn, 200);
+  assert.equal(otherOwn.body.data.customer_id, actors.get("OtherCustomer").user_id);
+  // Own history is every invoice of that customer, regardless of which employee is responsible for it.
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === paidInvoice.invoice_id));
+  assert.ok(!otherOwn.body.data.bookings.some(booking => booking.invoice_id === invoice.invoice_id),
+    "a customer's own history must never include another customer's invoice");
+  assert.equal(await deniedSnapshot(), beforeDirectory, "C03 reads cannot change accounts, invoices, tickets, seats or audits");
+  console.log("PASS: C03 customer directory and booking history enforce Admin/RouteMgr scoping, Customer-own history, allowlisted fields without credentials or ticket codes, and no mutations.");
+
   // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
   const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
     dep_seat_id: saleSeats[2].dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id,
@@ -602,7 +683,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 38 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log(`PASS: Locked and revoked sessions fail all ${endpoints.length} methods for every role; fresh sessions work and absolute expiry remains enforced.`);
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };
