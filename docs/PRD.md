@@ -166,12 +166,14 @@ Draft → Open → Closed → Confirmed → Running → Ended
 2. Chỉ xử lý `transferType = "in"`. Tìm hóa đơn theo trường `code` (= `payment_code`).
 3. Chống trùng: chèn `PAYMENTS` với `transaction_id` = `id` của SePay (UNIQUE). Nếu trùng, trả `{"success": true}` ngay, không làm gì thêm. SePay tự retry tối đa 7 lần trong khoảng 33 phút nếu endpoint lỗi, nên bước này bắt buộc.
 4. Trong một transaction, nếu hóa đơn còn hợp lệ (xem 5.2.1) và `transferAmount >= total_amount`: hóa đơn `Paid`, ghế `Sold` (`locked_until = NULL`), vé `Valid` kèm `ticket_code` (QR), payment `Success`.
-5. Mọi trường hợp còn lại: payment `NeedsReview`, **không đổi trạng thái ghế/hóa đơn**, Admin đối soát theo contract P03/B04; không tự phát hành vé, đổi Sold hoặc tạo refund khi chưa có điều kiện xác nhận hợp lệ. Giao dịch chưa giải quyết vẫn NeedsReview và được hiển thị để xử lý.
+5. Mọi trường hợp còn lại: payment `NeedsReview`, **không đổi trạng thái ghế/hóa đơn**, Admin đối soát theo contract P03 và quy tắc B04 đã chốt ở 15.7; không tự phát hành vé, đổi Sold hoặc tạo refund khi chưa có điều kiện xác nhận hợp lệ. Giao dịch chưa giải quyết vẫn NeedsReview và được hiển thị để xử lý.
 6. Luôn trả HTTP 200 với body `{"success": true}` sau khi đã ghi nhận, kể cả `NeedsReview`.
 
 **5.2.1. Hóa đơn còn hợp lệ** nghĩa là: status `Pending`, hoặc `Expired` nhưng mọi ghế của nó vẫn `Available` hoặc `Locked` bởi chính hóa đơn này (chưa ai lấy). Trường hợp sau được **khóa lại và xác nhận** (thanh toán đến trễ nhưng ghế chưa mất). Nếu có ghế đã bị người khác lấy thì `NeedsReview`.
 
-Các tình huống `NeedsReview`: chuyển thiếu/thừa theo quyết định B04, sai nội dung (không tìm thấy hóa đơn), ghế đã bị lấy hoặc chuyến không còn hợp lệ (kể cả dữ liệu Cancelled legacy). **B04 vẫn mở:** mâu thuẫn `>=` ở bước 4 với thừa tiền ở NeedsReview phải được chốt trước triển khai payment; quyết định không hủy/hoàn vé không phải quyết định giữ tiền chuyển thừa.
+Các tình huống `NeedsReview`: chuyển **thiếu** (`transferAmount < total_amount`), sai nội dung (không tìm thấy hóa đơn theo `payment_code`), ghế đã bị người khác lấy hoặc chuyến/hóa đơn không còn hợp lệ (kể cả dữ liệu Cancelled legacy).
+
+**B04 đã chốt 10/11/2026 — chuyển thừa là thanh toán hợp lệ:** `transferAmount > total_amount` đi theo bước 4 (`Paid`/`Sold`/`Valid`/`Success`), không phải `NeedsReview`. `PAYMENTS.amount` lưu đúng số tiền thực nhận và `raw_payload` giữ JSON webhook, nên phần chênh lệch luôn tra được bằng `PAYMENTS.amount - INVOICES.total_amount`; không cần cột mới và không phát sinh migration. MVP không hoàn phần thừa, không tạo `REFUNDS` và không bù trừ sang hóa đơn khác; Admin chỉ đối soát để thấy chênh lệch. Thừa tiền không nới lỏng điều kiện ghế: ghế đã bị người khác lấy thì vẫn `NeedsReview`. Chi tiết và kiểm thử bắt buộc: [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md).
 
 ### 5.3. Không hủy/hoàn vé trong MVP
 
@@ -179,7 +181,7 @@ Các tình huống `NeedsReview`: chuyển thiếu/thừa theo quyết định B
 - Hiển thị chính sách rõ trước khi tạo đơn và trước thanh toán: đã mua không hủy/hoàn trong phạm vi MVP.
 - Pending hết expires_at vẫn Expired; chỉ dọn vé Pending và ghế còn do invoice đó giữ. Đóng trình duyệt/thoát checkout không phải hủy vé đã mua. Cron không được ghi đè Sold/hold của hóa đơn mới.
 - Chặn các thao tác hủy/hoàn nếu được gửi trực tiếp tới server; không chỉ giấu UI. Route không triển khai trả 404; command trạng thái không hỗ trợ trả lỗi nghiệp vụ ổn định, dữ liệu không đổi.
-- Chuyển tiền sai/thiếu/thừa/trễ vẫn được ghi nhận NeedsReview theo 5.2/8.2; không đánh Success hoặc coi như hoàn tiền chỉ để đóng việc.
+- Chuyển tiền sai mã, thiếu, hoặc đến trễ khi ghế đã bị người khác lấy vẫn được ghi nhận NeedsReview theo 5.2/8.2; không đánh Success hoặc coi như hoàn tiền chỉ để đóng việc. Riêng chuyển **thừa** trên hóa đơn còn hợp lệ là thanh toán hợp lệ theo B04 (xem 5.2 và 15.7): xác nhận Success/Paid/Sold/Valid và không tạo refund cho phần chênh lệch.
 
 ### 5.4. Check-in ngày đi
 Leader mở web mobile, quét QR (`ticket_code`). Hệ thống kiểm tra vé `Valid`, đúng chuyến và Leader được phân công cho chuyến đó, rồi đặt `check_in_status = CheckedIn`, ghi `check_in_time`. Vé hủy hoặc sai chuyến báo lỗi rõ ràng. Leader có thể đánh dấu `Absent`. Khi Leader kết thúc chuyến, chuyến thành `Ended`; đánh giá sau chuyến được hoãn, không thay đổi Paid/Valid/Sold.
@@ -538,6 +540,8 @@ WHERE dep_seat_id = $seat_id
 ### 7.3. Công thức
 
 MVP v2 báo cáo doanh thu từ payment Success được đối soát, không cộng NeedsReview. Công thức trừ refund và lãi/lỗ bên dưới giữ để giải thích dữ liệu legacy/giai đoạn sau, không phải yêu cầu xây module chi phí/hoàn tiền hiện tại.
+
+Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn hơn hóa đơn. **Doanh thu vé tính theo `SUM(INVOICES.total_amount)` của hóa đơn `Paid`**; phần thu thừa `PAYMENTS.amount - INVOICES.total_amount` là chênh lệch thu, theo dõi riêng ở đối soát Admin và không cộng vào doanh thu vé. Công thức doanh thu thuần bên dưới dùng `PAYMENTS.amount` nên chỉ phản ánh tiền thực nhận, không phải doanh thu vé.
 - Số Leader tối thiểu = `CEIL(COUNT(INVOICE_DETAILS WHERE status = 'Valid') / LEADER_RATIO)`.
 - Doanh thu thuần chuyến = `SUM(PAYMENTS.amount WHERE status = 'Success')` − `SUM(REFUNDS.amount WHERE status = 'Completed')`.
 - Lãi/lỗ chuyến = doanh thu thuần − `SUM(DEPARTURE_COSTS.amount)`. Chi phí bảo dưỡng xe dài hạn không trừ vào một chuyến.
@@ -635,7 +639,9 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 
 Admin theo dõi NeedsReview, đối chiếu invoice/payment và ghi audit theo P03/B04. RouteMgr phụ trách hỗ trợ thông tin đơn; không tự đổi tiền, xác nhận Paid hoặc chi hoàn.
 
-Không cung cấp tạo/duyệt/Completed REFUNDS hoặc nút hoàn tiền. Tiền sai mã/thiếu/thừa/trễ vẫn có bản ghi, không bị bỏ qua hoặc tự tính doanh thu. Trường hợp chưa có cách giải quyết hợp lệ giữ NeedsReview cho Admin; không giả lập hoàn tiền đã thực hiện. Quy tắc overpayment còn cần B04, không suy ra từ chính sách không hoàn vé.
+Không cung cấp tạo/duyệt/Completed REFUNDS hoặc nút hoàn tiền. Tiền sai mã/thiếu/thừa/trễ vẫn có bản ghi, không bị bỏ qua hoặc tự tính doanh thu. Trường hợp chưa có cách giải quyết hợp lệ giữ NeedsReview cho Admin; không giả lập hoàn tiền đã thực hiện.
+
+Quy tắc overpayment đã chốt ở B04 ngày 10/11/2026 (xem 5.2, 15.7 và [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md)): chuyển thừa vẫn xác nhận `Paid`/`Sold`/`Valid`/`Success`, `PAYMENTS.amount` lưu số tiền thực nhận, MVP không hoàn phần thừa. Màn đối soát phải cho Admin thấy số thực nhận và chênh lệch so với `total_amount`; Admin không có thao tác hoàn tiền, sửa số tiền hay đổi `Paid` thủ công.
 
 ### 8.3. Giai đoạn tương lai
 
@@ -698,6 +704,11 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | `POST /api/checkin` | Quét QR check-in / đánh dấu vắng | Leader |
 | `PATCH /api/departures/:id/status` | Mở/đóng/chốt/kết thúc chuyến; không hủy/dời | RouteMgr, Admin, Leader (kết thúc) |
 | `POST /api/departures/:id/assignments` | Phân công xe, nhân sự | HRMgr, Admin |
+| `GET /api/staff/customers` | Danh bạ khách hàng: tìm theo tên/email/SĐT, lọc trạng thái tài khoản, phân trang; mỗi dòng có số hóa đơn và lần đặt gần nhất trong phạm vi người đọc | Admin toàn bộ; RouteMgr chỉ khách của hóa đơn mình phụ trách |
+| `GET /api/staff/customers/:id` | Hồ sơ khách và lịch sử đặt vé chỉ đọc (hóa đơn, vé, ghế, snapshot nhân viên phụ trách), tối đa 50 hóa đơn mới nhất; ngoài phạm vi trả `404` | Admin toàn bộ; RouteMgr chỉ hóa đơn mình phụ trách |
+| `GET /api/account/bookings` | Lịch sử đặt vé của chính mình, tối đa 50 hóa đơn mới nhất, không có `ticket_code` | Customer (chỉ dữ liệu của mình) |
+
+Lịch sử đặt vé giới hạn 50 hóa đơn mới nhất cho tra cứu hỗ trợ; `invoice_count` là tổng trong phạm vi người đọc nên có thể lớn hơn số dòng trả về. Nếu cần xem quá 50 thì bổ sung phân trang cho lịch sử ở bước sau, không nới giới hạn trong handler.
 | `/api/admin/payments` | Đối soát NeedsReview theo contract P03/B04 | Admin |
 | `/api/cron/*` | Tác vụ nền | `CRON_SECRET` |
 
@@ -731,7 +742,7 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 2. A03 đã review/chốt contract ngày 21/10; Tiến An thực hiện A02 rồi A04 theo assignee Jira hiện tại, phối hợp Cường và các nhánh đang mở. Auth hai cổng đã có; không làm lại login. C04 quản trị khách hàng/tài khoản vẫn chờ API A01/C03. Xem checkpoint mới nhất trong development.md trước khi chọn task.
 3. Xe/nhân sự, tạo chuyến, chỉ định RouteMgr phụ trách hóa đơn, gán xe/sinh ghế, trạng thái Draft→Ended (O01–O07).
 4. Giữ ghế + invoice có snapshot người phụ trách + checkout/VietQR, thông báo không hủy/hoàn (K01–K06).
-5. SePay + NeedsReview sau quyết định B04 + vé QR; quản trị hóa đơn/hiển thị người phụ trách (P01–P06, M01/M02).
+5. SePay + NeedsReview theo quyết định B04 (đã chốt 10/11/2026, hết chốt chặn) + vé QR; quản trị hóa đơn/hiển thị người phụ trách (P01–P06, M01/M02).
 6. Leader check-in và kết thúc; quản trị khách hàng và vật tư theo scope v2 có thể chia việc độc lập sau khi contract tương ứng được chốt. Vật tư cần ERD/ledger riêng trước code, chưa có trong ERD baseline này.
 7. Dashboard doanh thu, cron, kiểm thử end-to-end và báo cáo; không chi phí/lãi-lỗ/đánh giá/hoàn tiền. C00 xác minh chính sách không hủy/hoàn, không triển khai engine refund.
 
@@ -845,7 +856,7 @@ Tiền tố mã thanh toán (ví dụ `TB`) và webhook "Tiền vào" được c
 
 ### 15.7. Quyết định đã chốt trước khi tạo migration
 
-**Lịch sử: người dùng đã xác nhận 4 quyết định khi bootstrap.** Điểm 4 về hủy/dời đã được thay thế bởi quyết định 17/10: không hỗ trợ trong MVP; các điểm 1–3 còn hiệu lực (Cancelled vẫn dùng để dọn hold Pending hết hạn). Riêng quy tắc chuyển thừa tiền ở mục 5.2 vẫn cần chốt trước bước payment.
+**Lịch sử: người dùng đã xác nhận 4 quyết định khi bootstrap.** Điểm 4 về hủy/dời đã được thay thế bởi quyết định 17/10: không hỗ trợ trong MVP; các điểm 1–3 còn hiệu lực (Cancelled vẫn dùng để dọn hold Pending hết hạn). Điểm 5 là quyết định B04 chốt ngày 10/11/2026, bổ sung sau bootstrap và không kéo theo migration.
 
 | # | Vấn đề | Quyết định |
 |---|---|---|
@@ -853,10 +864,11 @@ Tiền tố mã thanh toán (ví dụ `TB`) và webhook "Tiền vào" được c
 | 2 | Mục 5.1: bước 2 khóa ghế và ghi `invoice_id`, nhưng bước 3 mới tạo `INVOICES` (khóa ngoại chưa có). | Trong cùng một transaction: `INSERT INVOICES` trước (`Pending`, `payment_code` duy nhất, ví dụ `TB000123`), rồi khóa ghế theo `dep_seat_id` tăng dần bằng câu UPDATE ở 7.1, rồi `INSERT INVOICE_DETAILS`. Ghế nào `Rows Affected = 0` thì rollback toàn bộ. Nghiệp vụ không đổi, chỉ làm rõ thứ tự thực thi. |
 | 3 | Giá trị mặc định của `SYSTEM_SETTINGS`. | Đã chốt `SEAT_TTL_MINUTES = 15`, `MAX_SEATS_PER_INVOICE = 10`, `LEADER_RATIO = 15`. Seed tạo khi chưa có, giữ nguyên giá trị đã chỉnh. |
 | 4 | Mục 4 chỉ vẽ mũi tên `Cancelled/Rescheduled` từ `Closed`, nhưng mục 8.4 xử lý hóa đơn `Paid`, mà hóa đơn `Paid` đã tồn tại ngay khi chuyến còn `Open` hoặc đã `Confirmed`. | **Superseded 17/10:** không hỗ trợ hủy/dời trong MVP; giữ enum/lịch sử, chặn các cạnh này ở service. |
+| 5 | Mục 5.2: bước 4 nhận `transferAmount >= total_amount` là hợp lệ, nhưng đoạn liệt kê sau 5.2.1 lại đưa cả chuyển **thừa** vào `NeedsReview`. | **B04 chốt 10/11/2026:** chuyển thừa là thanh toán hợp lệ, giữ `>=` ở bước 4 → `Paid`/`Sold`/`Valid`/`Success`. `PAYMENTS.amount` lưu số tiền thực nhận nên chênh lệch tra được, không thêm cột, không migration. MVP không hoàn phần thừa và không tạo `REFUNDS`; `NeedsReview` chỉ còn thiếu tiền, sai mã, ghế đã bị lấy, chuyến/hóa đơn không hợp lệ. Doanh thu vé theo `total_amount` (7.3). Chi tiết: [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md). |
 
 ### 15.8. Kiểm thử tối thiểu khi tới các bước liên quan
 - **Bước 4 (khóa ghế):** `rtk npm run test:bookings:concurrency` chạy `tests/integration/booking-concurrency.mjs` trên PostgreSQL local dùng một lần, nhiều kết nối; 8 khách tranh một ghế có đúng một invoice/ticket/hold commit. Bao gồm retry đồng thời, payload khác cùng key, thứ tự nhiều ghế, cleanup, race assignment/account/payment-state và deadline. Phải chứng minh lỗi ở ghế sau hoàn tác cả hóa đơn/ghế đã acquire trước đó, Sold không đổi, hold mới không bị cleanup cũ nhả; đọc lại DB sau reassignment để đối chiếu FK/name/role snapshot của cả hóa đơn cũ và mới. CI chạy gate này; PGlite không thay thế bằng chứng cạnh tranh thật.
-- **Bước 5 (webhook):** gọi 2 lần với cùng `transaction_id` chỉ tạo 1 `PAYMENTS`; chuyển thiếu tiền hoặc sai nội dung cho `NeedsReview` và không đổi trạng thái ghế/hóa đơn.
+- **Bước 5 (webhook):** gọi 2 lần với cùng `transaction_id` chỉ tạo 1 `PAYMENTS`; chuyển thiếu tiền hoặc sai nội dung cho `NeedsReview` và không đổi trạng thái ghế/hóa đơn. Theo B04: chuyển đúng bằng và chuyển **thừa** đều cho `Success` + `Paid`/`Sold`/`Valid`, với `PAYMENTS.amount` bằng đúng `transferAmount` nhận được (không làm tròn về `total_amount`) và `REFUNDS` vẫn rỗng; webhook trùng của bản thừa tiền cũng chỉ tạo một `PAYMENTS`; thừa tiền nhưng ghế đã bị người khác lấy vẫn `NeedsReview` và không phát hành vé. Dùng Decimal/`numeric(14,0)`, không số thực.
 - **Không hủy/hoàn:** Customer/nhân viên/Admin gọi trực tiếp không thể hủy Paid/Valid, nhả Sold hoặc dời/hủy chuyến; Pending hết hạn nhả đúng hold; không tạo Refund. HTTP tests phải gọi cả thao tác bị cấm trên endpoint hiện có và đường dẫn/method hủy/hoàn không được cung cấp; so dữ liệu trước/sau gồm lịch chuyến, hóa đơn/vé/ghế, payment/refund và audit. TTL/reclaim có hiệu lực không đồng nghĩa cron dọn toàn bộ invoice đã triển khai. Policy trên UI cần xác minh cùng checkout tích hợp thực tế. Giữ tests constraint legacy, không viết engine refund.
 - **Người phụ trách:** invoice mới có FK + snapshot đúng assignment; thiếu/Locked/sai role bị chặn; rollback/idempotency; race đổi assignment/khóa nhân viên; đổi tên/role sau lập không sửa snapshot; đọc khác owner bị chặn.
 - **Hai cổng Auth:** cả hai chiều sai cổng bị chặn trước session; callback độc hại/sai role; redirect anonymous đúng gate không loop; session đã tồn tại, logout, CSRF, shared limiter, auth_version và expiry; browser Customer/Leader mobile.
