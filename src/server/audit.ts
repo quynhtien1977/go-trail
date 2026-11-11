@@ -18,6 +18,7 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("MoneyRecorded"), record_id: id,
     table_name: z.enum(["payments", "refunds", "departure_costs", "vehicle_maintenance"]), amount: z.string().regex(/^(0|[1-9]\d{0,13})$/) }),
   z.strictObject({ action: z.literal("DepartureOwnerChanged"), record_id: id, from: id.nullable(), to: id }),
+  z.strictObject({ action: z.literal("LeaderAccountCreated"), record_id: id }),
   z.strictObject({ action: z.literal("VehicleStatusChanged"), record_id: id,
     from: z.enum(vehicleStatuses), to: z.enum(vehicleStatuses) }),
   z.strictObject({ action: z.literal("TripCreated"), record_id: id, base_price: amount }),

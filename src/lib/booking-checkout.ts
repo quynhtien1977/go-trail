@@ -1,10 +1,10 @@
 import { holdSeatsSchema, type HoldSeatsInput } from "@/schemas/booking";
-import type { ManagedDepartureDto } from "@/schemas/departure";
+import type { DeparturePickupsDto } from "@/schemas/departure-pickups";
 
 export type PassengerDraft = { passenger_name: string; passenger_phone: string; emergency_contact: string; health_declaration: boolean; pickup_key: string };
 export type PassengerErrors = Partial<Record<keyof PassengerDraft, string>>;
 export type CheckoutPickup = { key: string; name: string; address: string; pickup_time?: string; dep_pickup_id?: number };
-export type DeparturePickupSource = { departure_id: number; pickups: ManagedDepartureDto["pickups"] };
+export type DeparturePickupSource = DeparturePickupsDto;
 export type HoldAttempt = { fingerprint: string; input: HoldSeatsInput };
 
 const passengerSchema = holdSeatsSchema.shape.seats.element.omit({ dep_seat_id: true, dep_pickup_id: true });

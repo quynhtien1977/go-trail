@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { SeatMapDto } from "@/schemas/seat-map";
-import { fetchDepartureSeats } from "@/lib/booking-client";
+import { fetchDeparturePickups, fetchDepartureSeats } from "@/lib/booking-client";
 import { availableSelection } from "@/lib/booking-presentation";
 import { formatVnd } from "@/lib/catalog-client";
 import { SeatMap } from "./seat-map";
@@ -20,6 +20,19 @@ export function DepartureSeatPicker({ tripId, tripName, departureId, departureDa
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const [bookingLocked, setBookingLocked] = useState(false);
+  const [schedule, setSchedule] = useState<{ id: number; data: DeparturePickupSource | null } | null>(null);
+
+  // The confirmed schedule of this departure; without it checkout stays a preview and cannot hold seats.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDeparturePickups(departureId, controller.signal)
+      .then(data => { if (!controller.signal.aborted) setSchedule({ id: departureId, data }); })
+      .catch(() => { if (!controller.signal.aborted) setSchedule({ id: departureId, data: null }); });
+    return () => controller.abort();
+  }, [departureId, revision]);
+
+  // A result from a previous departure is never reused; mismatches read as "not loaded yet".
+  const currentSchedule = schedule?.id === departureId ? schedule : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,6 +85,9 @@ export function DepartureSeatPicker({ tripId, tripName, departureId, departureDa
       {!loading && !error && map?.vehicles.some(vehicle => vehicle.seats.length) && !map.vehicles.some(vehicle => vehicle.seats.some(seat => seat.status === "Available")) &&
         <p role="status" className="text-sm text-[#5C636A]">Hiện chưa có ghế trống. Bạn có thể cập nhật sơ đồ hoặc chọn chuyến khác.</p>}
       <p role="status" className="text-sm text-[#8A5A00]">{notice}</p>
+      {!departurePickups && currentSchedule && !currentSchedule.data && <p role="alert" className="text-sm text-[#C62828]">
+        Không tải được điểm đón của chuyến này. Bấm &ldquo;Cập nhật ghế&rdquo; để thử lại trước khi đặt chỗ.
+      </p>}
       <dl className="divide-y divide-neutral-200 border-y border-neutral-200 text-sm">
         <div className="flex justify-between gap-3 py-3"><dt>Ghế đang chọn</dt><dd className="text-right font-semibold">{labels.length ? labels.join(", ") : "Chưa chọn ghế"}</dd></div>
         <div className="flex justify-between gap-3 py-3"><dt>Đơn giá mỗi ghế</dt><dd className="text-right font-bold text-[#186734]">{formatVnd(price)}</dd></div>
@@ -79,7 +95,7 @@ export function DepartureSeatPicker({ tripId, tripName, departureId, departureDa
       <p className="text-xs text-[#5C636A]">Ghế đang chọn chưa được giữ chỗ. Giá trị đơn hàng sẽ được xác nhận khi tạo hóa đơn.</p>
       <p className="text-sm">Vé đã mua không hủy, không hoàn và không chuyển chuyến.</p>
       <PassengerCheckout tripId={tripId} tripName={tripName} departureId={departureId} departureDate={departureDate} price={price}
-        seats={passengerSeats} available={!loading && !error} departurePickups={departurePickups}
+        seats={passengerSeats} available={!loading && !error} departurePickups={departurePickups ?? currentSchedule?.data ?? undefined}
         onLockChange={locked => { setBookingLocked(locked); onBookingLockChange?.(locked); }}
         onConflict={() => { setLoading(true); setRevision(value => value + 1); }} />
     </div>

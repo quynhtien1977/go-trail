@@ -15,7 +15,7 @@ const database = await createTestDatabase({ beforeMigration: "20261021000000_fiv
 const db = database.client;
 const secret = randomBytes(32).toString("hex");
 const actors = new Map();
-let child, startupError = false, sequence = 0, requests = 0;
+let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
 const tripInput = { name: "RBAC trail", city: "Tây Ninh", location_name: "RBAC mountain", length_km: "5.00",
   base_price: "500000", description: "Isolated fixture", schedule_content: "Isolated schedule" };
@@ -33,7 +33,8 @@ async function apiFiles(dir) {
 async function assertRouteCoverage(endpoints) {
   const expected = endpoints.map(e => `${e.method} ${e.route}`);
   expected.push("GET auth/[...nextauth]", "POST auth/[...nextauth]", "POST auth/register",
-    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats");
+    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats",
+    "GET departures/[id]/pickups");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -57,8 +58,8 @@ await once(lease, "listening");
 const port = lease.address().port;
 await new Promise(resolve => lease.close(resolve));
 const base = `http://127.0.0.1:${port}`, origin = `https://localhost:${port}`;
-async function request(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.() } = {}) {
-  const headers = new Headers();
+async function sendRequest(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
+  const headers = new Headers(extraHeaders);
   if (actor) {
     const token = await encode({ secret, maxAge: 8 * 60 * 60, token: { sub: String(actor.user_id), role: actor.role,
       auth_version: actor.auth_version, authenticated_at: Math.floor(Date.now() / 1000), ...claims } });
@@ -69,9 +70,13 @@ async function request(endpoint, actor, { claims = {}, originHeader = origin, bo
   const response = await fetch(base + endpoint.path, { method: endpoint.method, headers,
     body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(10000) });
   requests++;
+  return response;
+}
+async function request(endpoint, actor, options) {
+  const response = await sendRequest(endpoint, actor, options);
   assert.match(response.headers.get("content-type") ?? "", /application\/json/, `${endpoint.method} ${endpoint.route}: JSON required, never a login redirect`);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
-  return { status: response.status, body: await response.json(), label: `${endpoint.method} ${endpoint.route}` };
+  return { status: response.status, body: await response.json(), retryAfter: response.headers.get("retry-after"), label: `${endpoint.method} ${endpoint.route}` };
 }
 function expect(result, status, code) {
   assert.equal(result.status, status, result.label);
@@ -110,11 +115,12 @@ function invoiceDto(value) {
 
 async function startServer(bank = {}) {
   startupError = false;
-  child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
+  child = spawn(process.execPath, ["--import", "./tests/helpers/preload-redis.mjs", "node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
-      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
-    stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1",
+      BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
+    stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
   child.stdout.resume(); child.stderr.resume();
   child.on("error", () => { startupError = true; });
@@ -125,6 +131,24 @@ async function startServer(bank = {}) {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert.ok(ready, "Production build must be available before HTTP RBAC checks.");
+}
+
+async function setRedisUnavailable(unavailable) {
+  const server = child, id = next();
+  await new Promise((resolve, reject) => {
+    const finish = (error) => {
+      clearTimeout(timer); server.off("message", onMessage);
+      if (error) reject(error); else resolve();
+    };
+    const onMessage = (message) => {
+      if (message?.type === "test-redis-availability-ack" && message.id === id) finish();
+    };
+    const timer = setTimeout(() => finish(new Error("Test Redis control did not acknowledge availability")), 5000);
+    server.on("message", onMessage);
+    server.send({ type: "test-redis-availability", id, unavailable }, (error) => {
+      if (error) finish(new Error("Test Redis control channel unavailable"));
+    });
+  });
 }
 
 try {
@@ -219,6 +243,20 @@ try {
       create: { departure_id: draft.departure_id, dep_vehicle_id: assignment.dep_vehicle_id, staff_id: assistant.staff_id, role_in_trip: "Assistant" }, update: {} });
     removeStaffEndpoint.path = `/api/staff/departures/${draft.departure_id}/staff/${crew.dep_staff_id}`;
   };
+  const personnel = await db.staff.create({ data: { full_name: "Personnel fixture", phone: "0901234567", staff_type: "Assistant" } });
+  route("staff/personnel", "/api/staff/personnel", ["HRMgr", "Admin"], { GET: undefined, POST: () => ({
+    full_name: `Fixture driver ${next()}`, phone: "0901234567", staff_type: "Driver", license_number: `D-${next()}`,
+    license_class: "D", license_expiry: "2036-12-31" }) });
+  route("staff/personnel/[id]", `/api/staff/personnel/${personnel.staff_id}`, ["HRMgr", "Admin"], {
+    GET: undefined, PATCH: () => ({ phone: "0907654321" }), DELETE: undefined });
+  // C03: a RouteMgr only reaches the customers of invoices they are responsible for, so the directory needs one.
+  const directoryInvoice = await db.invoice.create({ data: { customer_id: actors.get("OtherCustomer").user_id,
+    departure_id: departures[1].departure_id, payment_code: "RBAC-DIRECTORY", total_amount: "500000",
+    expires_at: new Date("2030-01-01"), responsible_user_id: actors.get("RouteMgr").user_id,
+    responsible_name_snapshot: "RouteMgr fixture", responsible_role_snapshot: "RouteMgr" } });
+  route("staff/customers", "/api/staff/customers", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
+  route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -235,9 +273,9 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 33);
+  assert.equal(endpoints.length, 41);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 33 protected API methods; new/unclassified API methods fail this gate.");
+  console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
 
   await startServer();
   const deniedSnapshot = async () => {
@@ -249,6 +287,7 @@ try {
       db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }),
       db.auditLog.findMany({ orderBy: { log_id: "asc" } }), db.invoice.findMany({ orderBy: { invoice_id: "asc" } }),
       db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
+      db.payment.findMany({ orderBy: { payment_id: "asc" } }), db.refund.findMany({ orderBy: { refund_id: "asc" } }),
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
@@ -345,10 +384,33 @@ try {
   }
   console.log("PASS: K01 public seat map follows O03/O04 sale setup, returns only safe seat fields to guests/all roles, hides unavailable departures and never mutates holds.");
 
+  // Checkout consumes departure pickup IDs directly from the public HTTP contract, never from staff APIs.
+  const pickupRead = { method: "GET", route: "departures/[id]/pickups", path: `/api/departures/${saleId}/pickups` };
+  const beforePickupRead = await deniedSnapshot();
+  let publicPickups;
+  for (const actor of [undefined, ...roles.map(role => actors.get(role))]) {
+    const result = await request(pickupRead, actor);
+    expect(result, 200); noSecrets(result.body.data);
+    assert.deepEqual(Object.keys(result.body.data).sort(), ["departure_id", "pickups"]);
+    assert.equal(result.body.data.departure_id, saleId); assert.equal(result.body.data.pickups.length, 1);
+    for (const item of result.body.data.pickups) assert.deepEqual(Object.keys(item).sort(),
+      ["dep_pickup_id", "pickup_id", "name", "address", "pickup_time"].sort());
+    publicPickups = result.body.data;
+  }
+  expect(await request({ ...pickupRead, path: "/api/departures/2147483647/pickups" }), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...pickupRead, path: `/api/departures/${id}/pickups` }), 422, "INVALID_INPUT");
+  }
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Closed" } });
+  expect(await request(pickupRead), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Open" } });
+  assert.equal(await deniedSnapshot(), beforePickupRead, "Public pickup reads cannot change invoices, seats, assignments or audits");
+  console.log("PASS: public departure pickup API is readable by guests/all roles, returns only assigned schedule fields and feeds real K02 holds without mutations.");
+
   // K02 extends the same real Draft -> assignment -> Open flow; only its unpaid stale holds may be reclaimed.
   await db.invoice.update({ where: { invoice_id: holdInvoice.invoice_id }, data: { expires_at: new Date(Date.now() - 1000) } });
   await db.departureSeat.update({ where: { dep_seat_id: saleSeats[1].dep_seat_id }, data: { locked_until: new Date(Date.now() - 1000) } });
-  const salePickup = await db.departurePickup.findFirstOrThrow({ where: { departure_id: saleId } });
+  const salePickup = publicPickups.pickups[0];
   const bookingBody = { idempotency_key: "http-booking-key-0001", seats: saleSeats.slice(0, 2).map(seat => ({
     dep_seat_id: seat.dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id, passenger_name: "Fixture passenger",
     passenger_phone: "0901234567", emergency_contact: "Fixture contact", health_declaration: true,
@@ -423,6 +485,161 @@ try {
   assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
   console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
 
+  // C03: the customer directory and booking history over HTTP, with RouteMgr scoping and no PII beyond the contract.
+  const beforeDirectory = await deniedSnapshot();
+  const directoryList = { method: "GET", route: "staff/customers", path: "/api/staff/customers" };
+  const directoryRead = { method: "GET", route: "staff/customers/[id]", path: `/api/staff/customers/${actors.get("OtherCustomer").user_id}` };
+  const ownBookings = { method: "GET", route: "account/bookings", path: "/api/account/bookings" };
+  const summaryKeys = ["user_id", "full_name", "email", "phone", "status", "created_at", "invoice_count", "last_booking_at"].sort();
+  const historyKeys = ["invoice_id", "departure_id", "status", "total_amount", "created_at", "expires_at",
+    "responsible_name_snapshot", "responsible_role_snapshot", "trip_name", "departure_date", "tickets"].sort();
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const listed = await request(directoryList, actor);
+    expect(listed, 200); noSecrets(listed.body.data);
+    assert.deepEqual(Object.keys(listed.body.data).sort(), ["items", "pagination"]);
+    assert.deepEqual(Object.keys(listed.body.data.pagination).sort(), ["page", "pageSize", "totalItems", "totalPages"].sort());
+    assert.ok(listed.body.data.items.some(item => item.user_id === actors.get("OtherCustomer").user_id));
+    for (const item of listed.body.data.items) {
+      assert.deepEqual(Object.keys(item).sort(), summaryKeys);
+      assert.match(String(item.user_id), /^[1-9]\d*$/);
+    }
+    // Staff accounts are not customers and never appear in the directory.
+    for (const staffRole of ["Leader", "RouteMgr", "HRMgr", "Admin"]) {
+      assert.ok(!listed.body.data.items.some(item => item.user_id === actors.get(staffRole).user_id), `${staffRole} must not be listed as a customer`);
+    }
+  }
+  // Admin sees every customer; a RouteMgr only those tied to an invoice they are responsible for.
+  const adminList = await request(directoryList, actors.get("Admin"));
+  const managerList = await request(directoryList, actors.get("RouteMgr"));
+  assert.ok(adminList.body.data.pagination.totalItems >= managerList.body.data.pagination.totalItems);
+  for (const item of managerList.body.data.items) assert.ok(item.invoice_count >= 1, "a scoped directory never lists customers without a managed invoice");
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const detail = await request(directoryRead, actor);
+    expect(detail, 200); noSecrets(detail.body.data);
+    assert.deepEqual(Object.keys(detail.body.data).sort(), ["bookings", "customer"]);
+    assert.deepEqual(Object.keys(detail.body.data.customer).sort(), summaryKeys);
+    assert.ok(!JSON.stringify(detail.body.data).includes("ticket_code"), "C03 never returns ticket codes; P04 owns QR issuance");
+    for (const booking of detail.body.data.bookings) {
+      assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+      assert.match(booking.total_amount, /^(0|[1-9]\d*)$/);
+      for (const key of ["created_at", "expires_at", "departure_date"]) assert.equal(new Date(booking[key]).toISOString(), booking[key]);
+      for (const ticket of booking.tickets) {
+        assert.deepEqual(Object.keys(ticket).sort(), ["detail_id", "seat_name", "passenger_name", "status", "check_in_status"].sort());
+      }
+    }
+  }
+  const scopedDetail = await request(directoryRead, actors.get("RouteMgr"));
+  assert.deepEqual(scopedDetail.body.data.bookings.map(booking => booking.invoice_id), [directoryInvoice.invoice_id]);
+  // Out-of-scope and non-customer ids are indistinguishable from missing ones.
+  expect(await request({ ...directoryRead, path: `/api/staff/customers/${actors.get("HRMgr").user_id}` }, actors.get("RouteMgr")), 404, "NOT_FOUND");
+  expect(await request({ ...directoryRead, path: "/api/staff/customers/2147483647" }, actors.get("Admin")), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...directoryRead, path: `/api/staff/customers/${id}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  for (const query of ["page=0", "pageSize=51", "status=Deleted", "q=", "unknown=1", "page=1&page=2"]) {
+    expect(await request({ ...directoryList, path: `/api/staff/customers?${query}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  // A Customer reads their own history only, and never another customer's invoices.
+  const own = await request(ownBookings, actors.get("Customer"));
+  expect(own, 200); noSecrets(own.body.data);
+  assert.deepEqual(Object.keys(own.body.data).sort(), ["bookings", "customer_id"]);
+  assert.equal(own.body.data.customer_id, actors.get("Customer").user_id);
+  assert.ok(!own.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(!JSON.stringify(own.body.data).includes("ticket_code"));
+  for (const booking of own.body.data.bookings) assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+  const otherOwn = await request(ownBookings, actors.get("OtherCustomer"));
+  expect(otherOwn, 200);
+  assert.equal(otherOwn.body.data.customer_id, actors.get("OtherCustomer").user_id);
+  // Own history is every invoice of that customer, regardless of which employee is responsible for it.
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === paidInvoice.invoice_id));
+  assert.ok(!otherOwn.body.data.bookings.some(booking => booking.invoice_id === invoice.invoice_id),
+    "a customer's own history must never include another customer's invoice");
+  assert.equal(await deniedSnapshot(), beforeDirectory, "C03 reads cannot change accounts, invoices, tickets, seats or audits");
+  console.log("PASS: C03 customer directory and booking history enforce Admin/RouteMgr scoping, Customer-own history, allowlisted fields without credentials or ticket codes, and no mutations.");
+
+  // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
+  const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
+    dep_seat_id: saleSeats[2].dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id,
+    passenger_name: "Policy fixture", passenger_phone: "0901234567", emergency_contact: "Fixture contact",
+    health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: "C00-VALID-TICKET" } });
+  const beforePolicyAttempts = await deniedSnapshot();
+  const noCancel = { method: "PATCH", route: "staff/departures/[id]", path: `/api/staff/departures/${saleId}` };
+  for (const role of roles) {
+    const actor = actors.get(role), canOperate = ["RouteMgr", "Admin"].includes(role);
+    for (const status of ["Cancelled", "Rescheduled"]) {
+      expect(await request(noCancel, actor, { body: { status } }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+    for (const body of [{ departure_date: "2033-01-03T02:00:00.000Z" },
+      { pickups: [{ pickup_id: operationsPickup.pickup_id, pickup_time: "2033-01-03T02:00:00.000Z" }] }]) {
+      expect(await request(noCancel, actor, { body }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+  }
+  // Unsupported methods/routes have framework 404/405 responses rather than the application's JSON contract.
+  // Keep the strict JSON/no-store assertions above for every implemented endpoint.
+  const forbidden = [
+    ["PATCH", `/api/invoices/${paidInvoice.invoice_id}`, { status: "Cancelled" }],
+    ["DELETE", `/api/invoices/${paidInvoice.invoice_id}`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/cancel`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/refund`],
+    ["PATCH", `/api/tickets/${paidTicket.detail_id}`, { status: "Cancelled", departure_id: draft.departure_id }],
+    ["POST", `/api/tickets/${paidTicket.detail_id}/cancel`],
+    ["POST", `/api/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["POST", `/api/admin/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["DELETE", `/api/staff/departures/${saleId}`],
+    ["POST", `/api/staff/departures/${saleId}/cancel`],
+    ["POST", `/api/staff/departures/${saleId}/reschedule`, { departure_date: "2033-01-03T02:00:00.000Z" }],
+  ];
+  for (const role of roles) {
+    for (const [method, path, body] of forbidden) {
+      const result = await sendRequest({ method, path }, actors.get(role), { body });
+      assert.ok([403, 404, 405].includes(result.status), `${role} ${method} ${path}: must reject without a redirect`);
+      await result.arrayBuffer();
+    }
+  }
+  assert.equal(await deniedSnapshot(), beforePolicyAttempts,
+    "C00 forbidden requests cannot mutate Paid/Valid/Sold, Pending holds, departure schedules, payments, refunds or audits");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: paidInvoice.invoice_id } })).status, "Paid");
+  assert.equal((await db.invoiceDetail.findUniqueOrThrow({ where: { detail_id: paidTicket.detail_id } })).status, "Valid");
+  const soldPolicySeat = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: saleSeats[2].dep_seat_id } });
+  assert.equal(soldPolicySeat.status, "Sold"); assert.equal(soldPolicySeat.locked_until, null);
+  assert.equal(await db.refund.count(), 0);
+  console.log("PASS: C00 all five roles, including Admin, cannot cancel/refund/reschedule through direct HTTP calls; Paid/Valid/Sold and all financial/history rows stay unchanged.");
+
+  // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
+  const beforeQuota = await deniedSnapshot();
+  stage = "K04-outage";
+  await setRedisUnavailable(true);
+  const unavailable = await request(book, actors.get("Customer"));
+  expect(unavailable, 503, "BOOKING_UNAVAILABLE");
+  assert.doesNotMatch(JSON.stringify(unavailable.body), /Redis|upstash|token|Prisma|ECONN|DATABASE_URL/i);
+  assert.equal(unavailable.retryAfter, null);
+  expect(await request(invoiceRead, actors.get("Customer")), 200);
+  assert.equal(await deniedSnapshot(), beforeQuota, "Redis outage must not alter booking data; invoice reads remain available");
+  stage = "K04-recovery";
+  await setRedisUnavailable(false);
+  const recovered = await request(book, actors.get("Customer"));
+  expect(recovered, 201); assert.equal(recovered.body.data.invoice_id, booked.body.data.invoice_id);
+  assert.equal(recovered.body.data.expires_at, expiredRead.body.data.expires_at);
+  assert.equal(await deniedSnapshot(), beforeQuota);
+  stage = "K04-quota";
+  // Recovery consumed the first of ten attempts; keep the same process, counter and SDK client.
+  for (let i = 0; i < 9; i++) {
+    const result = await request(book, actors.get("Customer"), { extraHeaders: {
+      "x-forwarded-for": `192.0.2.${i + 1}`, "x-vercel-forwarded-for": `198.51.100.${i + 1}`,
+    } });
+    expect(result, 201); assert.equal(result.body.data.invoice_id, booked.body.data.invoice_id);
+    assert.equal(result.body.data.expires_at, expiredRead.body.data.expires_at);
+  }
+  const limited = await request(book, actors.get("Customer"), { body: { ...bookingBody, idempotency_key: "quota-rotated-key-0001" } });
+  expect(limited, 429, "RATE_LIMITED"); assert.match(limited.retryAfter, /^[1-9]\d?$/);
+  expect(await request(book, actors.get("Customer"), { body: { ...bookingBody, role: "Admin" } }), 422, "INVALID_INPUT");
+  assert.equal(await deniedSnapshot(), beforeQuota, "Rate-limited retries must not write or renew a hold");
+  console.log("PASS: K04 HTTP limits rotated/retried requests with 429/Retry-After; Redis outage fails closed with 503, preserves existing reads and recovers without duplicate invoices or renewed holds.");
+  stage = "matrix";
+
   const ownInvoice = endpoints.find(e => e.route === "invoices/[id]");
   expect(await request(ownInvoice, actors.get("OtherCustomer")), 404, "NOT_FOUND");
   const leaderRead = endpoints.find(e => e.route === "leader/departures");
@@ -466,7 +683,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 33 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log(`PASS: Locked and revoked sessions fail all ${endpoints.length} methods for every role; fresh sessions work and absolute expiry remains enforced.`);
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };
@@ -479,6 +696,16 @@ try {
   expect(await request(startup, newCustomer), 200);
   expect(await request({ method: "GET", route: "staff/vehicles", path: "/api/staff/vehicles" }, newCustomer, { claims: { role: "Accountant" } }), 403, "FORBIDDEN");
   console.log(`PASS: actual Accountant migration and Admin unlock never revive pre-cutover sessions or retired privileges (${requests} HTTP checks).`);
+} catch (error) {
+  // Keep the original assertion diagnosable even if a DB/socket cleanup also fails.
+  console.error("RBAC_HTTP_FAILURE", {
+    stage,
+    name: error?.name,
+    lines: (error?.stack ?? "").match(/rbac-http\.mjs:(\d+):(\d+)/g),
+    actual: typeof error?.actual === "number" ? error.actual : undefined,
+    expected: typeof error?.expected === "number" ? error.expected : undefined,
+  });
+  throw error;
 } finally {
   if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   await database.close();

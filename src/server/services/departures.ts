@@ -2,7 +2,7 @@ import "server-only";
 import type { z } from "zod";
 import { inTransaction, type Database, type Transaction } from "@/server/repositories/database";
 import * as departures from "@/server/repositories/departures";
-import { assertOpeningAssignments } from "./assignments";
+import { assertConfirmingAssignments, assertOpeningAssignments } from "./assignments";
 import type { Page } from "@/schemas/catalog";
 import { createDepartureSchema, departureQuerySchema, updateDepartureSchema, type ManagedDepartureDto } from "@/schemas/departure";
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
@@ -11,7 +11,11 @@ import { AppError } from "@/server/errors";
 import { bindDb } from "./bind-db";
 
 type Schedule = { pickup_id: number; pickup_time: Date }[];
+type DepartureStatus = ManagedDepartureDto["status"];
 const closedDepartures = ["Ended", "Cancelled", "Rescheduled"];
+// Draft -> Open runs the opening checks in updateDeparture; Running -> Ended is the Leader flow (L02).
+// MVP never enters Cancelled/Rescheduled, not even for Admin (scope 17/10/2026).
+const nextStatus: Partial<Record<DepartureStatus, DepartureStatus>> = { Open: "Closed", Closed: "Confirmed", Confirmed: "Running" };
 const DAY_MS = 86_400_000;
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
@@ -58,6 +62,26 @@ function assertSchedule(dates: { departure_date: Date; booking_deadline: Date },
     if (item.pickup_time < dates.booking_deadline
       || Math.abs(item.pickup_time.getTime() - dates.departure_date.getTime()) > DAY_MS) throw new AppError("INVALID_INPUT", 422);
   }
+}
+async function assertTransition(tx: Transaction, current: departures.DepartureRow, status: DepartureStatus, now: Date) {
+  if (nextStatus[current.status] !== status) throw new AppError("RESOURCE_CONFLICT", 409);
+  if (status === "Closed") {
+    // Pending holds do not count as sold out; reaching the deadline still closes sales.
+    if (now < current.booking_deadline && await departures.countUnsoldSeats(tx, current.departure_id)) {
+      throw new AppError("RESOURCE_CONFLICT", 409);
+    }
+    return;
+  }
+  if (status === "Confirmed") {
+    if (await departures.countValidTickets(tx, current.departure_id) < current.min_passengers) throw new AppError("RESOURCE_CONFLICT", 409);
+  } else {
+    // Operations can start at the first pickup, including the previous local evening, or the departure time.
+    const startsAt = current.pickups.reduce((earliest, pickup) => Math.min(earliest, pickup.pickup_time.getTime()),
+      current.departure_date.getTime());
+    if (now.getTime() < startsAt) throw new AppError("RESOURCE_CONFLICT", 409);
+  }
+  // Confirmed and Running both require a complete, still-eligible crew: crew may have changed since confirmation.
+  await assertConfirmingAssignments(tx, current.departure_id, current.departure_date);
 }
 async function assertTripPickups(tx: Transaction, tripId: number, schedule: Schedule) {
   if (!schedule.length) return;
@@ -106,6 +130,16 @@ export async function updateDeparture(db: Database, identity: Actor, departureId
     const actor = await routeManager(tx, identity);
     const current = await departures.lockDeparture(tx, departureId);
     if (!current) throw new AppError("NOT_FOUND", 404);
+    if (status !== undefined && status !== "Open") {
+      // Later edges only move the status; a departure on sale keeps its schedule and owner (no reschedule in MVP).
+      if (invoice_owner_user_id !== undefined || pickups !== undefined || Object.values(fields).some((value) => value !== undefined)) {
+        throw new AppError("INVALID_INPUT", 422);
+      }
+      await assertTransition(tx, current, status, now);
+      await departures.updateDeparture(tx, departureId, { status });
+      await writeAudit(tx, actor.user_id, { action: "DepartureStatusChanged", record_id: departureId, from: current.status, to: status });
+      return dto((await departures.findDeparture(tx, departureId))!);
+    }
     let owner: number | undefined;
     if (invoice_owner_user_id !== undefined) {
       // Reassignment is Admin-only and affects new invoices only; issued invoices keep their snapshot.
