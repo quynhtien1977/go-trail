@@ -6,6 +6,7 @@ import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
 import type { Role } from "@/schemas/auth";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export default async function AdminPage() {
             </div>
           </div>
         </div>
+
+        <Link href="/admin/reconciliation" className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]">Mở đối soát thanh toán</Link>
 
         {/* System Settings & User Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
