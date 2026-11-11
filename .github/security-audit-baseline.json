@@ -1,8 +1,8 @@
 {
-  "version": "1.4.0",
-  "reviewedAt": "2026-11-04",
-  "reviewDeadline": "2026-11-11T23:59:59Z",
-  "notes": "PROPOSAL ONLY — pending explicit user approval. Align Prisma CLI, Client and PostgreSQL adapter at 7.10.1. Remove resolved deepmerge-ts/mysql2 exceptions and the stale braces entry. Retain only unpatched development-tool deepmerge and exact legacy minimatch 3.1.5 until 2026-11-11T23:59:59Z or production release, whichever is earlier. All critical findings and any unmatched or out-of-scope advisory/version remain blocked. Do not use untrusted CLI registry/config/glob input. No schema migration or database write is part of this patch.",
+  "version": "1.5.0",
+  "reviewedAt": "2026-11-11",
+  "reviewDeadline": "2026-11-18T23:59:59Z",
+  "notes": "Reviewed 2026-11-11. Removed the resolved legacy minimatch 3.1.5 entry as it is no longer flagged by npm audit. Retain only unpatched development-tool deepmerge 4.3.1 until 2026-11-18T23:59:59Z or production release, whichever is earlier. All critical findings and any unmatched or out-of-scope advisory remain blocked. Do not use untrusted CLI registry/config input. No schema migration or database write is part of this baseline renewal.",
   "exceptions": [
     {
       "id": "GHSA-gcqx-w48m-w2h4",
@@ -19,51 +19,9 @@
           "deepmerge"
         ]
       ],
-      "reachability": "Reviewed and explicitly approved by the user on 2026-10-28. Upstream latest deepmerge 4.3.1 has no patched release. Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. The CSS bytes are unchanged after the shadcn security update. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the existing deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
+      "reachability": "Re-reviewed 2026-11-11 for baseline 1.5.0 renewal. Upstream latest deepmerge 4.3.1 still has no patched release. Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. The CSS bytes remain static. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the renewed deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
       "source": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
-      "expiresAt": "2026-11-11T23:59:59Z"
-    },
-    {
-      "id": "GHSA-g3hv-75wg-m249",
-      "package": "minimatch",
-      "severity": "moderate",
-      "allowedVersions": [
-        "3.1.5"
-      ],
-      "chain": [
-        "eslint",
-        "minimatch"
-      ],
-      "additionalChains": [
-        [
-          "eslint",
-          "@eslint/config-array",
-          "minimatch"
-        ],
-        [
-          "eslint",
-          "@eslint/eslintrc",
-          "minimatch"
-        ],
-        [
-          "eslint-config-next",
-          "eslint-plugin-import",
-          "minimatch"
-        ],
-        [
-          "eslint-config-next",
-          "eslint-plugin-jsx-a11y",
-          "minimatch"
-        ],
-        [
-          "eslint-config-next",
-          "eslint-plugin-react",
-          "minimatch"
-        ]
-      ],
-      "reachability": "Reviewed and authorized by the project lead on 2026-11-02. All modern minimatch 10 copies are patched to 11.0.4. Only legacy 3.1.5 remains in ESLint and its plugins, whose callable CommonJS API is incompatible with minimatch 11 (verified TypeError on a legacy call). Upstream legacy-v3 tag remains 3.1.5. The reported firstPhasePreProcess/optimizationLevel path is absent from the installed v3 source; npm still reports this version under the advisory's broad affected range, so this is a temporary risk acceptance, not a claim the advisory is fixed. Glob input comes from repository-controlled lint configuration; application request handlers do not import minimatch or expose arbitrary glob matching. The audit gate checks every reported affected node against the authoritative lockfile and accepts only exact 3.1.5; any affected 10.x, unknown version or missing evidence still blocks CI. Re-review before release, untrusted glob/config input, changing lint dependencies, or expiry.",
-      "source": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
-      "expiresAt": "2026-11-11T23:59:59Z"
+      "expiresAt": "2026-11-18T23:59:59Z"
     }
   ]
 }
