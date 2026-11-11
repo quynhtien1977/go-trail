@@ -14,6 +14,8 @@ const roles = ["Customer", "Leader", "RouteMgr", "HRMgr", "Admin"];
 const database = await createTestDatabase({ beforeMigration: "20261021000000_five_roles" });
 const db = database.client;
 const secret = randomBytes(32).toString("hex");
+// Fixture webhook key; never inherit a real SEPAY_API_KEY from the environment.
+const sepayKey = randomBytes(24).toString("hex");
 const actors = new Map();
 let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
@@ -34,7 +36,10 @@ async function assertRouteCoverage(endpoints) {
   const expected = endpoints.map(e => `${e.method} ${e.route}`);
   expected.push("GET auth/[...nextauth]", "POST auth/[...nextauth]", "POST auth/register",
     "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats",
-    "GET departures/[id]/pickups");
+    "GET departures/[id]/pickups",
+    // P01: machine-to-machine, authenticated by SEPAY_API_KEY instead of a session role.
+    // No role may drive it, which the P01 block below asserts for all five roles.
+    "POST webhooks/sepay");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -118,7 +123,7 @@ async function startServer(bank = {}) {
   child = spawn(process.execPath, ["--import", "./tests/helpers/preload-redis.mjs", "node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
-      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1",
+      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1", SEPAY_API_KEY: sepayKey,
       BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
     stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
@@ -557,6 +562,58 @@ try {
     "a customer's own history must never include another customer's invoice");
   assert.equal(await deniedSnapshot(), beforeDirectory, "C03 reads cannot change accounts, invoices, tickets, seats or audits");
   console.log("PASS: C03 customer directory and booking history enforce Admin/RouteMgr scoping, Customer-own history, allowlisted fields without credentials or ticket codes, and no mutations.");
+
+  // P01: the SePay webhook is machine-to-machine. A session must never substitute for the API key,
+  // and recording must not touch invoices, seats, tickets or audits — that is P02's job.
+  const webhook = { method: "POST", route: "webhooks/sepay", path: "/api/webhooks/sepay" };
+  const transfer = (overrides = {}) => ({ id: 70001, gateway: "Vietcombank", transactionDate: "2026-11-11 14:02:37",
+    accountNumber: "0123499999", code: "RBAC-OWN", content: "RBAC-OWN thanh toan", transferType: "in",
+    transferAmount: 500000, accumulated: 1, subAccount: null, referenceCode: "RBACREF1", description: "", ...overrides });
+  const businessSnapshot = async () => createHash("sha256").update(JSON.stringify(await Promise.all([
+    db.invoice.findMany({ orderBy: { invoice_id: "asc" } }), db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
+    db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }), db.auditLog.findMany({ orderBy: { log_id: "asc" } }),
+    db.refund.findMany({ orderBy: { refund_id: "asc" } }),
+  ]))).digest("hex");
+
+  const beforeWebhook = await deniedSnapshot();
+  for (const header of [undefined, "", "Apikey", `Apikey ${sepayKey}x`, `Bearer ${sepayKey}`, sepayKey]) {
+    expect(await request(webhook, null, { body: transfer(), extraHeaders: header === undefined ? undefined : { authorization: header } }),
+      401, "UNAUTHENTICATED");
+  }
+  for (const role of [...roles, "OtherCustomer"]) {
+    // A valid session of any role, including Admin, is not a webhook credential.
+    expect(await request(webhook, actors.get(role), { body: transfer() }), 401, "UNAUTHENTICATED");
+  }
+  assert.equal(await deniedSnapshot(), beforeWebhook, "rejected webhook calls must not write anything, not even a payment row");
+
+  const keyed = { authorization: `Apikey ${sepayKey}` };
+  const businessBefore = await businessSnapshot();
+  const outgoing = await request(webhook, null, { body: transfer({ id: 70002, transferType: "out" }), extraHeaders: keyed });
+  assert.equal(outgoing.status, 200); assert.deepEqual(outgoing.body, { success: true });
+  assert.equal(await db.payment.count({ where: { transaction_id: "70002" } }), 0, "outgoing transfers are ignored, not recorded");
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ack = await request(webhook, null, { body: transfer(), extraHeaders: keyed });
+    assert.equal(ack.status, 200, "SePay must always get 200 once the transfer is recorded");
+    assert.deepEqual(ack.body, { success: true }, "the webhook answers SePay's own contract, not the { data } envelope");
+  }
+  const recorded = await db.payment.findMany({ where: { transaction_id: "70001" } });
+  assert.equal(recorded.length, 1, "retries of one transaction_id must leave exactly one row");
+  assert.equal(recorded[0].invoice_id, invoice.invoice_id, "the transfer attaches to the invoice named by payment_code");
+  assert.equal(recorded[0].amount.toFixed(0), "500000");
+  assert.equal(recorded[0].status, "NeedsReview", "P01 records only; P02 confirms Paid/Sold/Valid");
+
+  const unmatched = await request(webhook, null, { body: transfer({ id: 70003, code: "NO-SUCH-CODE" }), extraHeaders: keyed });
+  assert.deepEqual(unmatched.body, { success: true });
+  assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70003" } })).invoice_id, null);
+
+  for (const bad of [{ transferAmount: -1 }, { transferAmount: 1.5 }, { transferType: "IN" }, { id: 0 }]) {
+    expect(await request(webhook, null, { body: transfer({ ...bad, id: bad.id ?? 70004 }), extraHeaders: keyed }), 422, "INVALID_INPUT");
+  }
+  assert.equal(await db.payment.count({ where: { transaction_id: "70004" } }), 0);
+  assert.equal(await businessSnapshot(), businessBefore,
+    "recording a payment must not change invoices, tickets, seats, refunds or audits");
+  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and never alters invoices, seats, tickets or audits.");
 
   // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
   const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
