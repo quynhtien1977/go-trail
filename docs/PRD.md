@@ -89,7 +89,7 @@ Ma trận đích theo [A03, comment quyết định của Cường ngày 18/10](
 | Hóa đơn, vé (`INVOICES`, `INVOICE_DETAILS`) | — | C, R own | Manifest asg, không hóa đơn/tài chính | R hóa đơn có responsible_user_id của mình | — | R toàn bộ; đổi người phụ trách cho đơn mới |
 | Manifest và check-in (`check_in_status`) | — | — | R/U asg | R chuyến mình phụ trách; không sửa check-in theo A03 | — | R/U |
 | Thanh toán (`PAYMENTS`) | — | R own qua DTO cần thiết | — | R trạng thái đơn mình phụ trách, không raw payment | — | R/U theo contract NeedsReview; không tùy ý đổi Paid |
-| Vật tư: danh mục, tồn, nhập/xuất, cấp theo chuyến (schema/API chưa có) | — | — | R vật tư của chuyến asg | R vật tư của chuyến mình phụ trách | CRUD danh mục; nhập/xuất/cấp/hoàn nhập theo ledger | Như HRMgr |
+| Vật tư: danh mục, tồn, nhập/xuất, cấp theo chuyến (schema I01 có, API chưa có) | — | — | R vật tư của chuyến asg | R vật tư của chuyến mình phụ trách | CRUD danh mục; nhập/xuất/cấp/hoàn nhập theo ledger | Như HRMgr |
 | Khách hàng và lịch sử đặt vé | — | R/U own | PII cần thiết trong manifest asg | Hành khách thuộc hóa đơn mình phụ trách | — | R toàn bộ |
 | Hoàn tiền/chính sách hoàn/đánh giá — deferred | — | — | — | — | — | — |
 | Tài khoản (`USERS`) | C (đăng ký Customer) | U own | U own | U own | C (chỉ tài khoản Leader), U own | CRU, D = khóa |
@@ -442,6 +442,27 @@ erDiagram
         datetime created_at
     }
 
+    SUPPLY_ITEMS {
+        int item_id PK
+        nvarchar name UK
+        varchar category "Food, Drink, Gear"
+        nvarchar unit "One counted unit, e.g. chai 500ml"
+        bit is_active "Retire instead of delete"
+        datetime created_at
+    }
+
+    SUPPLY_TRANSACTIONS {
+        int txn_id PK
+        int item_id FK
+        varchar txn_type "Receive, Issue, Return, Dispose"
+        int quantity "> 0; direction comes from txn_type"
+        int departure_id FK "Required for Issue/Return, NULL otherwise"
+        int created_by_user_id FK "Operator"
+        varchar idempotency_key UK "16-64 chars [A-Za-z0-9_-]"
+        nvarchar note "Nullable"
+        datetime created_at
+    }
+
     USERS ||--o{ INVOICES : "buys"
     USERS |o--o{ INVOICES : "responsible employee, optional legacy"
     USERS |o--o{ DEPARTURES : "invoice owner"
@@ -480,6 +501,9 @@ erDiagram
     DEPARTURE_SEATS ||--o{ INVOICE_DETAILS : "ticket history, at most one active"
     DEPARTURE_PICKUPS ||--o{ INVOICE_DETAILS : "boards at"
     INVOICE_DETAILS ||--o| REVIEWS : "reviewed"
+    SUPPLY_ITEMS ||--o{ SUPPLY_TRANSACTIONS : "ledger"
+    DEPARTURES |o--o{ SUPPLY_TRANSACTIONS : "issued to / returned from"
+    USERS ||--o{ SUPPLY_TRANSACTIONS : "records"
 ```
 
 ### 6.1. Ánh xạ PostgreSQL của schema khởi tạo
@@ -505,6 +529,11 @@ erDiagram
 - Không xóa tài khoản Accountant cũ, Refund/Cancelled hoặc sửa migration đã áp dụng trong thay đổi trách nhiệm hóa đơn. Loại giá trị Accountant khỏi UserRole và chuyển tài khoản thuộc migration A02 riêng; bỏ tính năng không đồng nghĩa xóa dữ liệu.
 - Checkpoint O03: migration `20261018000000_departure_invoice_owner` từ PR #7 đã merge vào develop qua PR #18: FK nullable RESTRICT và index; giữ nguyên NULL của legacy, không gán nhân viên giả. Rollout DB riêng của từng thành viên vẫn cần xác minh/ủy quyền.
 - Checkpoint K02 ngày 28/10: migration `20261019000000_invoice_hold_snapshot` bổ sung ba cột trách nhiệm, `idempotency_key`, FK/index và UNIQUE `(customer_id, idempotency_key)`. Ba cột snapshot phải cùng NULL hoặc cùng có giá trị; role snapshot là TEXT với CHECK `RouteMgr`, tách khỏi enum UserRole hiện tại để không chặn migration thay enum A02 và giữ ý nghĩa lịch sử. Invoice có idempotency key bắt buộc có snapshot đầy đủ/tên không trống; key đúng format 16–64 ký tự. Legacy không backfill suy đoán; không đổi RLS/grants hoặc xóa lịch sử. Đã kiểm thử cả thứ tự migration trên DB trống và nâng cấp sau A02; chưa chạy remote trong checkpoint này.
+
+### 6.3. Migration vật tư I01 (SCRUM-67)
+
+- Migration `20261114000000_inventory_ledger` tạo `supply_items`, `supply_transactions`, enum `SupplyCategory`/`SupplyTransactionType`, index FK, RLS và thu hồi quyền table/sequence/function của `PUBLIC`, `anon`, `authenticated`, `service_role`. Chỉ thêm bảng mới, không sửa dữ liệu hay migration cũ; `prisma migrate diff` từ DB đã chạy migration sang `schema.prisma` rỗng.
+- Seed development thêm 4 vật tư mẫu, mỗi vật tư một phiếu nhập và 3 phiếu cấp cho chuyến demo Closed, do HRMgr demo ghi; khóa idempotency cố định nên chạy lại không thêm dòng. Chưa áp dụng lên Supabase/DB riêng của thành viên.
 
 ## 7. Quy tắc dữ liệu và đồng thời
 
@@ -627,6 +656,13 @@ Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn h
 - Handler → bound `bookingService.holdSeats` → policy service → repository Redis; sau khi được nhận mới vào transaction K02. Không gọi Redis khi đang giữ khóa tài nguyên SQL; transaction vẫn xác minh lại actor và toàn bộ điều kiện K02. 429/503 không tạo/gia hạn invoice, không sửa vé/ghế; idempotent replay giữ nguyên invoice/expires_at. Không thêm migration, cron, payment hoặc UI trong K04.
 - Đã kiểm định local: 174 tests, 833 HTTP checks/33 protected methods, 8 nhóm Auth HTTP và kiểm tra quota/TTL/concurrency trên Redis thật. Đây chưa phải CI/review chéo hoặc nghiệm thu UI K05; bằng chứng chi tiết trong tài liệu development nội bộ.
 
+### 7.12. Sổ vật tư I01 — schema, chưa có API
+
+- Một kho MVP. `SUPPLY_ITEMS` là danh mục: tên duy nhất, nhóm Food/Drink/Gear và `unit` mô tả một đơn vị đếm rõ ràng (ví dụ "chai 500ml", "gói 100g"); mọi số lượng là số nguyên của đơn vị đó. Ngừng dùng bằng `is_active = false`, không xóa.
+- `SUPPLY_TRANSACTIONS` là sổ cái chỉ ghi thêm: trigger chặn UPDATE/DELETE (SQLSTATE 23001); sửa sai bằng phiếu bù (Receive/Return/Dispose). `quantity > 0`, chiều cộng/trừ lấy từ `txn_type`. Issue (cấp cho chuyến) và Return (hoàn nhập dư) bắt buộc `departure_id`; Receive (nhập kho) và Dispose (xuất hủy/hao hụt) không có chuyến. Mỗi phiếu có `created_by_user_id` và `idempotency_key` UNIQUE toàn bảng, đúng format 16–64 ký tự `[A-Za-z0-9_-]`. FK RESTRICT tới vật tư, chuyến, người thao tác.
+- Tồn kho = SUM(Receive + Return) − SUM(Issue + Dispose) theo `item_id`, không lưu cột tồn. Tồn của một chuyến = Issue − Return theo (`item_id`, `departure_id`).
+- Việc của I02/I03 khi viết service (DB không kiểm): khóa row `supply_items` `FOR UPDATE` trước khi tính tồn để Issue/Dispose không làm tồn âm; Return không vượt số đã cấp ròng cho chuyến; chỉ vật tư active nhận phiếu mới; trạng thái chuyến được cấp/hoàn; retry cùng key trả phiếu cũ, cùng key khác payload trả 409. Quyền theo ma trận 3.2: HRMgr/Admin ghi; RouteMgr/Leader chỉ đọc vật tư của chuyến được phân công.
+
 ## 8. Thanh toán và hoàn tiền
 
 ### 8.1. SePay: những gì cần biết
@@ -712,7 +748,7 @@ Lịch sử đặt vé giới hạn 50 hóa đơn mới nhất cho tra cứu h�
 | `/api/admin/payments` | Đối soát NeedsReview theo contract P03/B04 | Admin |
 | `/api/cron/*` | Tác vụ nền | `CRON_SECRET` |
 
-**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền nhưng chưa có schema/API.
+**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền; schema I01 có (6.3, 7.12), API chưa có.
 
 ## 12. Yêu cầu phi chức năng
 
@@ -743,7 +779,7 @@ Lịch sử đặt vé giới hạn 50 hóa đơn mới nhất cho tra cứu h�
 3. Xe/nhân sự, tạo chuyến, chỉ định RouteMgr phụ trách hóa đơn, gán xe/sinh ghế, trạng thái Draft→Ended (O01–O07).
 4. Giữ ghế + invoice có snapshot người phụ trách + checkout/VietQR, thông báo không hủy/hoàn (K01–K06).
 5. SePay + NeedsReview theo quyết định B04 (đã chốt 10/11/2026, hết chốt chặn) + vé QR; quản trị hóa đơn/hiển thị người phụ trách (P01–P06, M01/M02).
-6. Leader check-in và kết thúc; quản trị khách hàng và vật tư theo scope v2 có thể chia việc độc lập sau khi contract tương ứng được chốt. Vật tư cần ERD/ledger riêng trước code, chưa có trong ERD baseline này.
+6. Leader check-in và kết thúc; quản trị khách hàng và vật tư theo scope v2 có thể chia việc độc lập sau khi contract tương ứng được chốt. ERD/ledger vật tư I01 đã có (6.3, 7.12); API I02/I03 làm tiếp.
 7. Dashboard doanh thu, cron, kiểm thử end-to-end và báo cáo; không chi phí/lãi-lỗ/đánh giá/hoàn tiền. C00 xác minh chính sách không hủy/hoàn, không triển khai engine refund.
 
 ---

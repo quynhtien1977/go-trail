@@ -1,7 +1,7 @@
 import { loadEnvConfig } from "@next/env";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hash } from "bcryptjs";
-import { PrismaClient, Prisma, UserRole, StaffType, DepartureStatus } from "../src/generated/prisma/client";
+import { PrismaClient, Prisma, UserRole, StaffType, DepartureStatus, SupplyCategory, SupplyTransactionType } from "../src/generated/prisma/client";
 import { assertCatalogTarget, CatalogValidationError, readReviewedCatalog } from "./catalog";
 import { importCatalogRows, type CatalogQuery } from "./catalog-importer";
 import { existsSync } from "node:fs";
@@ -122,8 +122,28 @@ async function main() {
       for (const [hours_before_departure, refund_percentage] of [[168, 100], [72, 70], [24, 30], [0, 0]]) {
         await tx.refundPolicyRule.upsert({ where: { hours_before_departure }, update: {}, create: { hours_before_departure, refund_percentage } });
       }
+      // Demo inventory: one receipt per item and an issue to the demo Closed departure. The ledger is
+      // append-only, so reruns look rows up by their fixed idempotency keys instead of upserting.
+      const supplyOperator = users.get(UserRole.HRMgr)!;
+      const closedDemo = await tx.departure.findFirst({ where: { is_demo: true, status: DepartureStatus.Closed }, orderBy: { departure_id: "asc" } });
+      for (const [index, [name, category, unit, received, issued]] of ([
+        ["Nước suối", SupplyCategory.Drink, "chai 500ml", 240, 24],
+        ["Bánh mì", SupplyCategory.Food, "ổ", 60, 12],
+        ["Lương khô", SupplyCategory.Food, "gói 100g", 120, 12],
+        ["Áo mưa", SupplyCategory.Gear, "cái", 40, 0],
+      ] as const).entries()) {
+        const item = await tx.supplyItem.upsert({ where: { name }, update: {}, create: { name, category, unit } });
+        const ledger: Omit<Prisma.SupplyTransactionUncheckedCreateInput, "item_id" | "created_by_user_id">[] = [
+          { idempotency_key: `demo-supply-receive-${index}`, txn_type: SupplyTransactionType.Receive, quantity: received }];
+        if (issued && closedDemo) ledger.push({ idempotency_key: `demo-supply-issue-${index}`, txn_type: SupplyTransactionType.Issue,
+          quantity: issued, departure_id: closedDemo.departure_id });
+        for (const row of ledger) {
+          if (await tx.supplyTransaction.findUnique({ where: { idempotency_key: row.idempotency_key } })) continue;
+          await tx.supplyTransaction.create({ data: { ...row, item_id: item.item_id, created_by_user_id: supplyOperator } });
+        }
+      }
     }, { timeout: 120000, maxWait: 10000 });
-    console.log("Development seed complete: reviewed reference catalog, 5 roles, 3 staff, 1 vehicle / 16 seats, 3 demo departures, settings and legacy refund policies.");
+    console.log("Development seed complete: reviewed reference catalog, 5 roles, 3 staff, 1 vehicle / 16 seats, 3 demo departures, 4 demo supply items with their ledger, settings and legacy refund policies.");
     console.log(media.length ? "Reference media metadata imported; existing edits preserved. No image upload or Storage key required." : "Reference media manifest not available yet; catalog has no imported gallery. Run db:media after the upload manifest is provided.");
     console.log("Demo emails: <role lowercase>@go-trail.example.test. Password stays in local SEED_PASSWORD; existing credentials and settings are preserved.");
   } finally {

@@ -23,6 +23,12 @@ test("seed CLI creates five demo roles and reruns preserve the migrated locked a
     assert.equal(await database.client.trip.count(), 8);
     assert.equal(await database.client.staff.count(), 3);
     assert.equal(await database.client.departure.count(), 3);
+    assert.equal(await database.client.supplyItem.count(), 4);
+    // 4 receipts plus 3 issues to the demo Closed departure, all recorded by the demo HRMgr.
+    const ledger = await database.client.supplyTransaction.findMany({ orderBy: { txn_id: "asc" }, include: { departure: true, created_by: true } });
+    assert.deepEqual(ledger.map((row) => row.txn_type).sort(), ["Issue", "Issue", "Issue", "Receive", "Receive", "Receive", "Receive"]);
+    assert.ok(ledger.every((row) => row.created_by.role === "HRMgr"));
+    assert.ok(ledger.filter((row) => row.txn_type === "Issue").every((row) => row.departure.status === "Closed" && row.departure.is_demo));
     // A pre-existing demo Accountant has already been mapped by the migration.
     await database.client.user.create({ data: { email: "accountant@go-trail.example.test", role: "Customer", status: "Locked",
       auth_version: 3, full_name: "Migrated fixture", phone: "0900000000", password_hash: "unchanged-fixture-hash" } });
@@ -33,6 +39,9 @@ test("seed CLI creates five demo roles and reruns preserve the migrated locked a
     assert.equal(await database.client.trip.count(), 8);
     assert.equal(await database.client.staff.count(), 3);
     assert.equal(await database.client.departure.count(), 3);
+    assert.equal(await database.client.supplyItem.count(), 4);
+    assert.deepEqual((await database.client.supplyTransaction.findMany({ orderBy: { txn_id: "asc" } })).map((row) => row.txn_id),
+      ledger.map((row) => row.txn_id), "Reruns add no ledger rows");
     assert.deepEqual(users.map((user) => user.email), ["customer", "leader", "routemgr", "hrmgr", "admin"]
       .map((role) => `${role}@go-trail.example.test`));
   } finally { await database.close(); }
