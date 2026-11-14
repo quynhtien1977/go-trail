@@ -115,6 +115,19 @@ enum RefundStatus {
   Failed
 }
 
+enum SupplyCategory {
+  Food
+  Drink
+  Gear
+}
+
+enum SupplyTransactionType {
+  Receive
+  Issue
+  Return
+  Dispose
+}
+
 model User {
   user_id       Int        @id @default(autoincrement())
   email         String     @unique
@@ -133,6 +146,7 @@ model User {
   requests      Refund[]   @relation("RefundRequester")
   approvals     Refund[]   @relation("RefundApprover")
   owned_departures Departure[] @relation("DepartureInvoiceOwner")
+  supply_transactions SupplyTransaction[] @relation("SupplyTransactionCreator")
 
   @@map("users")
 }
@@ -291,6 +305,7 @@ model Departure {
   staff            DepartureStaff[]
   costs            DepartureCost[]
   invoices         Invoice[]
+  supply_transactions SupplyTransaction[]
 
   @@index([trip_id, departure_date])
   @@index([status, departure_date])
@@ -503,4 +518,39 @@ model Review {
 
   @@index([customer_id])
   @@map("reviews")
+}
+
+// One MVP warehouse: stock is the sum of the append-only ledger below, never a stored column (PRD 7.12).
+model SupplyItem {
+  item_id      Int                 @id @default(autoincrement())
+  name         String              @unique
+  category     SupplyCategory
+  // One counted unit, e.g. "chai 500ml"; ledger quantities are whole numbers of it.
+  unit         String
+  is_active    Boolean             @default(true)
+  created_at   DateTime            @default(now()) @db.Timestamptz(6)
+  transactions SupplyTransaction[]
+
+  @@map("supply_items")
+}
+
+// Append-only (DB trigger rejects UPDATE/DELETE). Issue/Return carry a departure; Receive/Dispose do not.
+model SupplyTransaction {
+  txn_id             Int                   @id @default(autoincrement())
+  item_id            Int
+  txn_type           SupplyTransactionType
+  quantity           Int
+  departure_id       Int?
+  created_by_user_id Int
+  idempotency_key    String                @unique
+  note               String?
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  item               SupplyItem            @relation(fields: [item_id], references: [item_id], onDelete: Restrict)
+  departure          Departure?            @relation(fields: [departure_id], references: [departure_id], onDelete: Restrict)
+  created_by         User                  @relation("SupplyTransactionCreator", fields: [created_by_user_id], references: [user_id], onDelete: Restrict)
+
+  @@index([item_id, created_at])
+  @@index([departure_id])
+  @@index([created_by_user_id])
+  @@map("supply_transactions")
 }
