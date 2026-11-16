@@ -9,6 +9,7 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { holdSeats } from "../../src/server/services/bookings.ts";
 import { updateDeparture } from "../../src/server/services/departures.ts";
 import { updateAccountAccess } from "../../src/server/services/accounts.ts";
+import { recordSepayPayment } from "../../src/server/services/payments.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -252,6 +253,49 @@ try {
   assert.equal(late[0].status, "rejected"); assert.equal(late[0].reason.code, "RESOURCE_CONFLICT");
   assert.equal(await db.invoice.count(), 0);
   pass("a deadline crossed while waiting on a seat is rechecked and rolls back the whole new invoice.");
+
+  // P02: real SePay confirmations racing real holds. A fixture key only; never a real SEPAY_API_KEY.
+  process.env.SEPAY_API_KEY = "concurrency-fixture-key-0123456789";
+  const sepay = (code, id, amount, at) => recordSepayPayment(db, "Apikey concurrency-fixture-key-0123456789",
+    JSON.stringify({ id, gateway: "Fixture", transactionDate: "2034-01-01 00:00:00", accountNumber: "0000000000", code,
+      content: `${code} fixture`, transferType: "in", transferAmount: amount, accumulated: 0, subAccount: "",
+      referenceCode: `FIX${id}`, description: "" }), at);
+  const activeTickets = seatId => db.invoiceDetail.count({ where: { dep_seat_id: seatId, status: { not: "Cancelled" } } });
+
+  f = await fixture();
+  const stale = await f.hold("Buyer0", [0], "late-pay-old-hold-01");
+  const later = new Date(now.getTime() + 16 * 60_000);
+  // Both sides lock the stale invoice first: the payment to confirm it, the new hold to reclaim its seat.
+  const contest = await blocked("SELECT invoice_id FROM invoices WHERE invoice_id=$1 FOR UPDATE", [stale.invoice_id],
+    () => [sepay(stale.payment_code, 910001, 500000, later), f.hold("Buyer1", [0], "late-pay-new-hold-01", later)], undefined, 2);
+  assert.equal(contest[0].status, "fulfilled", "SePay is acknowledged whoever wins");
+  const latePayment = await db.payment.findUniqueOrThrow({ where: { transaction_id: "910001" } });
+  const seatAfter = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[0].dep_seat_id } });
+  if (latePayment.status === "Success") {
+    assert.equal(contest[1].status, "rejected"); assert.equal(contest[1].reason.code, "RESOURCE_CONFLICT");
+    assert.equal(seatAfter.status, "Sold"); assert.equal(seatAfter.invoice_id, stale.invoice_id);
+  } else {
+    assert.equal(contest[1].status, "fulfilled", "the payment only steps aside when the new hold really won");
+    assert.equal(seatAfter.invoice_id, contest[1].value.invoice_id);
+    assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
+  }
+  assert.equal(await activeTickets(f.seats[0].dep_seat_id), 1, "the seat ends with exactly one active ticket");
+  pass("a late SePay payment and a new hold racing for one stale seat: exactly one wins, the money is always recorded.");
+
+  f = await fixture();
+  const invoice = await f.hold("Buyer0", [0, 1], "paid-by-many-hold-01");
+  const deliveries = await blocked("SELECT invoice_id FROM invoices WHERE invoice_id=$1 FOR UPDATE", [invoice.invoice_id],
+    () => [...Array.from({ length: 6 }, () => sepay(invoice.payment_code, 920001, 1000000, now)),
+      sepay(invoice.payment_code, 920002, 1000000, now), sepay(invoice.payment_code, 920003, 1500000, now)], undefined, 8);
+  assert.ok(deliveries.every(r => r.status === "fulfilled"), "every delivery is acknowledged");
+  const recorded = await db.payment.findMany({ orderBy: { transaction_id: "asc" } });
+  assert.deepEqual(recorded.map(r => r.transaction_id), ["920001", "920002", "920003"], "one row per transfer, retries absorbed");
+  assert.equal(recorded.filter(r => r.status === "Success").length, 1, "the invoice is confirmed by exactly one transfer");
+  const issued = await db.invoiceDetail.findMany({ where: { invoice_id: invoice.invoice_id } });
+  assert.ok(issued.every(t => t.status === "Valid" && /^TK[0-9A-F]{20}$/.test(t.ticket_code)));
+  assert.equal(new Set(issued.map(t => t.ticket_code)).size, 2, "each ticket issued once with its own code");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: invoice.invoice_id } })).status, "Paid");
+  pass("6 retries and 2 other transfers racing for one invoice: one confirmation, one row per transfer, tickets issued once.");
   console.log(`PASS: ${groups} PostgreSQL booking concurrency groups; independent connections, no remote database.`);
 } finally {
   await db?.$disconnect(); await pool?.end();
