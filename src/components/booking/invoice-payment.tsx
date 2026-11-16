@@ -106,6 +106,8 @@ export function InvoicePayment({ invoiceId }: { invoiceId: string }) {
               <p className="mt-1 text-sm">Hóa đơn chỉ được xác nhận khi hệ thống ghi nhận thanh toán.</p>}
           </div>
 
+          {invoice.status === "Paid" && <Link href="/account/tickets" className="inline-flex min-h-11 items-center rounded-[5px] bg-[#186734] px-4 text-sm font-bold text-white">Xem vé của tôi</Link>}
+
           <div className="grid items-start gap-6 lg:grid-cols-2">
             <section aria-labelledby="invoice-details" className="min-w-0 rounded-[8px] border border-neutral-300 bg-white p-4 sm:p-6">
               <h2 id="invoice-details" className="text-lg font-bold">Hóa đơn #{invoice.invoice_id}</h2>
