@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { before, beforeEach, after, test } from "node:test";
+import { describe, before, beforeEach, after, test } from "node:test";
 import { createTestDatabase } from "./helpers/test-database.mjs";
 import { recordSepayPayment } from "../src/server/services/payments.ts";
+import { SEPAY_TEST_KEY as KEY, sepayAuth as auth } from "./helpers/sepay.mjs";
 
 let database, db, invoice, customer, owner, departure;
-const KEY = "sepay-test-key-0123456789";
-const auth = `Apikey ${KEY}`;
 const tripInput = { name: "Webhook fixture", city: "Test", location_name: "Test", length_km: "5",
   base_price: "500000", description: "Fixture", schedule_content: "Fixture" };
 
@@ -29,6 +28,9 @@ async function snapshot() {
 }
 
 before(async () => { database = await createTestDatabase(); db = database.client; });
+// Hooks live inside describe: under --test-isolation=none a top-level beforeEach runs before every test
+// of every file, which made this fixture rebuild for the whole suite.
+describe("P01 SePay webhook recording (SCRUM-31)", () => {
 beforeEach(async () => {
   process.env.SEPAY_API_KEY = KEY;
   await database.sql.exec("TRUNCATE users,trips,vehicles RESTART IDENTITY CASCADE");
@@ -108,7 +110,9 @@ test("a recorded payment keeps the received amount, the raw payload and the matc
   assert.equal(row.payment_method, "BankTransfer");
   assert.equal(row.reference_code, "MBVCB.3278907687");
   assert.equal(row.raw_payload, raw, "the body is kept verbatim for reconciliation");
-  assert.equal(row.status, "NeedsReview", "P01 records only; confirming Paid/Sold/Valid is P02");
+  // P02 changed this from NeedsReview: B04 makes an overpayment on a payable invoice a valid payment.
+  // Confirmation itself is covered in payment-confirmation.test.mjs.
+  assert.equal(row.status, "Success");
 });
 
 test("the payment code matches whatever letter case the customer typed (SePay keeps it as sent)", async () => {
@@ -142,18 +146,24 @@ test("retries of the same transaction_id acknowledge without writing a second ro
   }
   assert.equal(await db.payment.count(), 1, "SePay retries up to 7 times; exactly one row may exist");
 
+  const issued = await db.invoiceDetail.findMany({ select: { ticket_code: true } });
+
   // A retry whose body differs must not overwrite or duplicate the first durable record.
   await recordSepayPayment(db, auth, body({ transferAmount: 999000, referenceCode: "CHANGED" }));
   const rows = await db.payment.findMany();
   assert.equal(rows.length, 1);
   assert.equal(rows[0].amount.toFixed(0), "500000");
   assert.equal(rows[0].reference_code, "MBVCB.3278907687");
+  assert.deepEqual(await db.invoiceDetail.findMany({ select: { ticket_code: true } }), issued,
+    "retries must not issue the tickets a second time");
 });
 
 test("concurrent deliveries of one transaction_id still produce exactly one row", async () => {
   const results = await Promise.allSettled(Array.from({ length: 5 }, () => recordSepayPayment(db, auth, body())));
   assert.deepEqual(results.map(r => r.status), Array(5).fill("fulfilled"), "every concurrent delivery is acknowledged");
   assert.equal(await db.payment.count(), 1);
+  assert.equal((await db.payment.findFirstOrThrow()).status, "Success", "the one recorded delivery confirmed the invoice once");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: invoice.invoice_id } })).status, "Paid");
 });
 
 test("different transactions for the same invoice are recorded separately", async () => {
@@ -162,6 +172,8 @@ test("different transactions for the same invoice are recorded separately", asyn
   const rows = await db.payment.findMany({ orderBy: { payment_id: "asc" } });
   assert.deepEqual(rows.map(r => r.transaction_id), ["1", "2"]);
   assert.deepEqual([...new Set(rows.map(r => r.invoice_id))], [invoice.invoice_id]);
+  // The first transfer pays the invoice; a second one finds it Paid and is held for review, never re-issued.
+  assert.deepEqual(rows.map(r => r.status), ["Success", "NeedsReview"]);
 });
 
 test("a malformed or out-of-contract payload is refused and records nothing", async () => {
@@ -183,11 +195,15 @@ test("a malformed or out-of-contract payload is refused and records nothing", as
   assert.equal(await snapshot(), before);
 });
 
-test("recording never changes the invoice, its seats, its tickets or the audit log", async () => {
+// P02 replaced the P01 rule "recording never changes the invoice": a valid payment now confirms it.
+// What must still hold is that a payment held for review changes nothing but the PAYMENTS table.
+test("a transfer held for review never changes the invoice, its seats, its tickets or the audit log", async () => {
   const before = await snapshot();
-  await recordSepayPayment(db, auth, body());
-  await recordSepayPayment(db, auth, body({ id: 92705, transferAmount: 10_000_000 }));
-  await recordSepayPayment(db, auth, body({ id: 92706, code: "NOPE999" }));
-  assert.equal(await snapshot(), before, "P01 must leave invoice, seat, ticket and audit rows untouched");
-  assert.equal(await db.payment.count(), 3);
+  await recordSepayPayment(db, auth, body({ id: 92705, transferAmount: 499_999 }));
+  await recordSepayPayment(db, auth, body({ id: 92706, code: "NOPE999", transferAmount: 10_000_000 }));
+  await recordSepayPayment(db, auth, body({ id: 92707, code: null }));
+  assert.equal(await snapshot(), before, "underpaid and unmatched transfers leave invoice, seat, ticket and audit rows untouched");
+  assert.deepEqual((await db.payment.findMany({ orderBy: { payment_id: "asc" } })).map(r => r.status),
+    ["NeedsReview", "NeedsReview", "NeedsReview"]);
+});
 });

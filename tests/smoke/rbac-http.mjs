@@ -587,6 +587,11 @@ try {
   assert.equal(await deniedSnapshot(), beforeWebhook, "rejected webhook calls must not write anything, not even a payment row");
 
   const keyed = { authorization: `Apikey ${sepayKey}` };
+  // This block checks transport, authentication and recording over real HTTP, not confirmation (P02 has its own
+  // unit and PostgreSQL race tests). RBAC-OWN has no tickets, so P02 always holds its transfers for review and the
+  // business rows below must stay unchanged. Assert that precondition instead of relying on it silently.
+  assert.equal(await db.invoiceDetail.count({ where: { invoice_id: invoice.invoice_id } }), 0,
+    "fixture precondition: RBAC-OWN has no tickets; give this block its own invoice before adding any");
   const businessBefore = await businessSnapshot();
   const outgoing = await request(webhook, null, { body: transfer({ id: 70002, transferType: "out" }), extraHeaders: keyed });
   assert.equal(outgoing.status, 200); assert.deepEqual(outgoing.body, { success: true });
@@ -601,7 +606,7 @@ try {
   assert.equal(recorded.length, 1, "retries of one transaction_id must leave exactly one row");
   assert.equal(recorded[0].invoice_id, invoice.invoice_id, "the transfer attaches to the invoice named by payment_code");
   assert.equal(recorded[0].amount.toFixed(0), "500000");
-  assert.equal(recorded[0].status, "NeedsReview", "P01 records only; P02 confirms Paid/Sold/Valid");
+  assert.equal(recorded[0].status, "NeedsReview", "an invoice without tickets is never confirmed (P02)");
 
   const unmatched = await request(webhook, null, { body: transfer({ id: 70003, code: "NO-SUCH-CODE" }), extraHeaders: keyed });
   assert.deepEqual(unmatched.body, { success: true });
@@ -618,8 +623,8 @@ try {
   }
   assert.equal(await db.payment.count({ where: { transaction_id: "70004" } }), 0);
   assert.equal(await businessSnapshot(), businessBefore,
-    "recording a payment must not change invoices, tickets, seats, refunds or audits");
-  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and never alters invoices, seats, tickets or audits.");
+    "transfers held for review must not change invoices, tickets, seats, refunds or audits");
+  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and transfers held for review never alter invoices, seats, tickets or audits.");
 
   // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
   const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,

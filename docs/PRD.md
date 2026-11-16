@@ -144,7 +144,7 @@ Draft → Open → Closed → Confirmed → Running → Ended
 
 **INVOICES.status:** Pending → Paid hoặc Expired. Paid không chuyển Cancelled/Expired. Expired chỉ có thể được xác nhận Paid theo contract tiền đến trễ 5.2.1; không do người dùng tự phục hồi.
 
-**INVOICE_DETAILS.status:** Pending → Valid khi nhận tiền hợp lệ; Pending → Cancelled khi hold hết hạn (dọn kỹ thuật). Valid không chuyển Cancelled trong MVP. Check-in Pending/CheckedIn/Absent không đổi quyền sở hữu vé/ghế.
+**INVOICE_DETAILS.status:** Pending → Valid khi nhận tiền hợp lệ; Pending → Cancelled khi hold hết hạn (dọn kỹ thuật). Valid không chuyển Cancelled trong MVP. Check-in Pending/CheckedIn/Absent không đổi quyền sở hữu vé/ghế. **Cancelled → Valid** chỉ được phép đúng một trường hợp: hóa đơn `Expired` được xác nhận theo contract tiền đến trễ 5.2.1 — vé bị hủy do dọn kỹ thuật lúc hết hạn được khôi phục cùng hóa đơn (P02, 16/11/2026). Vé `Cancelled` của hóa đơn khác không bao giờ được khôi phục.
 
 **DEPARTURE_SEATS.status:** Available ⇄ Locked → Sold. Chỉ hold chưa trả tiền hết hạn được nhả; Sold không trở lại Available trong MVP.
 
@@ -170,6 +170,14 @@ Draft → Open → Closed → Confirmed → Running → Ended
 6. Luôn trả HTTP 200 với body `{"success": true}` sau khi đã ghi nhận, kể cả `NeedsReview`.
 
 **5.2.1. Hóa đơn còn hợp lệ** nghĩa là: status `Pending`, hoặc `Expired` nhưng mọi ghế của nó vẫn `Available` hoặc `Locked` bởi chính hóa đơn này (chưa ai lấy). Trường hợp sau được **khóa lại và xác nhận** (thanh toán đến trễ nhưng ghế chưa mất). Nếu có ghế đã bị người khác lấy thì `NeedsReview`.
+
+Cách P02 áp điều này (16/11/2026):
+
+- Ghế của hóa đơn lấy theo vé (`INVOICE_DETAILS.dep_seat_id`), vì hết hạn sẽ gỡ `DEPARTURE_SEATS.invoice_id` nhưng giữ vé.
+- Ghế `Locked` bởi hóa đơn **khác** là "đã bị lấy", kể cả khi giữ chỗ đó cũng đã quá hạn mà chưa được dọn. Xác nhận là **tất cả hoặc không**: một ghế không hợp lệ thì không ghế nào được bán.
+- Chuyến phải còn trong giai đoạn bán (`Open` hoặc `Closed`) và `departure_date` chưa tới. Từ `Confirmed` trở đi đội ngũ đã được tính theo số vé đã bán (tỷ lệ Leader), nên vé đến muộn đi vào `NeedsReview` thay vì lặng lẽ phá điều kiện đó.
+- Hóa đơn đã `Paid` (lần chuyển thứ hai) hoặc `Cancelled` legacy luôn `NeedsReview`; không phát hành lại vé.
+- Một ràng buộc DB từ chối bán (ví dụ chỉ mục vé hoạt động duy nhất mỗi ghế) thì toàn bộ xác nhận hoàn tác nhưng khoản tiền **vẫn được ghi** `NeedsReview` — không bao giờ mất bản ghi tiền.
 
 Các tình huống `NeedsReview`: chuyển **thiếu** (`transferAmount < total_amount`), sai nội dung (không tìm thấy hóa đơn theo `payment_code`), ghế đã bị người khác lấy hoặc chuyến/hóa đơn không còn hợp lệ (kể cả dữ liệu Cancelled legacy).
 
@@ -700,7 +708,7 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | `POST /api/departures/:id/holds` | Giữ ghế + tạo hóa đơn (K02 hiện hành) | Customer; Admin kế thừa cho chính actor |
 | `GET /api/invoices/:id` | Chi tiết, snapshot nhân viên, trạng thái và dữ liệu/link VietQR (K03) | Chủ hóa đơn Customer, Admin |
 | `GET /api/departures/:id/pickups` | Điểm đón đã gán cho chuyến đang mở bán: dep_pickup_id, pickup_id, tên, địa chỉ, giờ UTC; chỉ pickup active cùng tuyến; dùng dep_pickup_id để giữ ghế | Public (Guest/Customer), cùng điều kiện hiển thị như sơ đồ ghế |
-| `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản. P01 đã triển khai phần xác thực/ghi nhận: chỉ `transferType = "in"`, ghi `PAYMENTS` với `transaction_id` UNIQUE, trả `{"success": true}` sau khi ghi bền vững; mọi bản ghi tạm ở `NeedsReview` cho tới khi P02 bổ sung xác nhận `Paid`/`Sold`/`Valid`. Thân phản hồi theo hợp đồng SePay, không bọc `{ data }` | SePay (API Key); mọi session của mọi role đều bị từ chối 401 |
+| `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản. P01: xác thực, chỉ `transferType = "in"`, ghi `PAYMENTS` với `transaction_id` UNIQUE, trả `{"success": true}` sau khi ghi bền vững. P02: trong cùng transaction, xác nhận `Paid`/`Sold`/`Valid` kèm `ticket_code` khi đủ điều kiện 5.2/5.2.1, ngược lại `NeedsReview` và không đổi gì khác. Thân phản hồi theo hợp đồng SePay, không bọc `{ data }` | SePay (API Key); mọi session của mọi role đều bị từ chối 401 |
 | `POST /api/checkin` | Quét QR check-in / đánh dấu vắng | Leader |
 | `PATCH /api/departures/:id/status` | Mở/đóng/chốt/kết thúc chuyến; không hủy/dời | RouteMgr, Admin, Leader (kết thúc) |
 | `POST /api/departures/:id/assignments` | Phân công xe, nhân sự | HRMgr, Admin |
