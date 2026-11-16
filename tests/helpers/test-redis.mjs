@@ -1,6 +1,9 @@
 // REST protocol test double. It does not execute Lua; test:auth:redis verifies
 // the real script on Upstash. Unit/service tests never load .env or use network.
+// --test-isolation=none shares one SDK client/fetch transport across test files.
+let active;
 export function mockRedisRest() {
+  if (active) { active.references++; return active.mock; }
   const previous = Object.fromEntries(["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "AUTH_RATE_LIMIT_NAMESPACE"]
     .map((key) => [key, process.env[key]]));
   const originalFetch = globalThis.fetch;
@@ -27,16 +30,21 @@ export function mockRedisRest() {
     bucket.attempts = Math.min(bucket.attempts + 1, Number(limit) + 1);
     return Response.json({ result: [bucket.attempts, bucket.expiresAt - now] });
   };
-  return { counters,
+  const scope = { references: 1, mock: undefined };
+  const mock = { counters,
     get calls() { return state.calls; },
     setUnavailable(value) { state.unavailable = value; },
     setTimeout(value) { state.timeout = value; },
     reset() { counters.clear(); state.unavailable = false; state.timeout = false; state.calls = 0; },
     close() {
+      if (scope.references < 1 || --scope.references > 0) return;
       globalThis.fetch = originalFetch;
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value;
       }
+      if (active === scope) active = undefined;
     },
   };
+  scope.mock = mock; active = scope;
+  return mock;
 }

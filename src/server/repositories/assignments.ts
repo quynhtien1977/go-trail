@@ -52,7 +52,8 @@ export function insertStaff(tx: Transaction, data: { departure_id: number; staff
   return tx.departureStaff.create({ data });
 }
 export function findStaffAssignmentById(db: DataClient, departureId: number, assignmentId: number) {
-  return db.departureStaff.findFirst({ where: { dep_staff_id: assignmentId, departure_id: departureId }, select: { staff_id: true } });
+  return db.departureStaff.findFirst({ where: { dep_staff_id: assignmentId, departure_id: departureId },
+    select: { staff_id: true, role_in_trip: true, dep_vehicle_id: true } });
 }
 export function removeStaff(tx: Transaction, departureId: number, assignmentId: number) {
   return tx.departureStaff.deleteMany({ where: { dep_staff_id: assignmentId, departure_id: departureId } });
