@@ -44,7 +44,10 @@ export async function recordSepayPayment(db: Database, authorization: string | n
   if (payload.transferType !== "in") return { success: true };
 
   const transaction_id = String(payload.id);
-  const paymentCode = payload.code?.trim() ?? "";
+  // SePay keeps the letter case the customer typed: verified in Test mode on 16/11/2026, where content
+  // "gt..." arrived as a lowercase `code`. Every payment_code is issued uppercase (bookings.ts), so
+  // uppercasing can only recover the intended invoice, never reach another one.
+  const paymentCode = payload.code?.trim().toUpperCase() ?? "";
   const invoice = paymentCode ? await payments.findInvoiceByPaymentCode(db, paymentCode) : null;
 
   try {

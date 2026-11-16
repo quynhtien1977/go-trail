@@ -111,6 +111,21 @@ test("a recorded payment keeps the received amount, the raw payload and the matc
   assert.equal(row.status, "NeedsReview", "P01 records only; confirming Paid/Sold/Valid is P02");
 });
 
+test("the payment code matches whatever letter case the customer typed (SePay keeps it as sent)", async () => {
+  // Regression for the 16/11/2026 Test mode run: "gt..." reached the webhook lowercase and lost its invoice.
+  const second = await db.invoice.create({ data: { customer_id: customer.user_id, departure_id: departure.departure_id,
+    payment_code: "GOTRAIL002", total_amount: "500000", status: "Pending", expires_at: new Date("2035-01-01T00:00:00Z") } });
+  const cases = [["gotrail001", invoice.invoice_id], ["GoTrail001", invoice.invoice_id], ["  gotrail001  ", invoice.invoice_id],
+    ["gotrail002", second.invoice_id]];
+  for (const [index, [code, expected]] of cases.entries()) {
+    await recordSepayPayment(db, auth, body({ id: 1000 + index, code }));
+    const row = await db.payment.findUniqueOrThrow({ where: { transaction_id: String(1000 + index) } });
+    assert.equal(row.invoice_id, expected, `code ${JSON.stringify(code)} must reach invoice ${expected}, and only that one`);
+  }
+  const lower = await db.payment.findUniqueOrThrow({ where: { transaction_id: "1000" } });
+  assert.equal(JSON.parse(lower.raw_payload).code, "gotrail001", "raw_payload keeps exactly what SePay sent");
+});
+
 test("a transfer whose code matches no invoice is still recorded, with no invoice attached", async () => {
   for (const code of [null, "", "   ", "NOPE999"]) {
     await db.payment.deleteMany({});
