@@ -29,7 +29,8 @@ export async function findOwnTicketsPage(db: DataClient, customerId: number,
   query: { status?: TicketFilter; page: number; pageSize: number }, now: Date) {
   const where: Prisma.InvoiceDetailWhereInput = { AND: [{ invoice: { customer_id: customerId } }, filterWhere(query.status, now)] };
   const items = await db.invoiceDetail.findMany({ where, select: ticketSelect,
-    orderBy: [{ invoice: { created_at: "desc" } }, { invoice_id: "desc" }, { dep_seat_id: "asc" }],
+    // detail_id last: Cancelled history can repeat (invoice_id, dep_seat_id), and paging must stay deterministic.
+    orderBy: [{ invoice: { created_at: "desc" } }, { invoice_id: "desc" }, { dep_seat_id: "asc" }, { detail_id: "asc" }],
     skip: (query.page - 1) * query.pageSize, take: query.pageSize });
   return { items, totalItems: await db.invoiceDetail.count({ where }) };
 }

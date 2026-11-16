@@ -10,8 +10,12 @@ export type TicketQuery = z.infer<typeof ticketQuerySchema>;
 export type TicketDto = {
   detail_id: number;
   invoice_id: number;
+  // The stored status, the same value /api/invoices/:id returns. A Pending hold past its deadline stays "Pending" here.
   invoice_status: "Pending" | "Paid" | "Expired" | "Cancelled";
   invoice_expires_at: string;
+  // The server's own verdict, from the same clock as the `expired` filter: true for an Expired invoice or a Pending
+  // hold past expires_at. Clients use it instead of comparing expires_at with the device clock.
+  hold_expired: boolean;
   status: "Pending" | "Valid" | "Cancelled";
   check_in_status: "Pending" | "CheckedIn" | "Absent";
   // The QR payload. Null unless the invoice is Paid and the ticket Valid: a code is only ever shown once issued.

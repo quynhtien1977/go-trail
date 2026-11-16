@@ -679,7 +679,7 @@ try {
 
   // P04: "my tickets" over real HTTP. OtherCustomer now owns exactly one issued ticket (the C00 fixture above).
   const ownTickets = (query = "") => ({ method: "GET", route: "account/tickets", path: `/api/account/tickets${query}` });
-  const ticketKeys = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "status", "check_in_status", "ticket_code",
+  const ticketKeys = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "hold_expired", "status", "check_in_status", "ticket_code",
     "trip_name", "departure_id", "departure_date", "passenger_name", "seat_name", "pickup", "unit_price", "responsible_name_snapshot"].sort();
   const beforeTickets = await deniedSnapshot();
   const owner = await request(ownTickets("?status=valid"), actors.get("OtherCustomer"));

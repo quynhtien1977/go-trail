@@ -13,7 +13,7 @@ const FUTURE = new Date("2035-01-01T00:00:00Z");
 const PAST = new Date("2034-01-01T00:00:00Z");
 const tripInput = { name: "Ticket fixture trail", city: "Test", location_name: "Test", length_km: "5",
   base_price: "500000", description: "Fixture", schedule_content: "Fixture" };
-const KEYS = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "status", "check_in_status", "ticket_code",
+const KEYS = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "hold_expired", "status", "check_in_status", "ticket_code",
   "trip_name", "departure_id", "departure_date", "passenger_name", "seat_name", "pickup", "unit_price", "responsible_name_snapshot"].sort();
 let database, db, actors, departure, depPickup, seats, invoices, nextCode;
 
@@ -121,9 +121,29 @@ describe("P04 my tickets (SCRUM-34)", () => {
       assert.equal(item.ticket_code !== null, issued, `ticket ${item.detail_id} (${item.invoice_status}/${item.status})`);
     }
     assert.ok(!JSON.stringify(page).includes("TKLEAKED"), "a leftover code on a cancelled ticket stays hidden");
+    // A blank code is not an issued code, matching issuedTicketCode() in the ticket UI.
+    const firstPaid = await db.invoiceDetail.findFirstOrThrow({ where: { invoice_id: invoices.paid.invoice_id }, orderBy: { detail_id: "asc" } });
+    await db.invoiceDetail.update({ where: { detail_id: firstPaid.detail_id }, data: { ticket_code: "   " } });
+    assert.equal((await list("Buyer")).items.find(t => t.detail_id === firstPaid.detail_id).ticket_code, null);
     // Legacy data: a Valid ticket under an invoice that is not Paid still shows no code.
     await db.invoice.update({ where: { invoice_id: invoices.paid.invoice_id }, data: { status: "Cancelled" } });
     assert.ok((await list("Buyer")).items.every(t => t.ticket_code === null));
+  });
+
+  test("hold_expired is the server's verdict and never contradicts the filter a ticket is listed under", async () => {
+    // Regression for the 16/11/2026 review: a stale Pending hold was filed under "expired" yet only said "Pending".
+    for (const now of [NOW, new Date("2035-06-01T00:00:00Z")]) {
+      const expired = (await list("Buyer", { status: "expired" }, now)).items;
+      const pending = (await list("Buyer", { status: "pending" }, now)).items;
+      const valid = (await list("Buyer", { status: "valid" }, now)).items;
+      assert.ok(pending.every(t => t.hold_expired === false), "a still-payable hold is never marked expired");
+      assert.ok(valid.every(t => t.hold_expired === false));
+      assert.ok(expired.filter(t => t.invoice_status === "Pending" || t.invoice_status === "Expired").every(t => t.hold_expired === true),
+        "every Pending or Expired hold under 'expired' says so itself, without the client's clock");
+    }
+    const stale = (await list("Buyer")).items.find(t => t.invoice_id === invoices.stale.invoice_id);
+    assert.equal(stale.invoice_status, "Pending", "the stored status is reported unchanged, as /api/invoices/:id does");
+    assert.equal(stale.hold_expired, true);
   });
 
   test("filters match the ticket UI: valid, pending (still payable), expired (incl. a Pending hold past its deadline)", async () => {
