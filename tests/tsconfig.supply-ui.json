@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "../next-env.d.ts",
+    "../src/types/next-auth.d.ts",
+    "../src/lib/supply-ui.ts",
+    "../src/components/supplies/**/*.tsx",
+    "../src/components/supplies/**/*.ts",
+    "../src/app/staff/supplies/**/*.tsx",
+    "../src/app/leader/supplies/**/*.tsx"
+  ],
+  "exclude": ["../node_modules"]
+}
