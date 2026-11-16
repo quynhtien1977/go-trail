@@ -6,6 +6,7 @@ import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
 import type { Role } from "@/schemas/auth";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,17 @@ export default async function StaffPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/staff/supplies"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            {user.role === "RouteMgr"
+              ? "Xem vật tư cấp theo chuyến"
+              : "Mở kho vật tư & cấp theo chuyến"}
+          </Link>
         </div>
 
         {/* Operational Modules Card */}
