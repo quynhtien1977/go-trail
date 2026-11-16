@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { validatePassengerDraft, buildHoldInput, holdAttempt } from "../src/lib/booking-checkout.ts";
-import { createSeatHold, fetchBookingPickupPreferences, BookingClientError } from "../src/lib/booking-client.ts";
+import { createSeatHold, fetchBookingPickupPreferences, fetchDeparturePickups, BookingClientError } from "../src/lib/booking-client.ts";
 
 const draft = { passenger_name: "  Khách kiểm thử  ", passenger_phone: "0900000000", emergency_contact: "Người thân 0900000001", health_declaration: true, pickup_key: "departure-41" };
 const confirmed = [{ key: "departure-41", name: "Điểm đón", address: "Địa chỉ giả lập", pickup_time: "2026-11-04T01:00:00Z", dep_pickup_id: 41 }];
@@ -50,6 +50,35 @@ test("existing hold endpoint receives the shared payload and preserves conflict/
     };
     assert.deepEqual(await createSeatHold(9, input, signal), dto);
     for (status of [409, 429]) await assert.rejects(createSeatHold(9, input, signal), e => e instanceof BookingClientError && e.status === status);
+  } finally { globalThis.fetch = original; }
+});
+
+test("the confirmed schedule comes from the departure endpoint and carries departure pickup IDs", async () => {
+  const original = globalThis.fetch;
+  const signal = new AbortController().signal;
+  const dto = { departure_id: 9, pickups: [{ dep_pickup_id: 41, pickup_id: 3, name: "Điểm đón", address: "Địa chỉ giả lập", pickup_time: "2026-11-04T01:00:00Z" }] };
+  try {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, "/api/departures/9/pickups", "never the trip catalog endpoint");
+      assert.equal(options.method ?? "GET", "GET");
+      assert.equal(options.signal, signal);
+      return new Response(JSON.stringify({ data: dto }));
+    };
+    const schedule = await fetchDeparturePickups(9, signal);
+    assert.deepEqual(schedule, dto);
+    const keyed = schedule.pickups.map(item => ({ ...item, key: `departure-${item.dep_pickup_id}` }));
+    const input = buildHoldInput([{ seat_id: 7, draft }], keyed, "test_key_87654321");
+    assert.equal(input.seats[0].dep_pickup_id, 41, "the schedule must unblock a real hold payload");
+  } finally { globalThis.fetch = original; }
+});
+
+test("a failed schedule read leaves checkout unable to build a hold", async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "Lỗi giả lập" } }), { status: 404 });
+    await assert.rejects(fetchDeparturePickups(9, new AbortController().signal),
+      e => e instanceof BookingClientError && e.status === 404);
+    assert.equal(buildHoldInput([{ seat_id: 7, draft }], [], "test_key_87654321"), null);
   } finally { globalThis.fetch = original; }
 });
 

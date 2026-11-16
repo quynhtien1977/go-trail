@@ -51,6 +51,10 @@ docs/*
 /src/generated/prisma/
 /scratch/
 
+# Local verification artifacts (screenshots, browser-tool logs)
+/.tmp/
+/.playwright-mcp/
+
 tools/
 tasks/
 

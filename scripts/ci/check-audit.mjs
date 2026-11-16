@@ -24,6 +24,17 @@ export function parseAuditReport(raw) {
   return report;
 }
 
+// A legacy-only approval must never cover a vulnerable modern copy of the same package.
+export function isApprovedAdvisory(advisory, exception, report, lockfile) {
+  if (!exception || exception.id !== advisory.id || exception.package !== advisory.package) return false;
+  if (!Object.hasOwn(exception, "allowedVersions")) return true;
+  const versions = exception.allowedVersions;
+  if (!Array.isArray(versions) || !versions.length || versions.some(version => typeof version !== "string" || !version)) return false;
+  const nodes = report?.vulnerabilities?.[advisory.package]?.nodes;
+  return Array.isArray(nodes) && nodes.length > 0 && nodes.every(node => typeof node === "string"
+    && typeof lockfile?.packages?.[node]?.version === "string" && versions.includes(lockfile.packages[node].version));
+}
+
 async function main() {
   console.log("==> Loading security audit baseline configuration...");
   let baselineRaw;
@@ -139,8 +150,10 @@ async function main() {
     }
   }
 
+  const needsVersions = [...approvedAdvisories.values()].some(exception => Object.hasOwn(exception, "allowedVersions"));
+  const lockfile = needsVersions ? JSON.parse(await readFile(resolve(process.cwd(), "package-lock.json"), "utf8")) : undefined;
   for (const [ghsaId, adv] of detectedAdvisories.entries()) {
-    if (!approvedAdvisories.has(ghsaId)) {
+    if (!isApprovedAdvisory(adv, approvedAdvisories.get(ghsaId), report, lockfile)) {
       unexpectedAdvisories.push(adv);
     }
   }
