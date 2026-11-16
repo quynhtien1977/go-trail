@@ -262,6 +262,7 @@ try {
   route("staff/customers", "/api/staff/customers", ["RouteMgr", "Admin"], { GET: undefined });
   route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
   route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
+  route("account/tickets", "/api/account/tickets", ["Customer", "Admin"], { GET: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -278,9 +279,9 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 41);
+  assert.equal(endpoints.length, 42);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
+  console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
   await startServer();
   const deniedSnapshot = async () => {
@@ -675,6 +676,38 @@ try {
   assert.equal(soldPolicySeat.status, "Sold"); assert.equal(soldPolicySeat.locked_until, null);
   assert.equal(await db.refund.count(), 0);
   console.log("PASS: C00 all five roles, including Admin, cannot cancel/refund/reschedule through direct HTTP calls; Paid/Valid/Sold and all financial/history rows stay unchanged.");
+
+  // P04: "my tickets" over real HTTP. OtherCustomer now owns exactly one issued ticket (the C00 fixture above).
+  const ownTickets = (query = "") => ({ method: "GET", route: "account/tickets", path: `/api/account/tickets${query}` });
+  const ticketKeys = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "hold_expired", "status", "check_in_status", "ticket_code",
+    "trip_name", "departure_id", "departure_date", "passenger_name", "seat_name", "pickup", "unit_price", "responsible_name_snapshot"].sort();
+  const beforeTickets = await deniedSnapshot();
+  const owner = await request(ownTickets("?status=valid"), actors.get("OtherCustomer"));
+  expect(owner, 200); noSecrets(owner.body.data);
+  assert.deepEqual(owner.body.data.items.map(t => t.detail_id), [paidTicket.detail_id]);
+  assert.deepEqual(Object.keys(owner.body.data.items[0]).sort(), ticketKeys);
+  assert.equal(owner.body.data.items[0].ticket_code, "C00-VALID-TICKET", "the owner sees the issued code of a Paid/Valid ticket");
+  for (const leak of ["passenger_phone", "emergency_contact", "health_declaration", "customer_id", "responsible_user_id", "Fixture contact"]) {
+    assert.ok(!JSON.stringify(owner.body.data).includes(leak), `tickets must not expose ${leak}`);
+  }
+  const stranger = await request(ownTickets(), actors.get("Customer"));
+  expect(stranger, 200);
+  assert.ok(!stranger.body.data.items.some(t => t.detail_id === paidTicket.detail_id), "another customer's ticket is never listed");
+  assert.ok(!JSON.stringify(stranger.body.data).includes("C00-VALID-TICKET"), "nor its code");
+  assert.ok(stranger.body.data.items.every(t => t.ticket_code === null || (t.invoice_status === "Paid" && t.status === "Valid")));
+  // Admin may hold seats for itself (PRD 11, K02), so its list can be non-empty; it must still be only its own.
+  const adminTickets = await request(ownTickets("?pageSize=50"), actors.get("Admin"));
+  expect(adminTickets, 200);
+  const adminInvoiceIds = new Set((await db.invoice.findMany({ where: { customer_id: actors.get("Admin").user_id },
+    select: { invoice_id: true } })).map(row => row.invoice_id));
+  assert.ok(adminTickets.body.data.items.every(t => adminInvoiceIds.has(t.invoice_id)),
+    "Admin passes the Customer route but reads only tickets of its own invoices");
+  assert.ok(!adminTickets.body.data.items.some(t => t.detail_id === paidTicket.detail_id));
+  for (const query of ["?status=all", "?status=Valid", "?customer_id=1", "?pageSize=51", "?page=0", "?status=valid&status=pending"]) {
+    expect(await request(ownTickets(query), actors.get("OtherCustomer")), 422, "INVALID_INPUT");
+  }
+  assert.equal(await deniedSnapshot(), beforeTickets, "reading tickets cannot change any business or audit row");
+  console.log("PASS: P04 my tickets returns only the caller's tickets with an allowlisted contract, shows a code only for Paid/Valid, refuses malformed queries and never mutates.");
 
   // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
   const beforeQuota = await deniedSnapshot();
