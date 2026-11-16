@@ -607,6 +607,12 @@ try {
   assert.deepEqual(unmatched.body, { success: true });
   assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70003" } })).invoice_id, null);
 
+  // SePay forwards the code in the customer's letter case (Test mode, 16/11/2026); it must still find the invoice.
+  const lowercase = await request(webhook, null, { body: transfer({ id: 70005, code: "rbac-own" }), extraHeaders: keyed });
+  assert.deepEqual(lowercase.body, { success: true });
+  assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70005" } })).invoice_id, invoice.invoice_id,
+    "a lowercase payment code must reach the same invoice as its uppercase form");
+
   for (const bad of [{ transferAmount: -1 }, { transferAmount: 1.5 }, { transferType: "IN" }, { id: 0 }]) {
     expect(await request(webhook, null, { body: transfer({ ...bad, id: bad.id ?? 70004 }), extraHeaders: keyed }), 422, "INVALID_INPUT");
   }

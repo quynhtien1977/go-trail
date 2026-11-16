@@ -163,7 +163,7 @@ Draft → Open → Closed → Confirmed → Running → Ended
 ### 5.2. Xác nhận thanh toán (webhook SePay)
 `POST /api/webhooks/sepay`, xử lý theo thứ tự:
 1. Xác thực header `Authorization: Apikey <secret>` (hoặc chữ ký HMAC nếu cấu hình). Sai thì trả 401.
-2. Chỉ xử lý `transferType = "in"`. Tìm hóa đơn theo trường `code` (= `payment_code`).
+2. Chỉ xử lý `transferType = "in"`. Tìm hóa đơn theo trường `code` (= `payment_code`), **không phân biệt hoa thường**: SePay giữ nguyên kiểu chữ khách gõ (đã kiểm ở Test mode 16/11/2026), còn `payment_code` luôn sinh dạng chữ hoa nên chuẩn hóa về chữ hoa không thể khớp sang hóa đơn khác. Không tự bóc mã từ `content`; `code` rỗng hoặc không khớp thì ghi nhận với `invoice_id = NULL` để đối soát.
 3. Chống trùng: chèn `PAYMENTS` với `transaction_id` = `id` của SePay (UNIQUE). Nếu trùng, trả `{"success": true}` ngay, không làm gì thêm. SePay tự retry tối đa 7 lần trong khoảng 33 phút nếu endpoint lỗi, nên bước này bắt buộc.
 4. Trong một transaction, nếu hóa đơn còn hợp lệ (xem 5.2.1) và `transferAmount >= total_amount`: hóa đơn `Paid`, ghế `Sold` (`locked_until = NULL`), vé `Valid` kèm `ticket_code` (QR), payment `Success`.
 5. Mọi trường hợp còn lại: payment `NeedsReview`, **không đổi trạng thái ghế/hóa đơn**, Admin đối soát theo contract P03 và quy tắc B04 đã chốt ở 15.7; không tự phát hành vé, đổi Sold hoặc tạo refund khi chưa có điều kiện xác nhận hợp lệ. Giao dịch chưa giải quyết vẫn NeedsReview và được hiển thị để xử lý.
