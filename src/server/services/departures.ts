@@ -177,4 +177,36 @@ export async function updateDeparture(db: Database, identity: Actor, departureId
   });
 }
 
-export const departureService = bindDb({ createDeparture, listManagedDepartures, readManagedDeparture, updateDeparture });
+export async function endLeaderDeparture(db: Database, identity: Actor, departureId: number): Promise<ManagedDepartureDto> {
+  assertId(departureId);
+  return inTransaction(db, async (tx) => {
+    const actor = await requireActor(tx, identity);
+    requireRole(actor, ["Leader"]);
+    const current = await departures.lockDeparture(tx, departureId);
+    if (!current) throw new AppError("NOT_FOUND", 404);
+
+    if (actor.role === "Leader") {
+      const assigned = await departures.isLeaderAssigned(tx, departureId, actor.user_id);
+      if (!assigned) throw new AppError("FORBIDDEN", 403);
+    }
+
+    if (current.status === "Ended") {
+      return dto(current);
+    }
+
+    if (current.status !== "Running") {
+      throw new AppError("RESOURCE_CONFLICT", 409);
+    }
+
+    await departures.updateDeparture(tx, departureId, { status: "Ended" });
+    await writeAudit(tx, actor.user_id, {
+      action: "DepartureStatusChanged",
+      record_id: departureId,
+      from: "Running",
+      to: "Ended",
+    });
+    return dto((await departures.findDeparture(tx, departureId))!);
+  });
+}
+
+export const departureService = bindDb({ createDeparture, endLeaderDeparture, listManagedDepartures, readManagedDeparture, updateDeparture });
