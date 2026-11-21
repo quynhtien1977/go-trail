@@ -32,9 +32,10 @@ function determineReviewReason(
   status: "Success" | "NeedsReview",
   amountStr: string,
   invoice: {
+    invoice_id: number;
     status: string;
     total_amount: { toFixed: (digits: number) => string };
-    seats: { invoice_id: number | null }[];
+    details: { seat: { status: string; invoice_id: number | null } }[];
   } | null
 ): string {
   if (status === "Success") return "confirmed_success";
@@ -46,7 +47,9 @@ function determineReviewReason(
   if (amountBig < totalBig) return "underpaid";
   if (invoice.status === "Cancelled") return "invoice_cancelled";
 
-  const seatLost = invoice.seats.some((s) => s.invoice_id !== null && s.invoice_id !== undefined);
+  const seatLost = invoice.details.some(
+    (d) => d.seat.status === "Sold" || (d.seat.invoice_id !== null && d.seat.invoice_id !== invoice.invoice_id)
+  );
   // If the invoice is Expired, payment arrived late
   if (invoice.status === "Expired") {
     return seatLost ? "seats_taken_after_expiry" : "late_payment_retained";
@@ -154,7 +157,7 @@ export async function readAdminPayment(
       expires_at: inv.expires_at.toISOString(),
       difference: diff,
       responsible_name_snapshot: inv.responsible_name_snapshot,
-      ticket_count: inv._count.details,
+      ticket_count: inv.details.length,
       customer: {
         user_id: inv.customer.user_id,
         full_name: inv.customer.full_name,

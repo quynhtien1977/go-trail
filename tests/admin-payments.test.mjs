@@ -168,3 +168,167 @@ test("RBAC: Only Admin can access payment reconciliation endpoints; RouteMgr and
   await assert.rejects(readAdminPayment(db, routeMgrUser, paymentUnderpaid.payment_id), { code: "FORBIDDEN" });
   await assert.rejects(readAdminPayment(db, customerUser, paymentUnderpaid.payment_id), { code: "FORBIDDEN" });
 });
+
+test("Review reasons distinguish late_payment_retained vs seats_taken_after_expiry vs invoice_cancelled", async () => {
+  // Setup vehicle and seat
+  const vehicle = await db.vehicle.create({
+    data: { plate_number: "PAY-EXP", vehicle_type: "29", seat_count: 2 },
+  });
+  const seat1 = await db.vehicleSeat.create({
+    data: { vehicle_id: vehicle.vehicle_id, seat_name: "B01", floor_level: 1, x_position: 0, y_position: 0 },
+  });
+  const seat2 = await db.vehicleSeat.create({
+    data: { vehicle_id: vehicle.vehicle_id, seat_name: "B02", floor_level: 1, x_position: 1, y_position: 0 },
+  });
+  const depVehicle = await db.departureVehicle.create({
+    data: { departure_id: departure.departure_id, vehicle_id: vehicle.vehicle_id },
+  });
+  const depSeat1 = await db.departureSeat.create({
+    data: { dep_vehicle_id: depVehicle.dep_vehicle_id, seat_id: seat1.seat_id, status: "Available", invoice_id: null },
+  });
+  const depSeat2 = await db.departureSeat.create({
+    data: { dep_vehicle_id: depVehicle.dep_vehicle_id, seat_id: seat2.seat_id, status: "Sold", invoice_id: invoice2.invoice_id },
+  });
+
+  const pickup = await db.pickupPoint.create({
+    data: { trip_id: trip.trip_id, name: "Điểm đón Expired", address: "Địa chỉ" },
+  });
+  const depPickup = await db.departurePickup.create({
+    data: { departure_id: departure.departure_id, pickup_id: pickup.pickup_id, pickup_time: new Date("2026-11-28T07:00:00Z") },
+  });
+
+  // Invoice 3: Expired, seat is still Available (late payment, seats retained/free)
+  const invoice3 = await db.invoice.create({
+    data: {
+      customer_id: customerUser.user_id,
+      departure_id: departure.departure_id,
+      payment_code: "TB2003",
+      total_amount: "2000000",
+      status: "Expired",
+      expires_at: new Date("2026-11-20T00:00:00Z"),
+      responsible_user_id: routeMgrUser.user_id,
+      responsible_name_snapshot: "Route Manager",
+      responsible_role_snapshot: "RouteMgr",
+    },
+  });
+  await db.invoiceDetail.create({
+    data: {
+      invoice_id: invoice3.invoice_id,
+      dep_seat_id: depSeat1.dep_seat_id,
+      dep_pickup_id: depPickup.dep_pickup_id,
+      passenger_name: "Khách trễ",
+      passenger_phone: "0904444444",
+      emergency_contact: "Người thân 0905555555",
+      health_declaration: true,
+      unit_price: "2000000",
+      status: "Cancelled",
+    },
+  });
+  const paymentLateRetained = await db.payment.create({
+    data: {
+      invoice_id: invoice3.invoice_id,
+      amount: "2000000",
+      transaction_id: "TX-LATE-RETAINED",
+      reference_code: "REF-LATE-1",
+      status: "NeedsReview",
+      raw_payload: JSON.stringify({ id: "TX-LATE-RETAINED", transferAmount: 2000000, code: "TB2003" }),
+    },
+  });
+
+  // Invoice 4: Expired, seat was taken by another invoice (depSeat2 is Sold to invoice2)
+  const invoice4 = await db.invoice.create({
+    data: {
+      customer_id: customerUser.user_id,
+      departure_id: departure.departure_id,
+      payment_code: "TB2004",
+      total_amount: "2000000",
+      status: "Expired",
+      expires_at: new Date("2026-11-20T00:00:00Z"),
+      responsible_user_id: routeMgrUser.user_id,
+      responsible_name_snapshot: "Route Manager",
+      responsible_role_snapshot: "RouteMgr",
+    },
+  });
+  await db.invoiceDetail.create({
+    data: {
+      invoice_id: invoice4.invoice_id,
+      dep_seat_id: depSeat2.dep_seat_id,
+      dep_pickup_id: depPickup.dep_pickup_id,
+      passenger_name: "Khách mất ghế",
+      passenger_phone: "0906666666",
+      emergency_contact: "Người thân 0907777777",
+      health_declaration: true,
+      unit_price: "2000000",
+      status: "Cancelled",
+    },
+  });
+  const paymentSeatLost = await db.payment.create({
+    data: {
+      invoice_id: invoice4.invoice_id,
+      amount: "2000000",
+      transaction_id: "TX-SEAT-LOST",
+      reference_code: "REF-LATE-2",
+      status: "NeedsReview",
+      raw_payload: JSON.stringify({ id: "TX-SEAT-LOST", transferAmount: 2000000, code: "TB2004" }),
+    },
+  });
+
+  // Invoice 5: Cancelled invoice
+  const invoice5 = await db.invoice.create({
+    data: {
+      customer_id: customerUser.user_id,
+      departure_id: departure.departure_id,
+      payment_code: "TB2005",
+      total_amount: "2000000",
+      status: "Cancelled",
+      expires_at: new Date("2026-11-20T00:00:00Z"),
+      responsible_user_id: routeMgrUser.user_id,
+      responsible_name_snapshot: "Route Manager",
+      responsible_role_snapshot: "RouteMgr",
+    },
+  });
+  const paymentCancelled = await db.payment.create({
+    data: {
+      invoice_id: invoice5.invoice_id,
+      amount: "2000000",
+      transaction_id: "TX-CANCELLED",
+      reference_code: "REF-CANCELLED",
+      status: "NeedsReview",
+      raw_payload: JSON.stringify({ id: "TX-CANCELLED", transferAmount: 2000000, code: "TB2005" }),
+    },
+  });
+
+  const detailLate = await readAdminPayment(db, adminUser, paymentLateRetained.payment_id);
+  assert.equal(detailLate.review_reason, "late_payment_retained");
+  assert.equal(detailLate.invoice?.ticket_count, 1);
+
+  const detailLost = await readAdminPayment(db, adminUser, paymentSeatLost.payment_id);
+  assert.equal(detailLost.review_reason, "seats_taken_after_expiry");
+
+  const detailCancelled = await readAdminPayment(db, adminUser, paymentCancelled.payment_id);
+  assert.equal(detailCancelled.review_reason, "invoice_cancelled");
+});
+
+test("Admin payments list supports query filters and pagination", async () => {
+  const filteredByTx = await listAdminPayments(db, adminUser, { transaction_id: "UNDER" });
+  assert.equal(filteredByTx.items.length, 1);
+  assert.equal(filteredByTx.items[0].transaction_id, "TX-UNDER");
+
+  const filteredByRef = await listAdminPayments(db, adminUser, { reference_code: "REF-OVERPAID" });
+  assert.equal(filteredByRef.items.length, 1);
+  assert.equal(filteredByRef.items[0].reference_code, "REF-OVERPAID");
+
+  const filteredByCode = await listAdminPayments(db, adminUser, { payment_code: "TB2001" });
+  assert.equal(filteredByCode.items.length, 1);
+  assert.equal(filteredByCode.items[0].invoice?.payment_code, "TB2001");
+
+  const paged = await listAdminPayments(db, adminUser, { page: 1, pageSize: 2 });
+  assert.equal(paged.items.length, 2);
+  assert.equal(paged.pagination.pageSize, 2);
+  assert.equal(paged.pagination.page, 1);
+  assert.ok(paged.pagination.totalPages >= 2);
+
+  // Validation: negative page or invalid payment ID rejects with INVALID_INPUT (422)
+  await assert.rejects(listAdminPayments(db, adminUser, { page: 0 }), { code: "INVALID_INPUT" });
+  await assert.rejects(readAdminPayment(db, adminUser, -1), { code: "INVALID_INPUT" });
+});

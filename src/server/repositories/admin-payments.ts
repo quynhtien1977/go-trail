@@ -47,14 +47,18 @@ const paymentSelect = {
           trip: { select: { name: true } },
         },
       },
-      seats: {
+      details: {
         select: {
-          dep_seat_id: true,
-          status: true,
-          invoice_id: true,
+          detail_id: true,
+          seat: {
+            select: {
+              dep_seat_id: true,
+              status: true,
+              invoice_id: true,
+            },
+          },
         },
       },
-      _count: { select: { details: true } },
     },
   },
 } satisfies Prisma.PaymentSelect;
