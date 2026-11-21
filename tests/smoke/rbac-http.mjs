@@ -278,7 +278,19 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 41);
+  const paymentFixture = await db.payment.create({
+    data: {
+      invoice_id: invoice.invoice_id,
+      amount: "500000",
+      transaction_id: "RBAC-PAYMENT-1",
+      reference_code: "REF-RBAC-1",
+      status: "NeedsReview",
+      raw_payload: "{}",
+    },
+  });
+  route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
+  route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
+  assert.equal(endpoints.length, 43);
   await assertRouteCoverage(endpoints);
   console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
 
