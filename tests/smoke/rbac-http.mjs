@@ -278,7 +278,10 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 41);
+  route("leader/departures/[id]", `/api/leader/departures/${departures[5].departure_id}`, ["Leader", "Admin"], { PATCH: () => ({ status: "Ended" }) });
+  route("leader/departures/[id]/end", `/api/leader/departures/${departures[5].departure_id}/end`, ["Leader", "Admin"], { POST: () => ({}) });
+  endpoints.at(-1).success = 200;
+  assert.equal(endpoints.length, 43);
   await assertRouteCoverage(endpoints);
   console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
 
