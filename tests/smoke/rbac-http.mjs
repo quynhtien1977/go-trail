@@ -278,7 +278,17 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 41);
+  const fixtureItem = await db.supplyItem.create({
+    data: { name: "Vật tư mẫu RBAC", category: "Gear", unit: "hộp", is_active: true },
+  });
+  route("staff/supplies", "/api/staff/supplies", ["RouteMgr", "HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { POST: () => ({ name: `Vật tư ${next()}`, category: "Gear", unit: "hộp" }) });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["RouteMgr", "HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { PATCH: () => ({ unit: "gói" }) });
+  route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
+    POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
+  });
+  assert.equal(endpoints.length, 46);
   await assertRouteCoverage(endpoints);
   console.log("PASS: explicit A03 policies cover all 41 protected API methods; new/unclassified API methods fail this gate.");
 
