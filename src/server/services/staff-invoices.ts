@@ -58,7 +58,6 @@ export async function listStaffInvoices(
     status: row.status,
     expires_at: row.expires_at.toISOString(),
     created_at: row.created_at.toISOString(),
-    responsible_user_id: row.responsible_user_id,
     responsible_name_snapshot: row.responsible_name_snapshot,
     responsible_role_snapshot: row.responsible_role_snapshot,
     customer: {
@@ -104,7 +103,6 @@ export async function readStaffInvoice(
     status: row.status,
     expires_at: row.expires_at.toISOString(),
     created_at: row.created_at.toISOString(),
-    responsible_user_id: row.responsible_user_id,
     responsible_name_snapshot: row.responsible_name_snapshot,
     responsible_role_snapshot: row.responsible_role_snapshot,
     customer: {

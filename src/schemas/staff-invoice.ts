@@ -45,7 +45,6 @@ export type StaffInvoiceSummaryDto = {
   status: InvoiceStatus;
   expires_at: string;
   created_at: string;
-  responsible_user_id: number | null;
   responsible_name_snapshot: string | null;
   responsible_role_snapshot: string | null;
   customer: {

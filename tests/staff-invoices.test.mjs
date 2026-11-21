@@ -188,7 +188,6 @@ test("RouteMgr sees only invoices where they are responsible_user_id", async () 
   assert.equal(result1.items.length, 1);
   assert.equal(result1.items[0].invoice_id, invoice1.invoice_id);
   assert.equal(result1.items[0].payment_code, "TB1001");
-  assert.equal(result1.items[0].responsible_user_id, routeMgr1.user_id);
   assert.equal(result1.items[0].responsible_name_snapshot, "Route Manager 1");
   assert.equal(result1.items[0].total_amount, "1500000");
 
