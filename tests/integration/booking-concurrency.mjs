@@ -10,6 +10,9 @@ import { holdSeats } from "../../src/server/services/bookings.ts";
 import { updateDeparture } from "../../src/server/services/departures.ts";
 import { updateAccountAccess } from "../../src/server/services/accounts.ts";
 import { recordSepayPayment } from "../../src/server/services/payments.ts";
+import { checkIn } from "../../src/server/services/checkin.ts";
+import { endLeaderDeparture } from "../../src/server/services/departures.ts";
+import { createSupplyItem, readSupplyItem, receiveSupply } from "../../src/server/services/inventory.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -296,6 +299,97 @@ try {
   assert.equal(new Set(issued.map(t => t.ticket_code)).size, 2, "each ticket issued once with its own code");
   assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: invoice.invoice_id } })).status, "Paid");
   pass("6 retries and 2 other transfers racing for one invoice: one confirmation, one row per transfer, tickets issued once.");
+
+  // L01: QR check-in. Paid/Valid tickets come from the real hold + SePay path, then operations confirm the departure.
+  async function checkInFixture() {
+    const base = await fixture();
+    const paid = await base.hold("Buyer0", [0, 1], "checkin-fixture-hold-1");
+    await sepay(paid.payment_code, 930001, 1000000, now);
+    await db.departure.update({ where: { departure_id: base.departure.departure_id }, data: { status: "Confirmed" } });
+    const user = await db.user.create({ data: { email: "leader@concurrency.example.test", password_hash: "unused",
+      full_name: "Leader", phone: "0901234567", role: "Leader" } });
+    const staff = await db.staff.create({ data: { user_id: user.user_id, full_name: "Leader", phone: "0901234567", staff_type: "Leader" } });
+    const vehicle = await db.departureVehicle.findFirstOrThrow({ where: { departure_id: base.departure.departure_id } });
+    const crew = await db.departureStaff.create({ data: { departure_id: base.departure.departure_id, staff_id: staff.staff_id,
+      role_in_trip: "Leader", dep_vehicle_id: vehicle.dep_vehicle_id } });
+    const tickets = await db.invoiceDetail.findMany({ where: { invoice_id: paid.invoice_id }, orderBy: { dep_seat_id: "asc" } });
+    assert.ok(tickets.every(t => t.status === "Valid" && t.ticket_code));
+    return { ...base, leader: { user_id: user.user_id, role: "Leader", auth_version: 0 }, tickets, crew };
+  }
+  const scan = (fx, actor, ticketCode, at = now) =>
+    checkIn(db, actor, { action: "CheckIn", departure_id: fx.departure.departure_id, ticket_code: ticketCode }, at);
+  const checkInState = detailId => db.invoiceDetail.findUniqueOrThrow({ where: { detail_id: detailId },
+    select: { check_in_status: true, check_in_time: true } });
+
+  let c = await checkInFixture();
+  const scanned = c.tickets[0];
+  const scans = await blocked("SELECT detail_id FROM invoice_details WHERE detail_id=$1 FOR UPDATE", [scanned.detail_id],
+    () => Array.from({ length: 8 }, (_, i) => scan(c, i % 2 ? c.actors.Admin : c.leader, scanned.ticket_code,
+      new Date(now.getTime() + i * 1000))), undefined, 8);
+  assert.ok(scans.every(r => r.status === "fulfilled"), "every scan succeeds");
+  assert.equal(scans.filter(r => r.value.changed).length, 1, "exactly one scan writes");
+  const stamped = scans.find(r => r.value.changed).value.passenger.check_in_time;
+  assert.ok(scans.every(r => r.value.passenger.check_in_status === "CheckedIn" && r.value.passenger.check_in_time === stamped),
+    "every scan reports the first scan's time");
+  assert.equal((await checkInState(scanned.detail_id)).check_in_time.toISOString(), stamped);
+  pass("8 concurrent scans of one QR from two devices: one check-in, every scan reports the same first time.");
+
+  c = await checkInFixture();
+  const contested = c.tickets[1];
+  const mixed = await blocked("SELECT detail_id FROM invoice_details WHERE detail_id=$1 FOR UPDATE", [contested.detail_id],
+    () => [scan(c, c.leader, contested.ticket_code), checkIn(db, c.actors.Admin,
+      { action: "MarkAbsent", departure_id: c.departure.departure_id, detail_id: contested.detail_id }, now)], undefined, 2);
+  assert.equal(mixed[0].status, "fulfilled"); assert.equal(mixed[0].value.result, "CheckedIn");
+  if (mixed[1].status === "fulfilled") assert.equal(mixed[1].value.result, "MarkedAbsent", "Absent first, then the scan boards");
+  else assert.equal(mixed[1].reason.code, "ALREADY_CHECKED_IN", "scan first, then Absent is refused");
+  assert.equal((await checkInState(contested.detail_id)).check_in_status, "CheckedIn");
+  pass("a QR scan racing a manual Absent always ends CheckedIn: Absent never overwrites a scan.");
+
+  c = await checkInFixture();
+  const ending = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [scan(c, c.leader, c.tickets[0].ticket_code)],
+    blocker => blocker.query("UPDATE departures SET status='Ended' WHERE departure_id=$1", [c.departure.departure_id]));
+  assert.equal(ending[0].status, "rejected"); assert.equal(ending[0].reason.code, "CHECKIN_CLOSED");
+  assert.equal((await checkInState(c.tickets[0].detail_id)).check_in_status, "Pending");
+  c = await checkInFixture();
+  const unassigned = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [scan(c, c.leader, c.tickets[0].ticket_code)],
+    blocker => blocker.query("DELETE FROM departure_staff WHERE dep_staff_id=$1", [c.crew.dep_staff_id]));
+  assert.equal(unassigned[0].status, "rejected"); assert.equal(unassigned[0].reason.code, "NOT_FOUND");
+  assert.equal((await checkInState(c.tickets[0].detail_id)).check_in_status, "Pending");
+  pass("a departure Ended or a Leader unassigned while a scan waits is re-read under the lock; nothing is checked in.");
+
+  // L02: a Leader double-tapping "end" and Admin ending the same Running departure at once.
+  c = await checkInFixture();
+  await db.departure.update({ where: { departure_id: c.departure.departure_id }, data: { status: "Running" } });
+  const endings = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [...Array.from({ length: 5 }, () => endLeaderDeparture(db, c.leader, c.departure.departure_id)),
+      endLeaderDeparture(db, c.actors.Admin, c.departure.departure_id), scan(c, c.leader, c.tickets[0].ticket_code)], undefined, 7);
+  assert.ok(endings.slice(0, 6).every(r => r.status === "fulfilled" && r.value.status === "Ended"), "every end request succeeds");
+  assert.equal(endings.slice(0, 6).filter(r => r.value.changed).length, 1, "exactly one request ends the departure");
+  assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged", record_id: String(c.departure.departure_id) } }), 1);
+  const lateScan = endings[6];
+  if (lateScan.status === "rejected") assert.equal(lateScan.reason.code, "CHECKIN_CLOSED");
+  else assert.equal(lateScan.value.result, "CheckedIn", "a scan that won the lock before the end committed first");
+  assert.equal((await db.invoiceDetail.findFirstOrThrow({ where: { detail_id: c.tickets[1].detail_id } })).status, "Valid");
+  pass("6 concurrent end requests and a scan on one Running departure: one transition, one audit row, tickets untouched.");
+
+  // I02: a retried stock receipt racing itself on one item. Retries return the first receipt, never add stock twice.
+  await fixture();
+  await pool.query("TRUNCATE supply_items RESTART IDENTITY CASCADE");
+  const storeUser = await db.user.create({ data: { email: "hr@concurrency.example.test", password_hash: "unused",
+    full_name: "HR", phone: "0901234567", role: "HRMgr" } });
+  const storekeeper = { user_id: storeUser.user_id, role: "HRMgr", auth_version: 0 };
+  const supply = await createSupplyItem(db, storekeeper, { name: "Concurrency water", category: "Drink", unit: "chai" });
+  const receipt = { item_id: supply.item_id, quantity: 24, idempotency_key: "supply-race-key-000001" };
+  const receipts = await blocked("SELECT item_id FROM supply_items WHERE item_id=$1 FOR UPDATE", [supply.item_id],
+    () => Array.from({ length: 6 }, () => receiveSupply(db, storekeeper, receipt)), undefined, 6);
+  assert.ok(receipts.every(r => r.status === "fulfilled"), "every retry is answered, none fails with a server error");
+  assert.equal(new Set(receipts.map(r => r.value.txn_id)).size, 1, "all retries return the same receipt");
+  assert.equal(await db.supplyTransaction.count(), 1);
+  assert.equal((await readSupplyItem(db, storekeeper, supply.item_id)).on_hand, 24, "stock is added once");
+  assert.equal(await db.auditLog.count({ where: { action: "SupplyReceived" } }), 1);
+  pass("6 concurrent retries of one stock receipt: one ledger row, one audit row, stock added once.");
   console.log(`PASS: ${groups} PostgreSQL booking concurrency groups; independent connections, no remote database.`);
 } finally {
   await db?.$disconnect(); await pool?.end();
