@@ -51,8 +51,24 @@ export default async function AdminPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/admin/reconciliation" className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]">Mở đối soát thanh toán</Link>
-          <Link href="/staff/supplies" className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]">Mở kho vật tư & cấp theo chuyến</Link>
+          <Link
+            href="/staff/invoices"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            Mở quản lý hóa đơn & vé theo chuyến
+          </Link>
+          <Link
+            href="/admin/reconciliation"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            Mở đối soát thanh toán
+          </Link>
+          <Link
+            href="/staff/supplies"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            Mở kho vật tư & cấp theo chuyến
+          </Link>
         </div>
 
         {/* System Settings & User Metrics */}

@@ -84,6 +84,14 @@ export default async function StaffPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          {(user.role === "RouteMgr" || user.role === "Admin") && (
+            <Link
+              href="/staff/invoices"
+              className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+            >
+              Mở quản lý hóa đơn & vé theo chuyến
+            </Link>
+          )}
           <Link
             href="/staff/supplies"
             className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
