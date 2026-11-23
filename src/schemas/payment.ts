@@ -27,3 +27,13 @@ export type SepayWebhookInput = z.infer<typeof sepayWebhookSchema>;
 
 // SePay only reads this acknowledgement; it is not the project's { data } envelope.
 export type SepayWebhookAck = { success: true };
+
+/**
+ * The single place a payment code from outside is made comparable with INVOICES.payment_code.
+ * SePay forwards the code in the letter case the customer typed (verified in Test mode, 16/11/2026),
+ * while every payment_code is issued uppercase, so uppercasing can only recover the intended invoice.
+ * Any future lookup by payment code (P03 reconciliation, manual search) must go through this.
+ */
+export function normalizePaymentCode(code: string | null | undefined): string {
+  return code?.trim().toUpperCase() ?? "";
+}

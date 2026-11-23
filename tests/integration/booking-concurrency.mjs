@@ -9,6 +9,9 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { holdSeats } from "../../src/server/services/bookings.ts";
 import { updateDeparture } from "../../src/server/services/departures.ts";
 import { updateAccountAccess } from "../../src/server/services/accounts.ts";
+import { recordSepayPayment } from "../../src/server/services/payments.ts";
+import { checkIn } from "../../src/server/services/checkin.ts";
+import { endLeaderDeparture } from "../../src/server/services/departures.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -252,6 +255,123 @@ try {
   assert.equal(late[0].status, "rejected"); assert.equal(late[0].reason.code, "RESOURCE_CONFLICT");
   assert.equal(await db.invoice.count(), 0);
   pass("a deadline crossed while waiting on a seat is rechecked and rolls back the whole new invoice.");
+
+  // P02: real SePay confirmations racing real holds. A fixture key only; never a real SEPAY_API_KEY.
+  process.env.SEPAY_API_KEY = "concurrency-fixture-key-0123456789";
+  const sepay = (code, id, amount, at) => recordSepayPayment(db, "Apikey concurrency-fixture-key-0123456789",
+    JSON.stringify({ id, gateway: "Fixture", transactionDate: "2034-01-01 00:00:00", accountNumber: "0000000000", code,
+      content: `${code} fixture`, transferType: "in", transferAmount: amount, accumulated: 0, subAccount: "",
+      referenceCode: `FIX${id}`, description: "" }), at);
+  const activeTickets = seatId => db.invoiceDetail.count({ where: { dep_seat_id: seatId, status: { not: "Cancelled" } } });
+
+  f = await fixture();
+  const stale = await f.hold("Buyer0", [0], "late-pay-old-hold-01");
+  const later = new Date(now.getTime() + 16 * 60_000);
+  // Both sides lock the stale invoice first: the payment to confirm it, the new hold to reclaim its seat.
+  const contest = await blocked("SELECT invoice_id FROM invoices WHERE invoice_id=$1 FOR UPDATE", [stale.invoice_id],
+    () => [sepay(stale.payment_code, 910001, 500000, later), f.hold("Buyer1", [0], "late-pay-new-hold-01", later)], undefined, 2);
+  assert.equal(contest[0].status, "fulfilled", "SePay is acknowledged whoever wins");
+  const latePayment = await db.payment.findUniqueOrThrow({ where: { transaction_id: "910001" } });
+  const seatAfter = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[0].dep_seat_id } });
+  if (latePayment.status === "Success") {
+    assert.equal(contest[1].status, "rejected"); assert.equal(contest[1].reason.code, "RESOURCE_CONFLICT");
+    assert.equal(seatAfter.status, "Sold"); assert.equal(seatAfter.invoice_id, stale.invoice_id);
+  } else {
+    assert.equal(contest[1].status, "fulfilled", "the payment only steps aside when the new hold really won");
+    assert.equal(seatAfter.invoice_id, contest[1].value.invoice_id);
+    assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
+  }
+  assert.equal(await activeTickets(f.seats[0].dep_seat_id), 1, "the seat ends with exactly one active ticket");
+  pass("a late SePay payment and a new hold racing for one stale seat: exactly one wins, the money is always recorded.");
+
+  f = await fixture();
+  const invoice = await f.hold("Buyer0", [0, 1], "paid-by-many-hold-01");
+  const deliveries = await blocked("SELECT invoice_id FROM invoices WHERE invoice_id=$1 FOR UPDATE", [invoice.invoice_id],
+    () => [...Array.from({ length: 6 }, () => sepay(invoice.payment_code, 920001, 1000000, now)),
+      sepay(invoice.payment_code, 920002, 1000000, now), sepay(invoice.payment_code, 920003, 1500000, now)], undefined, 8);
+  assert.ok(deliveries.every(r => r.status === "fulfilled"), "every delivery is acknowledged");
+  const recorded = await db.payment.findMany({ orderBy: { transaction_id: "asc" } });
+  assert.deepEqual(recorded.map(r => r.transaction_id), ["920001", "920002", "920003"], "one row per transfer, retries absorbed");
+  assert.equal(recorded.filter(r => r.status === "Success").length, 1, "the invoice is confirmed by exactly one transfer");
+  const issued = await db.invoiceDetail.findMany({ where: { invoice_id: invoice.invoice_id } });
+  assert.ok(issued.every(t => t.status === "Valid" && /^TK[0-9A-F]{20}$/.test(t.ticket_code)));
+  assert.equal(new Set(issued.map(t => t.ticket_code)).size, 2, "each ticket issued once with its own code");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: invoice.invoice_id } })).status, "Paid");
+  pass("6 retries and 2 other transfers racing for one invoice: one confirmation, one row per transfer, tickets issued once.");
+
+  // L01: QR check-in. Paid/Valid tickets come from the real hold + SePay path, then operations confirm the departure.
+  async function checkInFixture() {
+    const base = await fixture();
+    const paid = await base.hold("Buyer0", [0, 1], "checkin-fixture-hold-1");
+    await sepay(paid.payment_code, 930001, 1000000, now);
+    await db.departure.update({ where: { departure_id: base.departure.departure_id }, data: { status: "Confirmed" } });
+    const user = await db.user.create({ data: { email: "leader@concurrency.example.test", password_hash: "unused",
+      full_name: "Leader", phone: "0901234567", role: "Leader" } });
+    const staff = await db.staff.create({ data: { user_id: user.user_id, full_name: "Leader", phone: "0901234567", staff_type: "Leader" } });
+    const vehicle = await db.departureVehicle.findFirstOrThrow({ where: { departure_id: base.departure.departure_id } });
+    const crew = await db.departureStaff.create({ data: { departure_id: base.departure.departure_id, staff_id: staff.staff_id,
+      role_in_trip: "Leader", dep_vehicle_id: vehicle.dep_vehicle_id } });
+    const tickets = await db.invoiceDetail.findMany({ where: { invoice_id: paid.invoice_id }, orderBy: { dep_seat_id: "asc" } });
+    assert.ok(tickets.every(t => t.status === "Valid" && t.ticket_code));
+    return { ...base, leader: { user_id: user.user_id, role: "Leader", auth_version: 0 }, tickets, crew };
+  }
+  const scan = (fx, actor, ticketCode, at = now) =>
+    checkIn(db, actor, { action: "CheckIn", departure_id: fx.departure.departure_id, ticket_code: ticketCode }, at);
+  const checkInState = detailId => db.invoiceDetail.findUniqueOrThrow({ where: { detail_id: detailId },
+    select: { check_in_status: true, check_in_time: true } });
+
+  let c = await checkInFixture();
+  const scanned = c.tickets[0];
+  const scans = await blocked("SELECT detail_id FROM invoice_details WHERE detail_id=$1 FOR UPDATE", [scanned.detail_id],
+    () => Array.from({ length: 8 }, (_, i) => scan(c, i % 2 ? c.actors.Admin : c.leader, scanned.ticket_code,
+      new Date(now.getTime() + i * 1000))), undefined, 8);
+  assert.ok(scans.every(r => r.status === "fulfilled"), "every scan succeeds");
+  assert.equal(scans.filter(r => r.value.changed).length, 1, "exactly one scan writes");
+  const stamped = scans.find(r => r.value.changed).value.passenger.check_in_time;
+  assert.ok(scans.every(r => r.value.passenger.check_in_status === "CheckedIn" && r.value.passenger.check_in_time === stamped),
+    "every scan reports the first scan's time");
+  assert.equal((await checkInState(scanned.detail_id)).check_in_time.toISOString(), stamped);
+  pass("8 concurrent scans of one QR from two devices: one check-in, every scan reports the same first time.");
+
+  c = await checkInFixture();
+  const contested = c.tickets[1];
+  const mixed = await blocked("SELECT detail_id FROM invoice_details WHERE detail_id=$1 FOR UPDATE", [contested.detail_id],
+    () => [scan(c, c.leader, contested.ticket_code), checkIn(db, c.actors.Admin,
+      { action: "MarkAbsent", departure_id: c.departure.departure_id, detail_id: contested.detail_id }, now)], undefined, 2);
+  assert.equal(mixed[0].status, "fulfilled"); assert.equal(mixed[0].value.result, "CheckedIn");
+  if (mixed[1].status === "fulfilled") assert.equal(mixed[1].value.result, "MarkedAbsent", "Absent first, then the scan boards");
+  else assert.equal(mixed[1].reason.code, "ALREADY_CHECKED_IN", "scan first, then Absent is refused");
+  assert.equal((await checkInState(contested.detail_id)).check_in_status, "CheckedIn");
+  pass("a QR scan racing a manual Absent always ends CheckedIn: Absent never overwrites a scan.");
+
+  c = await checkInFixture();
+  const ending = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [scan(c, c.leader, c.tickets[0].ticket_code)],
+    blocker => blocker.query("UPDATE departures SET status='Ended' WHERE departure_id=$1", [c.departure.departure_id]));
+  assert.equal(ending[0].status, "rejected"); assert.equal(ending[0].reason.code, "CHECKIN_CLOSED");
+  assert.equal((await checkInState(c.tickets[0].detail_id)).check_in_status, "Pending");
+  c = await checkInFixture();
+  const unassigned = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [scan(c, c.leader, c.tickets[0].ticket_code)],
+    blocker => blocker.query("DELETE FROM departure_staff WHERE dep_staff_id=$1", [c.crew.dep_staff_id]));
+  assert.equal(unassigned[0].status, "rejected"); assert.equal(unassigned[0].reason.code, "NOT_FOUND");
+  assert.equal((await checkInState(c.tickets[0].detail_id)).check_in_status, "Pending");
+  pass("a departure Ended or a Leader unassigned while a scan waits is re-read under the lock; nothing is checked in.");
+
+  // L02: a Leader double-tapping "end" and Admin ending the same Running departure at once.
+  c = await checkInFixture();
+  await db.departure.update({ where: { departure_id: c.departure.departure_id }, data: { status: "Running" } });
+  const endings = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [...Array.from({ length: 5 }, () => endLeaderDeparture(db, c.leader, c.departure.departure_id)),
+      endLeaderDeparture(db, c.actors.Admin, c.departure.departure_id), scan(c, c.leader, c.tickets[0].ticket_code)], undefined, 7);
+  assert.ok(endings.slice(0, 6).every(r => r.status === "fulfilled" && r.value.status === "Ended"), "every end request succeeds");
+  assert.equal(endings.slice(0, 6).filter(r => r.value.changed).length, 1, "exactly one request ends the departure");
+  assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged", record_id: String(c.departure.departure_id) } }), 1);
+  const lateScan = endings[6];
+  if (lateScan.status === "rejected") assert.equal(lateScan.reason.code, "CHECKIN_CLOSED");
+  else assert.equal(lateScan.value.result, "CheckedIn", "a scan that won the lock before the end committed first");
+  assert.equal((await db.invoiceDetail.findFirstOrThrow({ where: { detail_id: c.tickets[1].detail_id } })).status, "Valid");
+  pass("6 concurrent end requests and a scan on one Running departure: one transition, one audit row, tickets untouched.");
   console.log(`PASS: ${groups} PostgreSQL booking concurrency groups; independent connections, no remote database.`);
 } finally {
   await db?.$disconnect(); await pool?.end();
