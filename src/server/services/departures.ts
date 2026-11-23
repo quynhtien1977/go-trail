@@ -4,7 +4,7 @@ import { inTransaction, type Database, type Transaction } from "@/server/reposit
 import * as departures from "@/server/repositories/departures";
 import { assertConfirmingAssignments, assertOpeningAssignments } from "./assignments";
 import type { Page } from "@/schemas/catalog";
-import { createDepartureSchema, departureQuerySchema, updateDepartureSchema, type ManagedDepartureDto } from "@/schemas/departure";
+import { createDepartureSchema, departureQuerySchema, updateDepartureSchema, type EndedDepartureDto, type ManagedDepartureDto } from "@/schemas/departure";
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
 import { writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
@@ -177,4 +177,28 @@ export async function updateDeparture(db: Database, identity: Actor, departureId
   });
 }
 
-export const departureService = bindDb({ createDeparture, listManagedDepartures, readManagedDeparture, updateDeparture });
+// L02 (SCRUM-38): the assigned Leader, or Admin, ends a Running departure. Visibility matches the Leader list
+// and the L01 manifest: unassigned, inactive or before Confirmed is the same 404 as a missing departure.
+// The departure lock is FOR UPDATE, so check-ins waiting on it (FOR SHARE) see Ended and stop.
+// Paid/Valid/Sold, ticket codes and check-in states are untouched; Absent never triggers a refund.
+const leaderStatuses: readonly DepartureStatus[] = ["Confirmed", "Running", "Ended"];
+export async function endLeaderDeparture(db: Database, identity: Actor, departureId: number): Promise<EndedDepartureDto> {
+  assertId(departureId);
+  return inTransaction(db, async (tx) => {
+    const actor = await requireActor(tx, identity);
+    requireRole(actor, ["Leader"]);
+    const current = await departures.lockDeparture(tx, departureId);
+    if (!current || !leaderStatuses.includes(current.status)) throw new AppError("NOT_FOUND", 404);
+    if (actor.role !== "Admin" && !await departures.isLeaderAssigned(tx, departureId, actor.user_id)) {
+      throw new AppError("NOT_FOUND", 404);
+    }
+    // A retry after a lost response is a success that changes nothing and writes no second audit row.
+    if (current.status === "Ended") return { departure_id: departureId, status: "Ended", changed: false };
+    if (current.status !== "Running") throw new AppError("RESOURCE_CONFLICT", 409);
+    await departures.updateDeparture(tx, departureId, { status: "Ended" });
+    await writeAudit(tx, actor.user_id, { action: "DepartureStatusChanged", record_id: departureId, from: "Running", to: "Ended" });
+    return { departure_id: departureId, status: "Ended", changed: true };
+  });
+}
+
+export const departureService = bindDb({ createDeparture, endLeaderDeparture, listManagedDepartures, readManagedDeparture, updateDeparture });

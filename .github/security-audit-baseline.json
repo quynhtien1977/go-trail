@@ -1,8 +1,8 @@
 {
-  "version": "1.5.0",
-  "reviewedAt": "2026-11-11",
-  "reviewDeadline": "2026-11-18T23:59:59Z",
-  "notes": "Reviewed 2026-11-11. Removed the resolved legacy minimatch 3.1.5 entry as it is no longer flagged by npm audit. Retain only unpatched development-tool deepmerge 4.3.1 until 2026-11-18T23:59:59Z or production release, whichever is earlier. All critical findings and any unmatched or out-of-scope advisory remain blocked. Do not use untrusted CLI registry/config input. No schema migration or database write is part of this baseline renewal.",
+  "version": "1.6.0",
+  "reviewedAt": "2026-11-16",
+  "reviewDeadline": "2026-12-02T23:59:59Z",
+  "notes": "Reviewed 2026-11-16; the user approved a two-week extension the same day. npm audit reports exactly one root advisory, the deepmerge entry below; the seven hono/@hono/node-server advisories published after 2026-11-11 were patched by upgrade in PR #37, not excepted. Retain only unpatched development-tool deepmerge 4.3.1 until 2026-12-02T23:59:59Z or production release, whichever is earlier. All critical findings and any unmatched or out-of-scope advisory remain blocked. Do not use untrusted CLI registry/config input. No schema migration or database write is part of this baseline renewal.",
   "exceptions": [
     {
       "id": "GHSA-gcqx-w48m-w2h4",
@@ -19,9 +19,9 @@
           "deepmerge"
         ]
       ],
-      "reachability": "Re-reviewed 2026-11-11 for baseline 1.5.0 renewal. Upstream latest deepmerge 4.3.1 still has no patched release. Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. The CSS bytes remain static. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the renewed deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
+      "reachability": "Re-reviewed 2026-11-16 for baseline 1.6.0 renewal, approved by the user the same day. The GitHub advisory still lists no first patched version (affected >= 4.2.0, <= 4.3.1) and the registry's latest deepmerge is 4.3.1, unchanged since 2023-03-16. The dependency chain is unchanged (shadcn@4.22.0 and @shadcn/registry@0.2.0 -> deepmerge@4.3.1). Go-Trail imports only shadcn/tailwind.css; no application or server code imports the shadcn JavaScript CLI or deepmerge. CLI merge inputs are repository-controlled configuration; do not run shadcn against untrusted registries/configuration. Re-review before production, enabling any JavaScript import, or the renewed deadline. This is a temporary development-tool exception, not a claim that deepmerge is fixed.",
       "source": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
-      "expiresAt": "2026-11-18T23:59:59Z"
+      "expiresAt": "2026-12-02T23:59:59Z"
     }
   ]
 }
