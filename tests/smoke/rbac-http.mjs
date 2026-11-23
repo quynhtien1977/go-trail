@@ -260,6 +260,9 @@ try {
     expires_at: new Date("2030-01-01"), responsible_user_id: actors.get("RouteMgr").user_id,
     responsible_name_snapshot: "RouteMgr fixture", responsible_role_snapshot: "RouteMgr" } });
   route("staff/customers", "/api/staff/customers", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/invoices", "/api/staff/invoices", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/invoices/[id]", `/api/staff/invoices/${directoryInvoice.invoice_id}`, ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/tickets", "/api/staff/tickets", ["RouteMgr", "Admin"], { GET: undefined });
   route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
   route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
   route("account/tickets", "/api/account/tickets", ["Customer", "Admin"], { GET: undefined });
@@ -325,7 +328,7 @@ try {
   });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
-  assert.equal(endpoints.length, 52);
+  assert.equal(endpoints.length, 55);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
