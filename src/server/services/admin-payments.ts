@@ -73,6 +73,7 @@ function summary(row: PaymentRow): AdminPaymentSummaryDto {
       expires_at: inv.expires_at.toISOString(),
       // Received minus due: negative is a shortfall, positive a B04 surplus that is kept and never refunded.
       difference: (BigInt(amount) - BigInt(inv.total_amount.toFixed(0))).toString(),
+      responsible_name_snapshot: inv.responsible_name_snapshot,
       customer: { user_id: inv.customer.user_id, full_name: inv.customer.full_name, email: inv.customer.email,
         phone: inv.customer.phone },
       departure: { departure_id: inv.departure.departure_id, trip_name: inv.departure.trip.name,
@@ -110,7 +111,7 @@ export async function readAdminPayment(db: Database, identity: Actor, paymentId:
     const base = summary(row);
     return { ...base, raw_payload: row.raw_payload,
       invoice: base.invoice && row.invoice && { ...base.invoice,
-        responsible_name_snapshot: row.invoice.responsible_name_snapshot, ticket_count: row.invoice.details.length } };
+        ticket_count: row.invoice.details.length } };
   }, { isolationLevel: "RepeatableRead" });
 }
 
