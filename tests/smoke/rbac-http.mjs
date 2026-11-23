@@ -298,7 +298,10 @@ try {
   route("checkin", "/api/checkin", ["Leader", "Admin"], { POST: () => ({ action: "CheckIn",
     departure_id: departures[3].departure_id, ticket_code: boardingTicket.ticket_code }) });
   endpoints.at(-1).success = 200;
-  assert.equal(endpoints.length, 44);
+  // L02: ending is idempotent, so the already Ended departure answers both allowed roles with 200.
+  route("leader/departures/[id]/end", `/api/leader/departures/${departures[5].departure_id}/end`, ["Leader", "Admin"], { POST: () => ({}) });
+  endpoints.at(-1).success = 200;
+  assert.equal(endpoints.length, 45);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 

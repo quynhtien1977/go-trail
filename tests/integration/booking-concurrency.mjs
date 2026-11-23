@@ -11,6 +11,7 @@ import { updateDeparture } from "../../src/server/services/departures.ts";
 import { updateAccountAccess } from "../../src/server/services/accounts.ts";
 import { recordSepayPayment } from "../../src/server/services/payments.ts";
 import { checkIn } from "../../src/server/services/checkin.ts";
+import { endLeaderDeparture } from "../../src/server/services/departures.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -356,6 +357,21 @@ try {
   assert.equal(unassigned[0].status, "rejected"); assert.equal(unassigned[0].reason.code, "NOT_FOUND");
   assert.equal((await checkInState(c.tickets[0].detail_id)).check_in_status, "Pending");
   pass("a departure Ended or a Leader unassigned while a scan waits is re-read under the lock; nothing is checked in.");
+
+  // L02: a Leader double-tapping "end" and Admin ending the same Running departure at once.
+  c = await checkInFixture();
+  await db.departure.update({ where: { departure_id: c.departure.departure_id }, data: { status: "Running" } });
+  const endings = await blocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [c.departure.departure_id],
+    () => [...Array.from({ length: 5 }, () => endLeaderDeparture(db, c.leader, c.departure.departure_id)),
+      endLeaderDeparture(db, c.actors.Admin, c.departure.departure_id), scan(c, c.leader, c.tickets[0].ticket_code)], undefined, 7);
+  assert.ok(endings.slice(0, 6).every(r => r.status === "fulfilled" && r.value.status === "Ended"), "every end request succeeds");
+  assert.equal(endings.slice(0, 6).filter(r => r.value.changed).length, 1, "exactly one request ends the departure");
+  assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged", record_id: String(c.departure.departure_id) } }), 1);
+  const lateScan = endings[6];
+  if (lateScan.status === "rejected") assert.equal(lateScan.reason.code, "CHECKIN_CLOSED");
+  else assert.equal(lateScan.value.result, "CheckedIn", "a scan that won the lock before the end committed first");
+  assert.equal((await db.invoiceDetail.findFirstOrThrow({ where: { detail_id: c.tickets[1].detail_id } })).status, "Valid");
+  pass("6 concurrent end requests and a scan on one Running departure: one transition, one audit row, tickets untouched.");
   console.log(`PASS: ${groups} PostgreSQL booking concurrency groups; independent connections, no remote database.`);
 } finally {
   await db?.$disconnect(); await pool?.end();

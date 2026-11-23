@@ -62,6 +62,15 @@ export function countValidTickets(db: DataClient, departureId: number) {
 export function readSetting(db: DataClient, key: string) {
   return db.systemSetting.findUnique({ where: { setting_key: key }, select: { setting_value: true } });
 }
+export function isLeaderAssigned(db: DataClient, departureId: number, userId: number) {
+  return db.departureStaff.count({
+    where: {
+      departure_id: departureId,
+      role_in_trip: "Leader",
+      staff: { user_id: userId, staff_type: "Leader", status: "Active" },
+    },
+  }).then((count) => count > 0);
+}
 export function updateDeparture(tx: Transaction, departureId: number, data: Prisma.DepartureUncheckedUpdateInput) {
   return tx.departure.update({ where: { departure_id: departureId }, data });
 }
