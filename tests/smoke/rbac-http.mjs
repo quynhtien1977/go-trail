@@ -312,7 +312,20 @@ try {
   route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
     POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
   });
-  assert.equal(endpoints.length, 50);
+  // P03: Admin payment reconciliation (read-only).
+  const paymentFixture = await db.payment.create({
+    data: {
+      invoice_id: invoice.invoice_id,
+      amount: "500000",
+      transaction_id: "RBAC-PAYMENT-1",
+      reference_code: "REF-RBAC-1",
+      status: "NeedsReview",
+      raw_payload: "{}",
+    },
+  });
+  route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
+  route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
+  assert.equal(endpoints.length, 52);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
