@@ -8,7 +8,7 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {
   try {
     const actor = await getCurrentActor();
-    requireRole(actor, ["RouteMgr", "HRMgr"]);
+    requireRole(actor, ["HRMgr"]);
     const { id } = await context.params;
     return json(await inventoryService.readSupplyItem(actor, parseId(id)));
   } catch (error) {

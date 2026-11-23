@@ -1,0 +1,6 @@
+# Code owners are asked to review automatically when a pull request touches their paths.
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Schema and migrations are coordinated by Tiến An (Jira: "An điều phối schema/migrations").
+# The branch ruleset does not yet require code-owner approval, so this requests a review without blocking a merge.
+/prisma/ @quynhtien1977

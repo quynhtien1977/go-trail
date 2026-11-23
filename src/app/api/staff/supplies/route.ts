@@ -1,18 +1,14 @@
 import { getCurrentActor } from "@/server/auth/session";
 import { requireRole } from "@/server/auth/authorization";
-import { assertSameOrigin, errorResponse, json, readJson } from "@/server/http";
+import { assertSameOrigin, errorResponse, json, readJson, readQuery } from "@/server/http";
 import { inventoryService } from "@/server/services/inventory";
 
 export async function GET(request: Request) {
   try {
     const actor = await getCurrentActor();
-    requireRole(actor, ["RouteMgr", "HRMgr"]);
-    const url = new URL(request.url);
-    const category = url.searchParams.get("category") || undefined;
-    const is_active = url.searchParams.get("is_active") || undefined;
-    const page = url.searchParams.get("page") || undefined;
-    const pageSize = url.searchParams.get("pageSize") || undefined;
-    return json(await inventoryService.listSupplyItems(actor, { category, is_active, page, pageSize }));
+    requireRole(actor, ["HRMgr"]);
+    // Strict query: unknown or repeated parameters are rejected instead of silently ignored.
+    return json(await inventoryService.listSupplyItems(actor, readQuery(request)));
   } catch (error) {
     return errorResponse(error);
   }

@@ -58,9 +58,11 @@ async function hrOrAdmin(db: AuthDatabase, identity: Actor) {
   return actor;
 }
 
+// PRD 3.2/7.12: the whole catalog and stock belong to HRMgr/Admin. RouteMgr and Leader read only the supplies issued
+// to departures they are responsible for or assigned to, which arrives with I03 (issue to departure).
 async function staffReader(db: AuthDatabase, identity: Actor) {
   const actor = await requireActor(db, identity);
-  requireRole(actor, ["RouteMgr", "HRMgr"]);
+  requireRole(actor, ["HRMgr"]);
   return actor;
 }
 
@@ -139,24 +141,27 @@ export async function listSupplyItems(db: Database, identity: Actor, input: unkn
   };
 }
 
+// A retried receipt (same idempotency key and payload) returns the first transaction instead of adding stock twice.
+// The key is checked after the item lock: a concurrent retry of the same receipt waits on that lock and then sees the
+// committed row. Postgres aborts the transaction on a unique violation, so the P2002 path never queries again; it can
+// only be the same key reused for another item (a different lock), which is a conflict.
+function sameReceipt(row: { item_id: number; quantity: number; txn_type: string; note: string | null },
+  data: { item_id: number; quantity: number; note?: string | null }) {
+  return row.item_id === data.item_id && row.quantity === data.quantity && row.txn_type === "Receive"
+    && (row.note ?? null) === (data.note?.trim() || null);
+}
+
 export async function receiveSupply(db: Database, identity: Actor, input: unknown): Promise<SupplyTransactionDto> {
   const data = parse(receiveSupplySchema, input);
   return inTransaction(db, async (tx) => {
     const actor = await hrOrAdmin(tx, identity);
-
-    // Idempotency check before lock
-    const existing = await inventory.findSupplyTransactionByKey(tx, data.idempotency_key);
-    if (existing) {
-      const samePayload = existing.item_id === data.item_id
-        && existing.quantity === data.quantity
-        && existing.txn_type === "Receive"
-        && (existing.note ?? null) === (data.note?.trim() || null);
-      if (samePayload) return txnDto(existing);
-      throw new AppError("RESOURCE_CONFLICT", 409);
-    }
-
     const item = await inventory.lockSupplyItem(tx, data.item_id);
     if (!item) throw new AppError("NOT_FOUND", 404);
+    const existing = await inventory.findSupplyTransactionByKey(tx, data.idempotency_key);
+    if (existing) {
+      if (sameReceipt(existing, data)) return txnDto(existing);
+      throw new AppError("RESOURCE_CONFLICT", 409);
+    }
     if (!item.is_active) throw new AppError("RESOURCE_CONFLICT", 409);
 
     let created;
@@ -171,17 +176,7 @@ export async function receiveSupply(db: Database, identity: Actor, input: unknow
         note: data.note?.trim() || null,
       });
     } catch (error) {
-      if (inventory.isUniqueConflict(error)) {
-        const retry = await inventory.findSupplyTransactionByKey(tx, data.idempotency_key);
-        if (retry) {
-          const samePayload = retry.item_id === data.item_id
-            && retry.quantity === data.quantity
-            && retry.txn_type === "Receive"
-            && (retry.note ?? null) === (data.note?.trim() || null);
-          if (samePayload) return txnDto(retry);
-        }
-        throw new AppError("RESOURCE_CONFLICT", 409);
-      }
+      if (inventory.isUniqueConflict(error)) throw new AppError("RESOURCE_CONFLICT", 409);
       throw error;
     }
 
