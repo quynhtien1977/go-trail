@@ -265,6 +265,7 @@ try {
   route("staff/tickets", "/api/staff/tickets", ["RouteMgr", "Admin"], { GET: undefined });
   route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
   route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
+  route("account/tickets", "/api/account/tickets", ["Customer", "Admin"], { GET: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -281,7 +282,53 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 44);
+  // L01: a Paid/Valid ticket on the Confirmed departure the Leader is assigned to. Its owner is a dedicated
+  // account outside `actors`, so the Customer-facing blocks below keep their exact ticket and booking lists.
+  const boardingOwner = await db.user.create({ data: { email: "boarding@rbac.example.test", password_hash: "unused",
+    full_name: "Boarding owner", phone: "0901234567", role: "Customer" } });
+  const boardingInvoice = await db.invoice.create({ data: { customer_id: boardingOwner.user_id, departure_id: departures[3].departure_id,
+    payment_code: "RBAC-BOARDING", status: "Paid", total_amount: "500000", expires_at: new Date("2030-01-01") } });
+  const boardingVehicle = await db.departureVehicle.findFirstOrThrow({ where: { departure_id: departures[3].departure_id } });
+  const boardingSeat = await db.departureSeat.create({ data: { dep_vehicle_id: boardingVehicle.dep_vehicle_id, seat_id: otherSeat.seat_id,
+    status: "Sold", invoice_id: boardingInvoice.invoice_id } });
+  const boardingPickup = await db.departurePickup.create({ data: { departure_id: departures[3].departure_id, pickup_id: pickup.pickup_id,
+    pickup_time: new Date("2030-01-02") } });
+  const boardingTicket = await db.invoiceDetail.create({ data: { invoice_id: boardingInvoice.invoice_id, dep_seat_id: boardingSeat.dep_seat_id,
+    dep_pickup_id: boardingPickup.dep_pickup_id, passenger_name: "Boarding passenger", passenger_phone: "0901234567",
+    emergency_contact: "Fixture contact", health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: "TK0000000000000000B0A2" } });
+  route("leader/departures/[id]/manifest", `/api/leader/departures/${departures[3].departure_id}/manifest`, ["Leader", "Admin"], { GET: undefined });
+  // A scan is idempotent, so both allowed roles succeed: the first checks in, the second reports AlreadyCheckedIn.
+  route("checkin", "/api/checkin", ["Leader", "Admin"], { POST: () => ({ action: "CheckIn",
+    departure_id: departures[3].departure_id, ticket_code: boardingTicket.ticket_code }) });
+  endpoints.at(-1).success = 200;
+  // L02: ending is idempotent, so the already Ended departure answers both allowed roles with 200.
+  route("leader/departures/[id]/end", `/api/leader/departures/${departures[5].departure_id}/end`, ["Leader", "Admin"], { POST: () => ({}) });
+  endpoints.at(-1).success = 200;
+  // I02: supply catalog and stock receipt.
+  const fixtureItem = await db.supplyItem.create({
+    data: { name: "Vật tư mẫu RBAC", category: "Gear", unit: "hộp", is_active: true },
+  });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { POST: () => ({ name: `Vật tư ${next()}`, category: "Gear", unit: "hộp" }) });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { PATCH: () => ({ unit: "gói" }) });
+  route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
+    POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
+  });
+  // P03: Admin payment reconciliation (read-only).
+  const paymentFixture = await db.payment.create({
+    data: {
+      invoice_id: invoice.invoice_id,
+      amount: "500000",
+      transaction_id: "RBAC-PAYMENT-1",
+      reference_code: "REF-RBAC-1",
+      status: "NeedsReview",
+      raw_payload: "{}",
+    },
+  });
+  route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
+  route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
+  assert.equal(endpoints.length, 55);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
@@ -590,6 +637,11 @@ try {
   assert.equal(await deniedSnapshot(), beforeWebhook, "rejected webhook calls must not write anything, not even a payment row");
 
   const keyed = { authorization: `Apikey ${sepayKey}` };
+  // This block checks transport, authentication and recording over real HTTP, not confirmation (P02 has its own
+  // unit and PostgreSQL race tests). RBAC-OWN has no tickets, so P02 always holds its transfers for review and the
+  // business rows below must stay unchanged. Assert that precondition instead of relying on it silently.
+  assert.equal(await db.invoiceDetail.count({ where: { invoice_id: invoice.invoice_id } }), 0,
+    "fixture precondition: RBAC-OWN has no tickets; give this block its own invoice before adding any");
   const businessBefore = await businessSnapshot();
   const outgoing = await request(webhook, null, { body: transfer({ id: 70002, transferType: "out" }), extraHeaders: keyed });
   assert.equal(outgoing.status, 200); assert.deepEqual(outgoing.body, { success: true });
@@ -604,19 +656,25 @@ try {
   assert.equal(recorded.length, 1, "retries of one transaction_id must leave exactly one row");
   assert.equal(recorded[0].invoice_id, invoice.invoice_id, "the transfer attaches to the invoice named by payment_code");
   assert.equal(recorded[0].amount.toFixed(0), "500000");
-  assert.equal(recorded[0].status, "NeedsReview", "P01 records only; P02 confirms Paid/Sold/Valid");
+  assert.equal(recorded[0].status, "NeedsReview", "an invoice without tickets is never confirmed (P02)");
 
   const unmatched = await request(webhook, null, { body: transfer({ id: 70003, code: "NO-SUCH-CODE" }), extraHeaders: keyed });
   assert.deepEqual(unmatched.body, { success: true });
   assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70003" } })).invoice_id, null);
+
+  // SePay forwards the code in the customer's letter case (Test mode, 16/11/2026); it must still find the invoice.
+  const lowercase = await request(webhook, null, { body: transfer({ id: 70005, code: "rbac-own" }), extraHeaders: keyed });
+  assert.deepEqual(lowercase.body, { success: true });
+  assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70005" } })).invoice_id, invoice.invoice_id,
+    "a lowercase payment code must reach the same invoice as its uppercase form");
 
   for (const bad of [{ transferAmount: -1 }, { transferAmount: 1.5 }, { transferType: "IN" }, { id: 0 }]) {
     expect(await request(webhook, null, { body: transfer({ ...bad, id: bad.id ?? 70004 }), extraHeaders: keyed }), 422, "INVALID_INPUT");
   }
   assert.equal(await db.payment.count({ where: { transaction_id: "70004" } }), 0);
   assert.equal(await businessSnapshot(), businessBefore,
-    "recording a payment must not change invoices, tickets, seats, refunds or audits");
-  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and never alters invoices, seats, tickets or audits.");
+    "transfers held for review must not change invoices, tickets, seats, refunds or audits");
+  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and transfers held for review never alter invoices, seats, tickets or audits.");
 
   // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
   const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
@@ -667,6 +725,74 @@ try {
   assert.equal(soldPolicySeat.status, "Sold"); assert.equal(soldPolicySeat.locked_until, null);
   assert.equal(await db.refund.count(), 0);
   console.log("PASS: C00 all five roles, including Admin, cannot cancel/refund/reschedule through direct HTTP calls; Paid/Valid/Sold and all financial/history rows stay unchanged.");
+
+  // P04: "my tickets" over real HTTP. OtherCustomer now owns exactly one issued ticket (the C00 fixture above).
+  const ownTickets = (query = "") => ({ method: "GET", route: "account/tickets", path: `/api/account/tickets${query}` });
+  const ticketKeys = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "hold_expired", "status", "check_in_status", "ticket_code",
+    "trip_name", "departure_id", "departure_date", "passenger_name", "seat_name", "pickup", "unit_price", "responsible_name_snapshot"].sort();
+  const beforeTickets = await deniedSnapshot();
+  const owner = await request(ownTickets("?status=valid"), actors.get("OtherCustomer"));
+  expect(owner, 200); noSecrets(owner.body.data);
+  assert.deepEqual(owner.body.data.items.map(t => t.detail_id), [paidTicket.detail_id]);
+  assert.deepEqual(Object.keys(owner.body.data.items[0]).sort(), ticketKeys);
+  assert.equal(owner.body.data.items[0].ticket_code, "C00-VALID-TICKET", "the owner sees the issued code of a Paid/Valid ticket");
+  for (const leak of ["passenger_phone", "emergency_contact", "health_declaration", "customer_id", "responsible_user_id", "Fixture contact"]) {
+    assert.ok(!JSON.stringify(owner.body.data).includes(leak), `tickets must not expose ${leak}`);
+  }
+  const stranger = await request(ownTickets(), actors.get("Customer"));
+  expect(stranger, 200);
+  assert.ok(!stranger.body.data.items.some(t => t.detail_id === paidTicket.detail_id), "another customer's ticket is never listed");
+  assert.ok(!JSON.stringify(stranger.body.data).includes("C00-VALID-TICKET"), "nor its code");
+  assert.ok(stranger.body.data.items.every(t => t.ticket_code === null || (t.invoice_status === "Paid" && t.status === "Valid")));
+  // Admin may hold seats for itself (PRD 11, K02), so its list can be non-empty; it must still be only its own.
+  const adminTickets = await request(ownTickets("?pageSize=50"), actors.get("Admin"));
+  expect(adminTickets, 200);
+  const adminInvoiceIds = new Set((await db.invoice.findMany({ where: { customer_id: actors.get("Admin").user_id },
+    select: { invoice_id: true } })).map(row => row.invoice_id));
+  assert.ok(adminTickets.body.data.items.every(t => adminInvoiceIds.has(t.invoice_id)),
+    "Admin passes the Customer route but reads only tickets of its own invoices");
+  assert.ok(!adminTickets.body.data.items.some(t => t.detail_id === paidTicket.detail_id));
+  for (const query of ["?status=all", "?status=Valid", "?customer_id=1", "?pageSize=51", "?page=0", "?status=valid&status=pending"]) {
+    expect(await request(ownTickets(query), actors.get("OtherCustomer")), 422, "INVALID_INPUT");
+  }
+  assert.equal(await deniedSnapshot(), beforeTickets, "reading tickets cannot change any business or audit row");
+  console.log("PASS: P04 my tickets returns only the caller's tickets with an allowlisted contract, shows a code only for Paid/Valid, refuses malformed queries and never mutates.");
+
+  // L01: manifest and QR check-in over real HTTP. The matrix above already checked the boarding ticket in.
+  const manifestRead = endpoints.find(e => e.route === "leader/departures/[id]/manifest");
+  const checkinWrite = endpoints.find(e => e.route === "checkin");
+  const scanBody = (body) => ({ ...checkinWrite, body: () => body });
+  const beforeCheckin = await deniedSnapshot();
+  const crewManifest = await request(manifestRead, actors.get("Leader"));
+  expect(crewManifest, 200); noSecrets(crewManifest.body.data);
+  assert.deepEqual(Object.keys(crewManifest.body.data).sort(), ["crew", "departure", "passengers", "server_time", "summary"]);
+  assert.deepEqual(crewManifest.body.data.passengers.map(p => p.detail_id), [boardingTicket.detail_id]);
+  assert.deepEqual(crewManifest.body.data.summary, { total: 1, checked_in: 1, absent: 0, pending: 0 });
+  assert.doesNotMatch(JSON.stringify(crewManifest.body.data), /TK0000000000000000B0A2|ticket_code|RBAC-BOARDING|payment|email|health/,
+    "the manifest carries no QR code, payment, account or health data");
+  expect(await request(manifestRead, actors.get("OtherLeader")), 404, "NOT_FOUND");
+  expect(await request({ ...manifestRead, path: `/api/leader/departures/${departures[2].departure_id}/manifest` }, actors.get("Leader")), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "2147483648", "bad"]) {
+    expect(await request({ ...manifestRead, path: `/api/leader/departures/${id}/manifest` }, actors.get("Leader")), 422, "INVALID_INPUT");
+  }
+  const rescan = await request(checkinWrite, actors.get("Leader"));
+  expect(rescan, 200);
+  assert.equal(rescan.body.data.result, "AlreadyCheckedIn"); assert.equal(rescan.body.data.changed, false);
+  const confirmed = departures[3].departure_id;
+  expect(await request(scanBody({ action: "CheckIn", departure_id: confirmed, ticket_code: "TK00000000000000000000" }), actors.get("Leader")),
+    404, "TICKET_NOT_FOUND");
+  expect(await request(scanBody({ action: "CheckIn", departure_id: departures[5].departure_id, ticket_code: boardingTicket.ticket_code }),
+    actors.get("Leader")), 409, "CHECKIN_CLOSED");
+  expect(await request(scanBody({ action: "CheckIn", departure_id: confirmed, ticket_code: boardingTicket.ticket_code }),
+    actors.get("OtherLeader")), 404, "NOT_FOUND");
+  expect(await request(scanBody({ action: "MarkAbsent", departure_id: confirmed, detail_id: boardingTicket.detail_id }),
+    actors.get("Leader")), 409, "ALREADY_CHECKED_IN");
+  for (const body of [{ action: "CheckIn", departure_id: confirmed }, { action: "CheckIn", departure_id: confirmed,
+    ticket_code: boardingTicket.ticket_code, check_in_status: "Absent" }, { action: "CheckIn", departure_id: confirmed, ticket_code: "x".repeat(1100) }]) {
+    expect(await request(scanBody(body), actors.get("Leader")), body.ticket_code?.length === 1100 ? 413 : 422, "INVALID_INPUT");
+  }
+  assert.equal(await deniedSnapshot(), beforeCheckin, "reads, repeated scans and rejected check-ins change nothing");
+  console.log("PASS: L01 manifest is scoped to the assigned Leader and Confirmed/Running/Ended, omits codes and money; check-in over HTTP is idempotent with distinct errors and no writes on rejection.");
 
   // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
   const beforeQuota = await deniedSnapshot();

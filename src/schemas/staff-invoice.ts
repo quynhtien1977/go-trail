@@ -30,7 +30,8 @@ export const staffInvoiceQuerySchema = z.strictObject({
 export const staffTicketQuerySchema = z.strictObject({
   page: pageField(10000, 1),
   pageSize: pageField(100, 20),
-  ticket_code: z.string().trim().max(100).optional(),
+  // Exact lookup only (the customer reads the code aloud); a ticket code is never listed or matched partially.
+  ticket_code: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/).transform((code) => code.toUpperCase()).optional(),
   departure_id: z.union([id, z.string().regex(/^\d+$/).transform(Number)]).optional(),
   passenger_phone: z.string().trim().max(20).optional(),
   passenger_name: z.string().trim().max(100).optional(),
@@ -67,9 +68,7 @@ export type StaffInvoiceTicketDto = {
   passenger_name: string;
   passenger_phone: string;
   emergency_contact: string;
-  health_declaration: boolean;
   unit_price: string;
-  ticket_code: string | null;
   status: TicketStatus;
   check_in_status: CheckInStatus;
   check_in_time: string | null;
@@ -81,10 +80,10 @@ export type StaffInvoiceTicketDto = {
   };
 };
 
+// Status-level payment view (PRD 3.2: RouteMgr sees the state of its invoices, not raw payments). Bank references
+// and payloads stay in the Admin reconciliation API (P03).
 export type StaffInvoicePaymentDto = {
   payment_id: number;
-  transaction_id: string;
-  reference_code: string;
   amount: string;
   status: "Success" | "NeedsReview";
   created_at: string;
@@ -95,10 +94,10 @@ export type StaffInvoiceDetailDto = StaffInvoiceSummaryDto & {
   payments: StaffInvoicePaymentDto[];
 };
 
+// No ticket_code anywhere in M01: the code is the boarding QR and only its owner sees it (P04).
 export type StaffTicketSearchResultDto = {
   detail_id: number;
   invoice_id: number;
-  ticket_code: string | null;
   passenger_name: string;
   passenger_phone: string;
   unit_price: string;

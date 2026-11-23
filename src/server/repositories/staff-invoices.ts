@@ -109,9 +109,7 @@ export function findStaffInvoiceDetail(db: DataClient, invoiceId: number, respon
           passenger_name: true,
           passenger_phone: true,
           emergency_contact: true,
-          health_declaration: true,
           unit_price: true,
-          ticket_code: true,
           status: true,
           check_in_status: true,
           check_in_time: true,
@@ -129,8 +127,6 @@ export function findStaffInvoiceDetail(db: DataClient, invoiceId: number, respon
         orderBy: [{ created_at: "desc" }],
         select: {
           payment_id: true,
-          transaction_id: true,
-          reference_code: true,
           amount: true,
           status: true,
           created_at: true,
@@ -151,7 +147,7 @@ export async function pageStaffTickets(db: DataClient, filters: TicketFilters) {
 
   const where: Prisma.InvoiceDetailWhereInput = {
     ...scopeCondition,
-    ...(filters.ticketCode ? { ticket_code: { contains: filters.ticketCode, mode: "insensitive" } } : {}),
+    ...(filters.ticketCode ? { ticket_code: filters.ticketCode } : {}),
     ...(filters.departureId ? { invoice: { departure_id: filters.departureId } } : {}),
     ...(filters.passengerPhone ? { passenger_phone: { contains: filters.passengerPhone } } : {}),
     ...(filters.passengerName ? { passenger_name: { contains: filters.passengerName, mode: "insensitive" } } : {}),
@@ -164,7 +160,6 @@ export async function pageStaffTickets(db: DataClient, filters: TicketFilters) {
     select: {
       detail_id: true,
       invoice_id: true,
-      ticket_code: true,
       passenger_name: true,
       passenger_phone: true,
       unit_price: true,
