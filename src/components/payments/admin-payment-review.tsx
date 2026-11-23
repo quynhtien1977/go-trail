@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { ClipboardCheck, Search } from "lucide-react";
 import { formatVnd, formatVietnamDateTime } from "@/lib/catalog-client";
-import { privateReadScope, type PaymentReviewView, type PrivatePageSource } from "@/lib/payment-ui";
+import { adminPaymentSource, privateReadScope, type PaymentReviewView, type PrivatePageSource } from "@/lib/payment-ui";
 import { usePrivatePage } from "./use-private-page";
 import { PrivateReadNotice } from "./private-read-notice";
 import { PaymentDetailsDialog } from "./payment-details-dialog";
@@ -17,7 +17,8 @@ function PaymentStatus({ status }: { status: PaymentReviewView["status"] }) {
   return <span className={`inline-block whitespace-nowrap rounded px-2 py-1 text-xs font-semibold ${status === "NeedsReview" ? "bg-[#FFF8E1] text-[#8A5A00]" : "bg-[#E8F5E9] text-[#186734]"}`}>{status === "NeedsReview" ? "Chờ đối soát" : "Đã ghi nhận"}</span>;
 }
 
-export function AdminPaymentReview({ source }: { source?: PrivatePageSource<PaymentReviewView> }) {
+// Reads P03 /api/admin/payments by default (read-only); tests may inject another source.
+export function AdminPaymentReview({ source = adminPaymentSource }: { source?: PrivatePageSource<PaymentReviewView> }) {
   const session = useSession();
   const identity = privateReadScope("payments", session.status, session.data?.user);
   return <AdminPaymentWorkspace key={`${session.status}:${identity}`} source={source} />;

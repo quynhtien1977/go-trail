@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Ticket, Search } from "lucide-react";
 import { formatVnd, formatVietnamDateTime } from "@/lib/catalog-client";
-import { invoiceLookupPath, issuedTicketCode, privateReadScope, ticketStatusLabel, type PrivatePageSource, type TicketView } from "@/lib/payment-ui";
+import { customerTicketSource, invoiceLookupPath, issuedTicketCode, privateReadScope, ticketStatusLabel, type PrivatePageSource, type TicketView } from "@/lib/payment-ui";
 import { usePrivatePage } from "./use-private-page";
 import { PrivateReadNotice } from "./private-read-notice";
 import { PaymentDetailsDialog } from "./payment-details-dialog";
@@ -15,7 +15,8 @@ import { TicketQr } from "./ticket-qr";
 const control = "min-h-11 rounded-[5px] border border-[#6B7280] bg-white px-3 text-sm disabled:bg-neutral-100 disabled:text-[#5C636A]";
 const dateOptions: Intl.DateTimeFormatOptions = { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" };
 
-export function CustomerTickets({ source }: { source?: PrivatePageSource<TicketView> }) {
+// Reads P04 /api/account/tickets by default; tests may inject another source.
+export function CustomerTickets({ source = customerTicketSource }: { source?: PrivatePageSource<TicketView> }) {
   const session = useSession();
   const identity = privateReadScope("tickets", session.status, session.data?.user);
   return <CustomerTicketsWorkspace key={`${session.status}:${identity}`} source={source} />;
