@@ -12,6 +12,7 @@ import { updateAccountAccess } from "../../src/server/services/accounts.ts";
 import { recordSepayPayment } from "../../src/server/services/payments.ts";
 import { checkIn } from "../../src/server/services/checkin.ts";
 import { endLeaderDeparture } from "../../src/server/services/departures.ts";
+import { createSupplyItem, readSupplyItem, receiveSupply } from "../../src/server/services/inventory.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -372,6 +373,23 @@ try {
   else assert.equal(lateScan.value.result, "CheckedIn", "a scan that won the lock before the end committed first");
   assert.equal((await db.invoiceDetail.findFirstOrThrow({ where: { detail_id: c.tickets[1].detail_id } })).status, "Valid");
   pass("6 concurrent end requests and a scan on one Running departure: one transition, one audit row, tickets untouched.");
+
+  // I02: a retried stock receipt racing itself on one item. Retries return the first receipt, never add stock twice.
+  await fixture();
+  await pool.query("TRUNCATE supply_items RESTART IDENTITY CASCADE");
+  const storeUser = await db.user.create({ data: { email: "hr@concurrency.example.test", password_hash: "unused",
+    full_name: "HR", phone: "0901234567", role: "HRMgr" } });
+  const storekeeper = { user_id: storeUser.user_id, role: "HRMgr", auth_version: 0 };
+  const supply = await createSupplyItem(db, storekeeper, { name: "Concurrency water", category: "Drink", unit: "chai" });
+  const receipt = { item_id: supply.item_id, quantity: 24, idempotency_key: "supply-race-key-000001" };
+  const receipts = await blocked("SELECT item_id FROM supply_items WHERE item_id=$1 FOR UPDATE", [supply.item_id],
+    () => Array.from({ length: 6 }, () => receiveSupply(db, storekeeper, receipt)), undefined, 6);
+  assert.ok(receipts.every(r => r.status === "fulfilled"), "every retry is answered, none fails with a server error");
+  assert.equal(new Set(receipts.map(r => r.value.txn_id)).size, 1, "all retries return the same receipt");
+  assert.equal(await db.supplyTransaction.count(), 1);
+  assert.equal((await readSupplyItem(db, storekeeper, supply.item_id)).on_hand, 24, "stock is added once");
+  assert.equal(await db.auditLog.count({ where: { action: "SupplyReceived" } }), 1);
+  pass("6 concurrent retries of one stock receipt: one ledger row, one audit row, stock added once.");
   console.log(`PASS: ${groups} PostgreSQL booking concurrency groups; independent connections, no remote database.`);
 } finally {
   await db?.$disconnect(); await pool?.end();

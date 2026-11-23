@@ -301,7 +301,18 @@ try {
   // L02: ending is idempotent, so the already Ended departure answers both allowed roles with 200.
   route("leader/departures/[id]/end", `/api/leader/departures/${departures[5].departure_id}/end`, ["Leader", "Admin"], { POST: () => ({}) });
   endpoints.at(-1).success = 200;
-  assert.equal(endpoints.length, 45);
+  // I02: supply catalog and stock receipt.
+  const fixtureItem = await db.supplyItem.create({
+    data: { name: "Vật tư mẫu RBAC", category: "Gear", unit: "hộp", is_active: true },
+  });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { POST: () => ({ name: `Vật tư ${next()}`, category: "Gear", unit: "hộp" }) });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { PATCH: () => ({ unit: "gói" }) });
+  route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
+    POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
+  });
+  assert.equal(endpoints.length, 50);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 

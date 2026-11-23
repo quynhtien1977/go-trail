@@ -670,12 +670,13 @@ Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn h
 - Handler → bound `bookingService.holdSeats` → policy service → repository Redis; sau khi được nhận mới vào transaction K02. Không gọi Redis khi đang giữ khóa tài nguyên SQL; transaction vẫn xác minh lại actor và toàn bộ điều kiện K02. 429/503 không tạo/gia hạn invoice, không sửa vé/ghế; idempotent replay giữ nguyên invoice/expires_at. Không thêm migration, cron, payment hoặc UI trong K04.
 - Đã kiểm định local: 174 tests, 833 HTTP checks/33 protected methods, 8 nhóm Auth HTTP và kiểm tra quota/TTL/concurrency trên Redis thật. Đây chưa phải CI/review chéo hoặc nghiệm thu UI K05; bằng chứng chi tiết trong tài liệu development nội bộ.
 
-### 7.12. Sổ vật tư I01 — schema, chưa có API
+### 7.12. Sổ vật tư I01 (schema) và I02 (danh mục, nhập kho)
 
 - Một kho MVP. `SUPPLY_ITEMS` là danh mục: tên duy nhất, nhóm Food/Drink/Gear và `unit` mô tả một đơn vị đếm rõ ràng (ví dụ "chai 500ml", "gói 100g"); mọi số lượng là số nguyên của đơn vị đó. Ngừng dùng bằng `is_active = false`, không xóa.
 - `SUPPLY_TRANSACTIONS` là sổ cái chỉ ghi thêm: trigger chặn UPDATE/DELETE (SQLSTATE 23001); sửa sai bằng phiếu bù (Receive/Return/Dispose). `quantity > 0`, chiều cộng/trừ lấy từ `txn_type`. Issue (cấp cho chuyến) và Return (hoàn nhập dư) bắt buộc `departure_id`; Receive (nhập kho) và Dispose (xuất hủy/hao hụt) không có chuyến. Mỗi phiếu có `created_by_user_id` và `idempotency_key` UNIQUE toàn bảng, đúng format 16–64 ký tự `[A-Za-z0-9_-]`. FK RESTRICT tới vật tư, chuyến, người thao tác.
 - Tồn kho = SUM(Receive + Return) − SUM(Issue + Dispose) theo `item_id`, không lưu cột tồn. Tồn của một chuyến = Issue − Return theo (`item_id`, `departure_id`).
 - Việc của I02/I03 khi viết service (DB không kiểm): khóa row `supply_items` `FOR UPDATE` trước khi tính tồn để Issue/Dispose không làm tồn âm; Return không vượt số đã cấp ròng cho chuyến; chỉ vật tư active nhận phiếu mới; trạng thái chuyến được cấp/hoàn; retry cùng key trả phiếu cũ, cùng key khác payload trả 409. Quyền theo ma trận 3.2: HRMgr/Admin ghi; RouteMgr/Leader chỉ đọc vật tư của chuyến được phân công.
+- I02 (`SCRUM-68`): `GET/POST /api/staff/supplies`, `GET/PATCH /api/staff/supplies/:id`, `POST /api/staff/supplies/receive`, chỉ HRMgr/Admin (đọc toàn bộ danh mục/tồn cũng vậy; RouteMgr/Leader đọc vật tư theo chuyến ở I03). Không có DELETE: ngừng dùng bằng `is_active=false`. Tồn = tổng ledger, không cột cache. Nhập kho bắt buộc `idempotency_key`: khóa item `FOR UPDATE` rồi mới tra key, nên retry đồng thời cùng key trả đúng phiếu đầu (test đua PostgreSQL), cùng key khác payload trả 409. Audit `SupplyItemCreated`/`SupplyItemUpdated`/`SupplyReceived` cùng transaction.
 
 ## 8. Thanh toán và hoàn tiền
 
@@ -765,7 +766,7 @@ Lịch sử đặt vé giới hạn 50 hóa đơn mới nhất cho tra cứu h�
 | `/api/admin/payments` | Đối soát NeedsReview theo contract P03/B04 | Admin |
 | `/api/cron/*` | Tác vụ nền | `CRON_SECRET` |
 
-**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền; schema I01 có (6.3, 7.12), API chưa có.
+**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền; schema I01 có (6.3, 7.12); API I02 danh mục/nhập kho có, I03 xuất/cấp/hoàn nhập chưa có.
 
 ## 12. Yêu cầu phi chức năng
 
