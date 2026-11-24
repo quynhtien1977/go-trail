@@ -7,6 +7,7 @@ import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { assignStaff, assignVehicle } from "../../src/server/services/assignments.ts";
+import { updateAccountAccess } from "../../src/server/services/accounts.ts";
 import { updateDeparture } from "../../src/server/services/departures.ts";
 
 // Explicit integration gate: disposable local PostgreSQL only, never .env or DATABASE_URL.
@@ -112,6 +113,16 @@ try {
   assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: left.departure_id } })).status, "Draft");
   assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged" } }), 0);
   console.log("PASS: concurrent owner lock blocks opening and rolls back status/audit.");
+
+  const secondAdmin = await db.user.create({ data: { role: "Admin", email: "second@admin.example.test",
+    password_hash: "unused", full_name: "Second admin", phone: "0901234567" } });
+  const demotions = await whileBlocked("SELECT pg_advisory_xact_lock(717002)", [], () => [
+    updateAccountAccess(db, actors.Admin, secondAdmin.user_id, { role: "Customer" }),
+    updateAccountAccess(db, secondAdmin, actors.Admin.user_id, { role: "Customer" }),
+  ], undefined, 2);
+  assert.equal(demotions.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(await db.user.count({ where: { role: "Admin", status: "Active" } }), 1);
+  console.log("PASS: simultaneous Admin demotions preserve one active Admin.");
 } finally {
   await db?.$disconnect();
   await pool?.end();
