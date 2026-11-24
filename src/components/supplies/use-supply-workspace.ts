@@ -22,14 +22,14 @@ export type SupplyWorkspacePhase =
 
 export function useSupplyWorkspace(
   portal: "staff" | "leader",
-  source: SupplyWorkspaceSource | undefined,
+  source: SupplyWorkspaceSource | null | undefined,
   query: SupplyWorkspaceQuery,
 ) {
   const { data: session, status } = useSession();
   const role = session?.user?.role;
   const scope = supplyReadScope(portal, status, session?.user);
   const capabilities = supplyRoleCapabilities(role);
-  const { departureId = null, category = "all", search = "" } = query;
+  const { departureId = null, category = "all" } = query;
 
   const [revision, setRevision] = useState(0);
   const [context, setContext] = useState({ scope, source, epoch: 0 });
@@ -38,7 +38,7 @@ export function useSupplyWorkspace(
     setContext({ scope, source, epoch: context.epoch + 1 });
   }
 
-  const requestKey = JSON.stringify([scope, departureId, category, search, revision, context.epoch]);
+  const requestKey = JSON.stringify([scope, departureId, category, revision, context.epoch]);
   const [snapshot, setSnapshot] = useState<{
     key: string;
     source: SupplyWorkspaceSource;
@@ -53,7 +53,7 @@ export function useSupplyWorkspace(
     async function load() {
       try {
         const result = await source!.readWorkspace(
-          { departureId, category, search },
+          { departureId, category },
           controller.signal,
         );
         if (
@@ -82,7 +82,7 @@ export function useSupplyWorkspace(
 
     void load();
     return () => controller.abort();
-  }, [scope, source, departureId, category, search, requestKey]);
+  }, [scope, source, departureId, category, requestKey]);
 
   let phase: SupplyWorkspacePhase;
   if (status === "loading") phase = "auth-loading";
