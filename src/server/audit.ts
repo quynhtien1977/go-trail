@@ -26,6 +26,8 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("TripAvailabilityChanged"), record_id: id, from: z.boolean(), to: z.boolean() }),
   z.strictObject({ action: z.literal("SupplyItemCreated"), record_id: id }),
   z.strictObject({ action: z.literal("SupplyItemUpdated"), record_id: id }),
+  z.strictObject({ action: z.literal("SupplyIssued"), record_id: id, item_id: id, departure_id: id, quantity: id }),
+  z.strictObject({ action: z.literal("SupplyReturned"), record_id: id, item_id: id, departure_id: id, quantity: id }),
   z.strictObject({ action: z.literal("SupplyReceived"), record_id: id, item_id: id, quantity: z.number().int().positive() }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
@@ -41,7 +43,7 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips"
         : value.action === "SupplyItemCreated" || value.action === "SupplyItemUpdated" ? "supply_items"
-          : value.action === "SupplyReceived" ? "supply_transactions" : "users";
+          : (value.action === "SupplyReceived" || value.action === "SupplyIssued" || value.action === "SupplyReturned") ? "supply_transactions" : "users";
   await insertAudit(tx, { user_id: actorId, action: value.action, table_name,
     record_id: String(value.record_id), description: JSON.stringify(value) });
 }
