@@ -326,9 +326,10 @@ try {
       raw_payload: "{}",
     },
   });
+  route("admin/reports/revenue", "/api/admin/reports/revenue?from_date=2026-11-01&to_date=2026-11-30", ["Admin"], { GET: undefined });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
-  assert.equal(endpoints.length, 55);
+  assert.equal(endpoints.length, 56);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
