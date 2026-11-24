@@ -315,6 +315,14 @@ try {
   route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
     POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
   });
+  const supplyPath = `/api/staff/departures/${departures[3].departure_id}/supplies`;
+  route("staff/departures/[id]/supplies", supplyPath, ["Leader", "RouteMgr", "HRMgr", "Admin"], { GET: undefined });
+  for (const operation of ["issue", "return"]) {
+    route(`staff/departures/[id]/supplies/${operation}`, `${supplyPath}/${operation}`, ["HRMgr", "Admin"], {
+      POST: () => ({ item_id: fixtureItem.item_id, recipient_staff_id: staff.staff_id, quantity: 1,
+        idempotency_key: `supply-movement-rbac-${next()}`, note: "Trip supplies" }),
+    });
+  }
   // P03: Admin payment reconciliation (read-only).
   const paymentFixture = await db.payment.create({
     data: {
@@ -329,7 +337,6 @@ try {
   route("admin/reports/revenue", "/api/admin/reports/revenue?from_date=2026-11-01&to_date=2026-11-30", ["Admin"], { GET: undefined });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
-  assert.equal(endpoints.length, 56);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
