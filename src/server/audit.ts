@@ -6,10 +6,13 @@ import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
 import { insertAudit } from "./repositories/audit";
 
+import { settingKeys } from "@/schemas/admin";
+
 const id = z.number().int().positive().max(2147483647);
 const departureStatuses = ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"] as const;
 const amount = z.string().regex(/^(0|[1-9]\d{0,13})$/);
 const eventSchema = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("SettingChanged"), record_id: z.enum(settingKeys), from: z.string().max(20), to: z.string().max(20) }),
   z.strictObject({ action: z.literal("RoleChanged"), record_id: id, from: z.enum(userRoles), to: z.enum(userRoles) }),
   z.strictObject({ action: z.literal("AccountStatusChanged"), record_id: id,
     from: z.enum(["Active", "Locked"]), to: z.enum(["Active", "Locked"]) }),
@@ -38,6 +41,7 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
   const value = event.data;
   const table_name = value.action === "MoneyRecorded" ? value.table_name
     : value.action === "DepartureStatusChanged" || value.action === "DepartureOwnerChanged" ? "departures"
+      : value.action === "SettingChanged" ? "system_settings"
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips"
         : value.action === "SupplyItemCreated" || value.action === "SupplyItemUpdated" ? "supply_items"

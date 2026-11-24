@@ -201,6 +201,11 @@ try {
   route("account/me", "/api/account/me", roles, { GET: undefined });
   route("invoices/[id]", `/api/invoices/${invoice.invoice_id}`, ["Customer", "Admin"], { GET: undefined });
   route("leader/departures", "/api/leader/departures", ["Leader", "Admin"], { GET: undefined });
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" }, create: { setting_key: "LEADER_RATIO", setting_value: "15", description: "Fixture" }, update: {} });
+  route("admin/users", "/api/admin/users", ["Admin"], { GET: undefined });
+  route("admin/settings", "/api/admin/settings", ["Admin"], { GET: undefined });
+  route("admin/settings/[key]", "/api/admin/settings/LEADER_RATIO", ["Admin"], { PATCH: () => ({ setting_value: "15" }) });
+  route("admin/audit", "/api/admin/audit", ["Admin"], { GET: undefined });
   route("admin/users/[id]/access", `/api/admin/users/${actors.get("OtherCustomer").user_id}/access`, ["Admin"], { PATCH: () => ({ status: "Active" }) });
   route("staff/trips", "/api/staff/trips", ["RouteMgr", "Admin"], { GET: undefined, POST: () => ({ ...tripInput, name: `Created trail ${next()}` }) });
   route("staff/trips/[id]", `/api/staff/trips/${trip.trip_id}`, ["RouteMgr", "Admin"], { GET: undefined, PATCH: () => ({ name: `Edited trail ${next()}` }), DELETE: undefined });
@@ -328,7 +333,7 @@ try {
   });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
-  assert.equal(endpoints.length, 55);
+  assert.equal(endpoints.length, 59);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
