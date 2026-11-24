@@ -7,11 +7,15 @@ import { AlertTriangle, Boxes, FileClock, PackagePlus, RefreshCw, ShieldCheck } 
 import { formatVietnamDateTime } from "@/lib/catalog-client";
 import {
   SUPPLY_CATEGORIES,
-  SUPPLY_UNITS,
+  SUPPLY_UNIT_SUGGESTIONS,
   classifySupplyMutationError,
+  formatSupplyCategory,
+  formatSupplyCode,
+  generateSupplyIdempotencyKey,
   remainingAllocatableReturn,
   stockHealthStatus,
   supplyReadScope,
+  supplyWorkspaceSource,
   validateCatalogItemDraft,
   validateDepartureIssueDraft,
   validateDepartureReturnDraft,
@@ -67,16 +71,9 @@ function StockStatusBadge({ item }: { item: SupplyCatalogItemView }) {
       </span>
     );
   }
-  if (health === "low") {
-    return (
-      <span className="inline-block whitespace-nowrap rounded px-2 py-1 text-xs font-semibold bg-[#FFF8E1] text-[#8A5A00]">
-        Sắp hết ({item.currentStock}/{item.minStock})
-      </span>
-    );
-  }
   return (
     <span className="inline-block whitespace-nowrap rounded px-2 py-1 text-xs font-semibold bg-[#E8F5E9] text-[#186734]">
-      Đủ tồn kho
+      Còn tồn kho
     </span>
   );
 }
@@ -154,8 +151,16 @@ function SupplyPhaseNotice({
           Bạn không có quyền truy cập màn hình vật tư này
         </h2>
         <p className="mx-auto max-w-md text-sm leading-6 text-[#5C636A]">
-          Quyền xem hoặc điều phối vật tư được phân tách theo vai trò vận hành. Vui lòng kiểm tra lại tài khoản đang đăng nhập.
+          Quyền xem hoặc điều phối vật tư được phân tách theo vai trò vận hành. Danh mục tổng thuộc HRMgr/Admin; phần vật tư cấp theo chuyến cho RouteMgr/Leader sẽ hiển thị khi dịch vụ cấp phát (I03) sẵn sàng.
         </p>
+        <div className="pt-2">
+          <Link
+            href={portal === "leader" ? "/leader" : "/staff"}
+            className={secondaryButtonClass}
+          >
+            Quay về trang tổng quan
+          </Link>
+        </div>
       </div>
     );
   }
@@ -199,10 +204,10 @@ function SupplyPhaseNotice({
 
 export function SupplyWorkspace({
   portal = "staff",
-  source,
+  source = supplyWorkspaceSource,
 }: {
   portal?: "staff" | "leader";
-  source?: SupplyWorkspaceSource;
+  source?: SupplyWorkspaceSource | null;
 }) {
   const session = useSession();
   const scope = supplyReadScope(portal, session.status, session.data?.user);
@@ -220,16 +225,14 @@ function SupplyWorkspaceInner({
   source,
 }: {
   portal: "staff" | "leader";
-  source?: SupplyWorkspaceSource;
+  source: SupplyWorkspaceSource | null;
 }) {
   const [queryParams, setQueryParams] = useState<{
     departureId: number | null;
     category: string;
-    search: string;
   }>({
     departureId: null,
     category: "all",
-    search: "",
   });
 
   const read = useSupplyWorkspace(portal, source, queryParams);
@@ -241,7 +244,7 @@ function SupplyWorkspaceInner({
 
   const [searchDraft, setSearchDraft] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [stockFilter, setStockFilter] = useState<"all" | "attention" | "ok">("all");
+  const [stockFilter, setStockFilter] = useState<"all" | "out" | "ok" | "inactive">("all");
   const [movementFilter, setMovementFilter] = useState<"all" | "StockIn" | "IssueToDeparture" | "ReturnFromDeparture">("all");
   const [departureFilter, setDepartureFilter] = useState<number | "all">("all");
 
@@ -250,18 +253,18 @@ function SupplyWorkspaceInner({
 
   // Modal draft states
   const [catalogDraft, setCatalogDraft] = useState({
-    sku: "",
     name: "",
-    category: "Nước uống",
-    unit: "chai",
-    minStock: "20",
+    category: "Drink",
+    unit: "chai 500ml",
+    isActive: true,
   });
   const [catalogErrors, setCatalogErrors] = useState<Record<string, string>>({});
 
   const [stockInDraft, setStockInDraft] = useState({
     itemId: 0,
-    unit: "chai",
+    unit: "",
     quantity: "",
+    idempotencyKey: "",
     note: "",
   });
   const [stockInErrors, setStockInErrors] = useState<Record<string, string>>({});
@@ -269,7 +272,7 @@ function SupplyWorkspaceInner({
   const [issueDraft, setIssueDraft] = useState({
     departureId: 0,
     itemId: 0,
-    unit: "chai",
+    unit: "",
     quantity: "",
     note: "",
   });
@@ -278,7 +281,7 @@ function SupplyWorkspaceInner({
 
   const [returnDraft, setReturnDraft] = useState({
     allocationId: 0,
-    unit: "chai",
+    unit: "",
     quantity: "",
     note: "",
   });
@@ -294,11 +297,10 @@ function SupplyWorkspaceInner({
     setMutationConflict(null);
     setCatalogErrors({});
     setCatalogDraft({
-      sku: item?.sku ?? "",
       name: item?.name ?? "",
-      category: item?.category ?? "Nước uống",
-      unit: item?.unit ?? "chai",
-      minStock: String(item?.minStock ?? 20),
+      category: item?.category ?? "Drink",
+      unit: item?.unit ?? "",
+      isActive: item?.isActive ?? true,
     });
     setModal({ type: "catalog", item });
   }
@@ -307,12 +309,14 @@ function SupplyWorkspaceInner({
     setMutationConflict(null);
     setStockInErrors({});
     const target =
-      data?.catalog.find((item) => item.id === itemId && item.isActive) ??
-      data?.catalog.find((item) => item.isActive);
+      data?.catalog.find((item) => item.id === itemId) ??
+      data?.catalog.find((item) => item.isActive) ??
+      data?.catalog[0];
     setStockInDraft({
       itemId: target?.id ?? 0,
-      unit: target?.unit ?? "chai",
+      unit: target?.unit ?? "",
       quantity: "",
+      idempotencyKey: generateSupplyIdempotencyKey(),
       note: "",
     });
     setModal({ type: "stock-in", itemId: target?.id });
@@ -331,7 +335,7 @@ function SupplyWorkspaceInner({
     setIssueDraft({
       departureId: targetDeparture?.departureId ?? 0,
       itemId: targetItem?.id ?? 0,
-      unit: targetItem?.unit ?? "chai",
+      unit: targetItem?.unit ?? "",
       quantity: "",
       note: "",
     });
@@ -363,7 +367,14 @@ function SupplyWorkspaceInner({
   async function handleCatalogSubmit(event: FormEvent) {
     event.preventDefault();
     setMutationConflict(null);
-    const result = validateCatalogItemDraft(catalogDraft);
+    setCatalogErrors({});
+    const editingItem = modal?.type === "catalog" ? modal.item : undefined;
+    const result = validateCatalogItemDraft({
+      name: catalogDraft.name,
+      category: catalogDraft.category,
+      unit: catalogDraft.unit,
+      ...(editingItem ? { isActive: catalogDraft.isActive } : {}),
+    });
     if (!result.valid) {
       setCatalogErrors(result.errors as Record<string, string>);
       return;
@@ -379,14 +390,16 @@ function SupplyWorkspaceInner({
     }
     setSubmitting(true);
     try {
-      const editingItem = modal?.type === "catalog" ? modal.item : undefined;
       await source.saveCatalogItem({
         id: editingItem?.id,
         ...result.value,
-        isActive: editingItem?.isActive ?? true,
       });
       setModal(null);
-      setBannerMessage(`Đã lưu danh mục vật tư "${result.value.name}" (${result.value.sku}).`);
+      setBannerMessage(
+        editingItem
+          ? `Đã cập nhật vật tư ${formatSupplyCode(editingItem.id)} "${result.value.name}".`
+          : `Đã thêm vật tư "${result.value.name}" (${formatSupplyCategory(result.value.category)}).`,
+      );
       read.refresh();
     } catch (error) {
       const classified = classifySupplyMutationError(error);
@@ -400,6 +413,7 @@ function SupplyWorkspaceInner({
   async function handleStockInSubmit(event: FormEvent) {
     event.preventDefault();
     setMutationConflict(null);
+    setStockInErrors({});
     const selectedItem = data?.catalog.find((item) => item.id === stockInDraft.itemId);
     const result = validateStockInDraft(stockInDraft, selectedItem);
     if (!result.valid) {
@@ -513,12 +527,16 @@ function SupplyWorkspaceInner({
 
   const filteredCatalog = (data?.catalog ?? []).filter((item) => {
     if (categoryFilter !== "all" && item.category !== categoryFilter) return false;
-    if (stockFilter === "attention" && stockHealthStatus(item) === "ok") return false;
-    if (stockFilter === "ok" && stockHealthStatus(item) !== "ok") return false;
+    if (stockFilter === "ok" && (!item.isActive || stockHealthStatus(item) !== "ok")) return false;
+    if (stockFilter === "out" && (!item.isActive || stockHealthStatus(item) !== "out")) return false;
+    if (stockFilter === "inactive" && item.isActive) return false;
     if (
       normalizedSearch &&
       !item.name.toLowerCase().includes(normalizedSearch) &&
-      !item.sku.toLowerCase().includes(normalizedSearch)
+      !formatSupplyCode(item.id).toLowerCase().includes(normalizedSearch) &&
+      !String(item.id).includes(normalizedSearch) &&
+      !formatSupplyCategory(item.category).toLowerCase().includes(normalizedSearch) &&
+      !item.unit.toLowerCase().includes(normalizedSearch)
     ) {
       return false;
     }
@@ -531,7 +549,7 @@ function SupplyWorkspaceInner({
     if (
       normalizedSearch &&
       !entry.itemName.toLowerCase().includes(normalizedSearch) &&
-      !entry.sku.toLowerCase().includes(normalizedSearch) &&
+      !formatSupplyCode(entry.itemId).toLowerCase().includes(normalizedSearch) &&
       !(entry.departureLabel ?? "").toLowerCase().includes(normalizedSearch)
     ) {
       return false;
@@ -544,7 +562,7 @@ function SupplyWorkspaceInner({
     if (
       normalizedSearch &&
       !allocation.itemName.toLowerCase().includes(normalizedSearch) &&
-      !allocation.sku.toLowerCase().includes(normalizedSearch) &&
+      !formatSupplyCode(allocation.itemId).toLowerCase().includes(normalizedSearch) &&
       !allocation.departureLabel.toLowerCase().includes(normalizedSearch)
     ) {
       return false;
@@ -553,8 +571,8 @@ function SupplyWorkspaceInner({
   });
 
   const totalActiveItems = (data?.catalog ?? []).filter((item) => item.isActive).length;
-  const lowStockCount = (data?.catalog ?? []).filter(
-    (item) => item.isActive && stockHealthStatus(item) === "low",
+  const inStockActiveCount = (data?.catalog ?? []).filter(
+    (item) => item.isActive && stockHealthStatus(item) === "ok",
   ).length;
   const outOfStockCount = (data?.catalog ?? []).filter(
     (item) => item.isActive && stockHealthStatus(item) === "out",
@@ -618,6 +636,12 @@ function SupplyWorkspaceInner({
               {(currentTab === "ledger" || currentTab === "departures") && (
                 <button
                   type="button"
+                  disabled={!source?.issueToDeparture}
+                  title={
+                    source?.issueToDeparture
+                      ? undefined
+                      : "Chưa kết nối dịch vụ cấp phát theo chuyến (I03)"
+                  }
                   onClick={() =>
                     openIssueModal(
                       undefined,
@@ -626,7 +650,9 @@ function SupplyWorkspaceInner({
                   }
                   className={hasOpenModal ? brandButtonClass : primaryYellowButtonClass}
                 >
-                  Cấp vật tư cho chuyến
+                  {source?.issueToDeparture
+                    ? "Cấp vật tư cho chuyến"
+                    : "Cấp theo chuyến (chưa khả dụng)"}
                 </button>
               )}
             </>
@@ -678,11 +704,11 @@ function SupplyWorkspaceInner({
                 </p>
               </div>
               <div className="rounded-[6px] border border-[#E0E0E0] bg-white p-4">
-                <p className="text-xs font-semibold text-[#8A5A00]">
-                  Mặt hàng chạm ngưỡng sắp hết
+                <p className="text-xs font-semibold text-[#186734]">
+                  Mặt hàng còn tồn kho
                 </p>
-                <p className="mt-1 font-mono text-2xl font-bold text-[#8A5A00]">
-                  {lowStockCount}
+                <p className="mt-1 font-mono text-2xl font-bold text-[#186734]">
+                  {inStockActiveCount}
                 </p>
               </div>
               <div className="rounded-[6px] border border-[#E0E0E0] bg-white p-4">
@@ -735,17 +761,18 @@ function SupplyWorkspaceInner({
           <div className="grid items-stretch gap-4 rounded-[6px] border border-[#E0E0E0] bg-white p-4 sm:grid-cols-3">
             <div className="flex min-w-0 flex-col justify-between gap-1.5">
               <label htmlFor="supply-search" className="text-sm font-semibold">
-                Tìm theo tên, mã vật tư hoặc chuyến
+                {currentTab === "catalog"
+                  ? "Tìm nhanh vật tư"
+                  : "Tìm theo tên, #ID vật tư hoặc chuyến"}
               </label>
               <input
                 id="supply-search"
                 type="search"
                 value={searchDraft}
                 maxLength={100}
-                placeholder="Ví dụ: NUOC-500ML, nước suối, Chứa Chan…"
+                placeholder="Ví dụ: #1, Nước suối, chai 500ml…"
                 onChange={(event) => {
                   setSearchDraft(event.target.value);
-                  setQueryParams((prev) => ({ ...prev, search: event.target.value.trim() }));
                 }}
                 className={`${controlClass} w-full`}
               />
@@ -769,7 +796,7 @@ function SupplyWorkspaceInner({
                     <option value="all">Tất cả nhóm</option>
                     {SUPPLY_CATEGORIES.map((category) => (
                       <option key={category} value={category}>
-                        {category}
+                        {formatSupplyCategory(category)}
                       </option>
                     ))}
                   </select>
@@ -783,13 +810,16 @@ function SupplyWorkspaceInner({
                     id="supply-stock-filter"
                     value={stockFilter}
                     onChange={(event) =>
-                      setStockFilter(event.target.value as "all" | "attention" | "ok")
+                      setStockFilter(
+                        event.target.value as "all" | "out" | "ok" | "inactive",
+                      )
                     }
                     className={`${controlClass} w-full`}
                   >
                     <option value="all">Tất cả tình trạng</option>
-                    <option value="attention">Cần bổ sung (sắp hết / hết hàng)</option>
-                    <option value="ok">Đủ tồn kho</option>
+                    <option value="ok">Còn tồn kho</option>
+                    <option value="out">Hết tồn kho</option>
+                    <option value="inactive">Ngừng sử dụng</option>
                   </select>
                 </div>
               </>
@@ -861,6 +891,11 @@ function SupplyWorkspaceInner({
           {/* TAB 1: DANH MỤC & TỒN KHO */}
           {currentTab === "catalog" && capabilities.canReadCatalog && (
             <section aria-label="Danh mục và tồn kho vật tư" className="space-y-4">
+              {data.catalogHasMore && (
+                <p className="text-xs text-[#5C636A]">
+                  Đang hiển thị {data.catalog.length} / {data.totalCatalogItems ?? data.catalog.length} mặt hàng trên trang đầu (tối đa 50 mặt hàng).
+                </p>
+              )}
               {filteredCatalog.length > 0 ? (
                 <div
                   role="region"
@@ -868,35 +903,32 @@ function SupplyWorkspaceInner({
                   tabIndex={0}
                   className="relative overflow-x-auto rounded-[6px] border border-[#E0E0E0] bg-white focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
-                  <table className="w-full min-w-[720px] border-collapse text-sm">
+                  <table className="w-full min-w-[620px] border-collapse text-sm">
                     <caption className="sr-only">
-                      Danh mục vật tư, đơn vị tính, số lượng tồn hiện tại và trạng thái cảnh báo tồn kho
+                      Danh mục vật tư, nhóm vật tư, đơn vị tính, số lượng tồn hiện tại và trạng thái sử dụng
                     </caption>
                     <thead className="border-b border-[#E0E0E0] bg-[#F8F9FA] text-left">
                       <tr>
-                        <th scope="col" className="px-4 py-3 font-semibold">
-                          Mã vật tư
+                        <th scope="col" className="px-3 py-3 whitespace-nowrap font-semibold">
+                          Mã
                         </th>
-                        <th scope="col" className="px-4 py-3 font-semibold">
+                        <th scope="col" className="px-3 py-3 font-semibold">
                           Tên vật tư
                         </th>
-                        <th scope="col" className="px-4 py-3 font-semibold">
+                        <th scope="col" className="px-3 py-3 whitespace-nowrap font-semibold">
                           Nhóm
                         </th>
-                        <th scope="col" className="px-4 py-3 font-semibold">
+                        <th scope="col" className="px-3 py-3 whitespace-nowrap font-semibold">
                           Đơn vị
                         </th>
-                        <th scope="col" className="px-4 py-3 text-right font-semibold">
+                        <th scope="col" className="px-3 py-3 text-right whitespace-nowrap font-semibold">
                           Tồn hiện tại
                         </th>
-                        <th scope="col" className="px-4 py-3 text-right font-semibold">
-                          Ngưỡng tối thiểu
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-center font-semibold">
+                        <th scope="col" className="px-3 py-3 text-center whitespace-nowrap font-semibold">
                           Trạng thái
                         </th>
                         {capabilities.canManageCatalog && (
-                          <th scope="col" className="px-4 py-3 text-right font-semibold">
+                          <th scope="col" className="px-3 py-3 text-right whitespace-nowrap font-semibold">
                             Thao tác
                           </th>
                         )}
@@ -905,44 +937,48 @@ function SupplyWorkspaceInner({
                     <tbody className="divide-y divide-[#E0E0E0]">
                       {filteredCatalog.map((item) => (
                         <tr key={item.id}>
-                          <th scope="row" className="px-4 py-3 text-left font-mono font-semibold">
-                            {item.sku}
+                          <th scope="row" className="px-3 py-3 text-left font-mono whitespace-nowrap font-semibold">
+                            {formatSupplyCode(item.id)}
                           </th>
-                          <td className="px-4 py-3 font-medium">{item.name}</td>
-                          <td className="px-4 py-3 text-[#5C636A]">{item.category}</td>
-                          <td className="px-4 py-3">{item.unit}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">
+                          <td className="px-3 py-3 font-medium">{item.name}</td>
+                          <td className="px-3 py-3 whitespace-nowrap text-[#5C636A]">
+                            {formatSupplyCategory(item.category)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">{item.unit}</td>
+                          <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                             {item.currentStock}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-[#5C636A]">
-                            {item.minStock}
-                          </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-3 py-3 text-center">
                             <StockStatusBadge item={item} />
                           </td>
                           {capabilities.canManageCatalog && (
-                            <td className="px-4 py-3 text-right">
-                              <div className="inline-flex flex-wrap justify-end gap-3">
+                            <td className="px-3 py-3 text-right">
+                              <div className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5">
                                 <button
                                   type="button"
                                   disabled={!item.isActive}
                                   onClick={() => openStockInModal(item.id)}
-                                  className="min-h-11 font-semibold text-[#186734] underline underline-offset-4 disabled:text-[#5C636A] disabled:no-underline"
+                                  className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4 disabled:text-[#5C636A] disabled:no-underline"
                                 >
                                   Nhập thêm
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={!item.isActive || item.currentStock <= 0}
+                                  disabled={!source?.issueToDeparture || !item.isActive || item.currentStock <= 0}
+                                  title={
+                                    source?.issueToDeparture
+                                      ? undefined
+                                      : "Cấp theo chuyến chưa khả dụng (chờ I03)"
+                                  }
                                   onClick={() => openIssueModal(item.id)}
-                                  className="min-h-11 font-semibold text-[#212529] underline underline-offset-4 disabled:text-[#5C636A] disabled:no-underline"
+                                  className="min-h-11 whitespace-nowrap font-semibold text-[#212529] underline underline-offset-4 disabled:text-[#5C636A] disabled:no-underline"
                                 >
                                   Cấp cho chuyến
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => openCatalogModal(item)}
-                                  className="min-h-11 font-semibold text-[#5C636A] underline underline-offset-4"
+                                  className="min-h-11 whitespace-nowrap font-semibold text-[#5C636A] underline underline-offset-4"
                                 >
                                   Sửa
                                 </button>
@@ -1016,7 +1052,9 @@ function SupplyWorkspaceInner({
                           </td>
                           <th scope="row" className="px-4 py-3 text-left font-normal">
                             <p className="font-semibold">{entry.itemName}</p>
-                            <p className="font-mono text-xs text-[#5C636A]">{entry.sku}</p>
+                            <p className="font-mono text-xs text-[#5C636A]">
+                              {formatSupplyCode(entry.itemId)}
+                            </p>
                           </th>
                           <td
                             className={`px-4 py-3 text-right font-mono font-semibold whitespace-nowrap ${
@@ -1048,9 +1086,15 @@ function SupplyWorkspaceInner({
               ) : (
                 <div className="space-y-3 rounded-[6px] border border-[#E0E0E0] bg-white py-10 text-center">
                   <Boxes aria-hidden="true" className="mx-auto size-9 text-[#5C636A]" />
-                  <h2 className="font-bold">Chưa có lịch sử nhập/xuất khớp bộ lọc</h2>
+                  <h2 className="font-bold">
+                    {!source?.issueToDeparture
+                      ? "Sổ lịch sử nhập/xuất chi tiết chưa khả dụng"
+                      : "Chưa có lịch sử nhập/xuất khớp bộ lọc"}
+                  </h2>
                   <p className="text-sm text-[#5C636A]">
-                    Hãy thử chọn tất cả loại biến động hoặc kiểm tra chuyến khởi hành khác.
+                    {!source?.issueToDeparture
+                      ? "API hiện tại trả về số tồn tổng hợp từng mặt hàng ở tab Danh mục & tồn kho."
+                      : "Hãy thử chọn tất cả loại biến động hoặc kiểm tra chuyến khởi hành khác."}
                   </p>
                 </div>
               )}
@@ -1114,7 +1158,9 @@ function SupplyWorkspaceInner({
                             </td>
                             <th scope="row" className="px-4 py-3 text-left font-normal">
                               <p className="font-semibold">{allocation.itemName}</p>
-                              <p className="font-mono text-xs text-[#5C636A]">{allocation.sku}</p>
+                              <p className="font-mono text-xs text-[#5C636A]">
+                                {formatSupplyCode(allocation.itemId)}
+                              </p>
                             </th>
                             <td className="px-4 py-3">{allocation.unit}</td>
                             <td className="px-4 py-3 text-right font-mono font-semibold">
@@ -1135,10 +1181,13 @@ function SupplyWorkspaceInner({
                                 {remaining > 0 ? (
                                   <button
                                     type="button"
+                                    disabled={!source?.returnFromDeparture}
                                     onClick={() => openReturnModal(allocation)}
-                                    className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4"
+                                    className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4 disabled:text-[#5C636A] disabled:no-underline"
                                   >
-                                    Hoàn nhập vật tư dư
+                                    {source?.returnFromDeparture
+                                      ? "Hoàn nhập vật tư dư"
+                                      : "Hoàn nhập (chưa khả dụng)"}
                                   </button>
                                 ) : (
                                   <span className="text-xs text-[#5C636A]">Đã hoàn nhập hết</span>
@@ -1154,11 +1203,17 @@ function SupplyWorkspaceInner({
               ) : (
                 <div className="space-y-3 rounded-[6px] border border-[#E0E0E0] bg-white py-10 text-center">
                   <Boxes aria-hidden="true" className="mx-auto size-9 text-[#5C636A]" />
-                  <h2 className="font-bold">Chưa có vật tư cấp cho chuyến khớp bộ lọc</h2>
+                  <h2 className="font-bold">
+                    {!source?.issueToDeparture
+                      ? "Phân hệ cấp & hoàn nhập theo chuyến chưa khả dụng"
+                      : "Chưa có vật tư cấp cho chuyến khớp bộ lọc"}
+                  </h2>
                   <p className="text-sm text-[#5C636A]">
-                    {capabilities.canIssueAndReturn
-                      ? "Bạn có thể chọn chuyến khác hoặc bấm Cấp vật tư cho chuyến để tạo phiếu xuất cấp mới."
-                      : "Khi bộ phận điều phối cấp vật tư cho chuyến của bạn, danh sách chi tiết sẽ hiển thị tại đây."}
+                    {!source?.issueToDeparture
+                      ? "Tính năng xuất cấp và hoàn nhập vật tư theo chuyến khởi hành (I03) sẽ hoạt động ngay khi API liên kết được bổ sung."
+                      : capabilities.canIssueAndReturn
+                        ? "Bạn có thể chọn chuyến khác hoặc bấm Cấp vật tư cho chuyến để tạo phiếu xuất cấp mới."
+                        : "Khi bộ phận điều phối cấp vật tư cho chuyến của bạn, danh sách chi tiết sẽ hiển thị tại đây."}
                   </p>
                 </div>
               )}
@@ -1167,10 +1222,20 @@ function SupplyWorkspaceInner({
         </>
       )}
 
+      <datalist id="supply-unit-suggestions">
+        {SUPPLY_UNIT_SUGGESTIONS.map((unit) => (
+          <option key={unit} value={unit} />
+        ))}
+      </datalist>
+
       {/* MODAL 1: THÊM / SỬA DANH MỤC VẬT TƯ */}
       {modal?.type === "catalog" && (
         <SupplyActionDialog
-          title={modal.item ? "Cập nhật danh mục vật tư" : "Thêm danh mục vật tư mới"}
+          title={
+            modal.item
+              ? `Cập nhật vật tư ${formatSupplyCode(modal.item.id)}`
+              : "Thêm danh mục vật tư mới"
+          }
           onClose={closeModal}
         >
           <form onSubmit={handleCatalogSubmit} noValidate className="space-y-4">
@@ -1185,29 +1250,12 @@ function SupplyWorkspaceInner({
             )}
 
             <div>
-              <label htmlFor="catalog-sku" className="text-sm font-semibold">
-                Mã vật tư
-              </label>
-              <input
-                id="catalog-sku"
-                value={catalogDraft.sku}
-                onChange={(e) => setCatalogDraft((prev) => ({ ...prev, sku: e.target.value }))}
-                placeholder="Ví dụ: NUOC-500ML"
-                className={`${controlClass} mt-1 w-full font-mono uppercase`}
-              />
-              {catalogErrors.sku && (
-                <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
-                  {catalogErrors.sku}
-                </p>
-              )}
-            </div>
-
-            <div>
               <label htmlFor="catalog-name" className="text-sm font-semibold">
                 Tên vật tư
               </label>
               <input
                 id="catalog-name"
+                maxLength={100}
                 value={catalogDraft.name}
                 onChange={(e) => setCatalogDraft((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder="Ví dụ: Nước suối đóng chai 500ml"
@@ -1235,7 +1283,7 @@ function SupplyWorkspaceInner({
                 >
                   {SUPPLY_CATEGORIES.map((category) => (
                     <option key={category} value={category}>
-                      {category}
+                      {formatSupplyCategory(category)}
                     </option>
                   ))}
                 </select>
@@ -1248,20 +1296,17 @@ function SupplyWorkspaceInner({
 
               <div>
                 <label htmlFor="catalog-unit" className="text-sm font-semibold">
-                  Đơn vị tính chuẩn
+                  Đơn vị tính (1–50 ký tự)
                 </label>
-                <select
+                <input
                   id="catalog-unit"
+                  list="supply-unit-suggestions"
+                  maxLength={50}
                   value={catalogDraft.unit}
                   onChange={(e) => setCatalogDraft((prev) => ({ ...prev, unit: e.target.value }))}
+                  placeholder="Ví dụ: chai 500ml, gói 100g, bộ"
                   className={`${controlClass} mt-1 w-full`}
-                >
-                  {SUPPLY_UNITS.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
+                />
                 {catalogErrors.unit && (
                   <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
                     {catalogErrors.unit}
@@ -1270,27 +1315,28 @@ function SupplyWorkspaceInner({
               </div>
             </div>
 
-            <div>
-              <label htmlFor="catalog-min-stock" className="text-sm font-semibold">
-                Ngưỡng cảnh báo tồn tối thiểu
-              </label>
-              <input
-                id="catalog-min-stock"
-                type="number"
-                min={0}
-                max={100000}
-                value={catalogDraft.minStock}
-                onChange={(e) =>
-                  setCatalogDraft((prev) => ({ ...prev, minStock: e.target.value }))
-                }
-                className={`${controlClass} mt-1 w-full font-mono`}
-              />
-              {catalogErrors.minStock && (
-                <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
-                  {catalogErrors.minStock}
+            {modal.item && (
+              <div className="rounded-[6px] border border-[#E0E0E0] bg-[#F8F9FA] p-3">
+                <label
+                  htmlFor="catalog-is-active"
+                  className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-[#212529]"
+                >
+                  <input
+                    id="catalog-is-active"
+                    type="checkbox"
+                    checked={catalogDraft.isActive}
+                    onChange={(e) =>
+                      setCatalogDraft((prev) => ({ ...prev, isActive: e.target.checked }))
+                    }
+                    className="size-4 accent-[#186734]"
+                  />
+                  <span>Đang sử dụng (bỏ chọn để ngừng sử dụng vật tư)</span>
+                </label>
+                <p className="mt-1 pl-7 text-xs leading-5 text-[#5C636A]">
+                  Hệ thống không xóa vật tư để giữ lịch sử kho; vật tư ngừng sử dụng sẽ bị chặn khi nhập kho mới (409).
                 </p>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="flex flex-wrap justify-end gap-3 pt-2">
               <button type="button" onClick={closeModal} className={secondaryButtonClass}>
@@ -1343,7 +1389,8 @@ function SupplyWorkspaceInner({
                 <option value="0">-- Chọn vật tư --</option>
                 {(data?.catalog ?? []).map((item) => (
                   <option key={item.id} value={String(item.id)}>
-                    {item.sku} · {item.name} (Tồn: {item.currentStock} {item.unit})
+                    {formatSupplyCode(item.id)} · {item.name} (Tồn: {item.currentStock} {item.unit})
+                    {item.isActive ? "" : " [Ngừng sử dụng]"}
                   </option>
                 ))}
               </select>
@@ -1363,7 +1410,7 @@ function SupplyWorkspaceInner({
                   id="stockin-quantity"
                   type="number"
                   min={1}
-                  max={100000}
+                  max={1000000}
                   value={stockInDraft.quantity}
                   onChange={(e) =>
                     setStockInDraft((prev) => ({ ...prev, quantity: e.target.value }))
@@ -1382,18 +1429,15 @@ function SupplyWorkspaceInner({
                 <label htmlFor="stockin-unit" className="text-sm font-semibold">
                   Đơn vị tính xác nhận
                 </label>
-                <select
+                <input
                   id="stockin-unit"
+                  list="supply-unit-suggestions"
+                  maxLength={50}
                   value={stockInDraft.unit}
                   onChange={(e) => setStockInDraft((prev) => ({ ...prev, unit: e.target.value }))}
+                  placeholder="Khớp đơn vị của vật tư"
                   className={`${controlClass} mt-1 w-full`}
-                >
-                  {SUPPLY_UNITS.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
+                />
                 {stockInErrors.unit && (
                   <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
                     {stockInErrors.unit}
@@ -1404,18 +1448,33 @@ function SupplyWorkspaceInner({
 
             <div>
               <label htmlFor="stockin-note" className="text-sm font-semibold">
-                Nguồn nhập / ghi chú phiếu nhập
+                Nguồn nhập / ghi chú phiếu nhập (tùy chọn)
               </label>
               <input
                 id="stockin-note"
+                maxLength={500}
                 value={stockInDraft.note}
                 onChange={(e) => setStockInDraft((prev) => ({ ...prev, note: e.target.value }))}
-                placeholder="Ví dụ: Nhập bổ sung vật tư cuối tuần đợt 2"
+                placeholder="Không bắt buộc. Ví dụ: Nhập bổ sung vật tư cuối tuần đợt 2"
                 className={`${controlClass} mt-1 w-full`}
               />
               {stockInErrors.note && (
                 <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
                   {stockInErrors.note}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-[6px] border border-[#E0E0E0] bg-[#F8F9FA] px-3 py-2 text-xs text-[#5C636A]">
+              <p>
+                Mã chống nhập trùng (giữ nguyên khi thử lại):{" "}
+                <span className="font-mono break-all text-[#212529]">
+                  {stockInDraft.idempotencyKey}
+                </span>
+              </p>
+              {stockInErrors.idempotencyKey && (
+                <p role="alert" className="mt-1 font-semibold text-[#C62828]">
+                  {stockInErrors.idempotencyKey}
                 </p>
               )}
             </div>
@@ -1527,7 +1586,7 @@ function SupplyWorkspaceInner({
                 <option value="0">-- Chọn vật tư --</option>
                 {(data?.catalog ?? []).map((item) => (
                   <option key={item.id} value={String(item.id)}>
-                    {item.sku} · {item.name} (Tồn khả dụng: {item.currentStock} {item.unit})
+                    {formatSupplyCode(item.id)} · {item.name} (Tồn khả dụng: {item.currentStock} {item.unit})
                   </option>
                 ))}
               </select>
@@ -1547,7 +1606,7 @@ function SupplyWorkspaceInner({
                   id="issue-quantity"
                   type="number"
                   min={1}
-                  max={100000}
+                  max={1000000}
                   value={issueDraft.quantity}
                   onChange={(e) => {
                     setIssueShortage(undefined);
@@ -1567,18 +1626,14 @@ function SupplyWorkspaceInner({
                 <label htmlFor="issue-unit" className="text-sm font-semibold">
                   Đơn vị tính xác nhận
                 </label>
-                <select
+                <input
                   id="issue-unit"
+                  list="supply-unit-suggestions"
+                  maxLength={50}
                   value={issueDraft.unit}
                   onChange={(e) => setIssueDraft((prev) => ({ ...prev, unit: e.target.value }))}
                   className={`${controlClass} mt-1 w-full`}
-                >
-                  {SUPPLY_UNITS.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
+                />
                 {issueErrors.unit && (
                   <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
                     {issueErrors.unit}
@@ -1663,7 +1718,7 @@ function SupplyWorkspaceInner({
               <div className="flex justify-between gap-2 py-2">
                 <dt className="text-[#5C636A]">Vật tư đã cấp</dt>
                 <dd className="font-semibold text-right">
-                  {modal.allocation.itemName} ({modal.allocation.sku})
+                  {modal.allocation.itemName} ({formatSupplyCode(modal.allocation.itemId)})
                 </dd>
               </div>
               <div className="flex justify-between gap-2 py-2">
@@ -1709,18 +1764,14 @@ function SupplyWorkspaceInner({
                 <label htmlFor="return-unit" className="text-sm font-semibold">
                   Đơn vị tính xác nhận
                 </label>
-                <select
+                <input
                   id="return-unit"
+                  list="supply-unit-suggestions"
+                  maxLength={50}
                   value={returnDraft.unit}
                   onChange={(e) => setReturnDraft((prev) => ({ ...prev, unit: e.target.value }))}
                   className={`${controlClass} mt-1 w-full`}
-                >
-                  {SUPPLY_UNITS.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
+                />
                 {returnErrors.unit && (
                   <p role="alert" className="mt-1 text-xs font-semibold text-[#C62828]">
                     {returnErrors.unit}
