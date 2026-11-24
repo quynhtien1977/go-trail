@@ -32,15 +32,9 @@ export async function listAuditLogs(tx: Transaction, query: z.infer<typeof audit
   const rows = await tx.auditLog.findMany({ where, orderBy: [{ created_at: "desc" }, { log_id: "desc" }],
     skip: (page - 1) * pageSize, take: pageSize, select: { log_id: true, user_id: true, action: true, table_name: true, record_id: true,
       description: true, created_at: true, user: { select: { full_name: true } } } });
-  // Descriptions are allowlisted structured events (see writeAudit), so they are safe to return parsed.
-  const items = rows.map(({ user, description, created_at, ...row }) => ({ ...row, actor_name: user.full_name,
-    created_at: created_at.toISOString(), event: readAuditEvent(description) }));
-  return { items, pagination: pagination({ page, pageSize }, await tx.auditLog.count({ where })) };
+  return { rows, pagination: pagination({ page, pageSize }, await tx.auditLog.count({ where })) };
 }
 
-function readAuditEvent(description: string): unknown {
-  try { return JSON.parse(description); } catch { return null; }
-}
 export function listSettings(tx: Transaction) {
   return tx.systemSetting.findMany({ where: { setting_key: { in: settingKeys } }, orderBy: { setting_key: "asc" } });
 }

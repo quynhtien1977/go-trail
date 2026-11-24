@@ -4,7 +4,7 @@ import { auditQuerySchema, settingRanges, updateSettingSchema, userQuerySchema }
 import { requireActor, requireRole, type Actor, type AuthDatabase } from "@/server/auth/authorization";
 import { inTransaction, type Database } from "@/server/repositories/database";
 import * as repository from "@/server/repositories/admin";
-import { writeAudit } from "@/server/audit";
+import { readAuditEvent, writeAudit } from "@/server/audit";
 import { AppError } from "@/server/errors";
 import { bindDb } from "./bind-db";
 
@@ -28,7 +28,11 @@ export async function listUsers(db: Database, identity: Actor, input: unknown = 
 export async function listAuditLogs(db: Database, identity: Actor, input: unknown = {}) {
   return inTransaction(db, async tx => {
     await admin(tx, identity);
-    return repository.listAuditLogs(tx, parse(auditQuerySchema, input));
+    const { rows, pagination } = await repository.listAuditLogs(tx, parse(auditQuerySchema, input));
+    const items = rows.map(({ user, description, created_at, ...row }) => ({
+      ...row, actor_name: user.full_name, created_at: created_at.toISOString(), event: readAuditEvent(description),
+    }));
+    return { items, pagination };
   }, { isolationLevel: "RepeatableRead" });
 }
 

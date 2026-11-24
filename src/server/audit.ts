@@ -33,6 +33,13 @@ const eventSchema = z.discriminatedUnion("action", [
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
 
+export function readAuditEvent(description: string) {
+  try {
+    const event = eventSchema.safeParse(JSON.parse(description));
+    return event.success ? event.data : null;
+  } catch { return null; }
+}
+
 // Call with the same transaction as the business change. Do not call after commit.
 // Allowlisted structured events cannot carry passwords, banking details or request dumps.
 export async function writeAudit(tx: AuthDatabase, actorId: number, input: AuditEvent): Promise<void> {

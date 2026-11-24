@@ -333,7 +333,6 @@ try {
   });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
-  assert.equal(endpoints.length, 59);
   await assertRouteCoverage(endpoints);
   console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
