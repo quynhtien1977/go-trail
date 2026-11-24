@@ -82,17 +82,25 @@ export function CheckInStatusBadge({ status }: { status: ManagedCheckInStatus })
 
 export function InvoiceDetailDialog({
   invoice,
+  loading = false,
+  error = null,
+  onRetry,
   onClose,
   onSelectDeparture,
   onSelectCustomer,
 }: {
-  invoice: ManagedInvoiceView;
+  invoice: ManagedInvoiceView | null;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onClose: () => void;
   onSelectDeparture?: (departureId: number) => void;
   onSelectCustomer?: (customerId: number, customerName: string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const snapshot = formatResponsibleStaffSnapshot(invoice);
+  const snapshot = invoice
+    ? formatResponsibleStaffSnapshot(invoice)
+    : null;
 
   useEffect(() => {
     const element = dialogRef.current;
@@ -118,20 +126,28 @@ export function InvoiceDetailDialog({
         <div className="min-w-0">
           <p className="text-xs font-semibold text-[#186734]">Phiếu thông tin hóa đơn và vé</p>
           <h2 id="invoice-detail-dialog-title" className="mt-1 text-lg font-bold sm:text-xl">
-            Hóa đơn #{invoice.invoiceId}
-            {invoice.paymentCode ? ` · ${invoice.paymentCode}` : ""}
+            {invoice ? (
+              <>
+                Hóa đơn #{invoice.invoiceId}
+                {invoice.paymentCode ? ` · ${invoice.paymentCode}` : ""}
+              </>
+            ) : (
+              "Chi tiết hóa đơn"
+            )}
           </h2>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 print:hidden">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="hidden min-h-11 items-center justify-center gap-2 rounded-[5px] bg-[#FEBB02] px-4 text-sm font-bold text-black hover:bg-[#E5A800] sm:inline-flex"
-          >
-            <Printer aria-hidden="true" className="size-4" />
-            In phiếu hóa đơn
-          </button>
+          {invoice && (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="hidden min-h-11 items-center justify-center gap-2 rounded-[5px] bg-[#FEBB02] px-4 text-sm font-bold text-black hover:bg-[#E5A800] sm:inline-flex"
+            >
+              <Printer aria-hidden="true" className="size-4" />
+              In phiếu hóa đơn
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -144,6 +160,29 @@ export function InvoiceDetailDialog({
       </div>
 
       <div className="p-4 sm:p-6">
+        {!invoice ? (
+          loading ? (
+            <p role="status" className="py-12 text-center text-sm text-[#5C636A]">
+              Đang tải chi tiết hóa đơn và danh sách vé…
+            </p>
+          ) : (
+            <div role="alert" className="space-y-4 py-8 text-center">
+              <p className="text-sm font-semibold text-[#C62828]">
+                {error ?? "Không thể tải chi tiết hóa đơn lúc này."}
+              </p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex min-h-11 items-center justify-center rounded-[5px] border border-[#6B7280] bg-white px-4 text-sm font-semibold text-[#212529] hover:bg-neutral-50"
+                >
+                  Thử tải lại
+                </button>
+              )}
+            </div>
+          )
+        ) : (
+          <>
         <div className="mb-4 sm:hidden print:hidden">
           <button
             type="button"
@@ -234,8 +273,8 @@ export function InvoiceDetailDialog({
 
           <div>
             <p className="text-xs text-[#5C636A]">Nhân viên phụ trách hóa đơn</p>
-            <p className="mt-1 font-semibold break-words">{snapshot.nameLabel}</p>
-            {snapshot.roleLabel && (
+            <p className="mt-1 font-semibold break-words">{snapshot?.nameLabel}</p>
+            {snapshot?.roleLabel && (
               <p className="mt-0.5 text-xs text-[#5C636A]">{snapshot.roleLabel}</p>
             )}
           </div>
@@ -244,7 +283,7 @@ export function InvoiceDetailDialog({
 
       {/* Responsible staff snapshot & policy notice */}
       <div className="my-4 border-l-4 border-[#186734] bg-[#F8F9FA] p-3 text-xs leading-5 text-[#5C636A]">
-        <p>{snapshot.attributionNote}</p>
+        <p>{snapshot?.attributionNote}</p>
         <p className="mt-1">
           Chính sách hiện hành: Vé đã thanh toán không áp dụng hủy hoặc hoàn tiền. Trạng thái thanh toán do hệ thống tự động đối chiếu; không có thao tác xác nhận tiền thủ công hoặc chữ ký duyệt đơn.
         </p>
@@ -253,9 +292,33 @@ export function InvoiceDetailDialog({
       {/* Tickets table */}
       <div className="space-y-3">
         <h3 className="text-base font-bold">
-          Danh sách vé thuộc hóa đơn ({invoice.tickets.length} vé)
+          Danh sách vé thuộc hóa đơn ({invoice.ticketCount ?? invoice.tickets.length} vé)
         </h3>
 
+        {loading ? (
+          <p
+            role="status"
+            className="rounded-[6px] border border-[#E0E0E0] bg-[#F8F9FA] py-8 text-center text-sm text-[#5C636A]"
+          >
+            Đang tải danh sách vé và điểm đón…
+          </p>
+        ) : error ? (
+          <div
+            role="alert"
+            className="space-y-3 rounded-[6px] border border-[#E0E0E0] bg-[#F8F9FA] p-6 text-center"
+          >
+            <p className="text-sm font-semibold text-[#C62828]">{error}</p>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex min-h-11 items-center justify-center rounded-[5px] border border-[#6B7280] bg-white px-4 text-sm font-semibold text-[#212529] hover:bg-neutral-50"
+              >
+                Thử tải lại
+              </button>
+            )}
+          </div>
+        ) : (
         <div
           role="region"
           aria-label="Danh sách vé trong hóa đơn"
@@ -299,6 +362,7 @@ export function InvoiceDetailDialog({
                     {ticket.pickupName ? (
                       <>
                         <p className="font-semibold text-[#212529]">{ticket.pickupName}</p>
+                        {ticket.pickupAddress && <p>{ticket.pickupAddress}</p>}
                         {ticket.pickupAt && (
                           <p>{formatVietnamDateTime(ticket.pickupAt, dateOptions)}</p>
                         )}
@@ -321,7 +385,10 @@ export function InvoiceDetailDialog({
             </tbody>
           </table>
         </div>
+        )}
       </div>
+          </>
+        )}
       </div>
     </dialog>
   );
