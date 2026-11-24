@@ -1,3 +1,4 @@
+import { readDashboard } from "../src/server/services/dashboard.ts";
 import { readRevenue } from "../src/server/services/revenue.ts";
 import assert from "node:assert/strict";
 import { describe, before, beforeEach, after, test } from "node:test";
@@ -31,6 +32,19 @@ describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
     const query = { from_date: "2035-11-28", to_date: "2035-11-28", trip_id: String(trip.trip_id) };
     await db.$executeRaw`UPDATE payments SET created_at = ${date.toISOString()}::timestamptz WHERE invoice_id IS NOT NULL`;
     const report = await readRevenue(db, adminUser, query);
+    const adminDashboard = await readDashboard(db, adminUser, query);
+    assert.deepEqual(adminDashboard.revenue, report.totals);
+    assert.equal(adminDashboard.operations.departures, 1);
+    const item = await db.supplyItem.create({ data: { name: "Water", category: "Drink", unit: "bottle", low_stock_threshold: 2 } });
+    const lowStock = (await readDashboard(db, adminUser, query)).warehouse_low_stock_now;
+    assert.equal(lowStock.items.find(row => row.item_id === item.item_id).on_hand, 0);
+    const manager = await readDashboard(db, routeMgrUser, { ...query, departure_id: String(departure.departure_id) });
+    assert.ok(!("revenue" in manager) && !("warehouse_low_stock_now" in manager));
+    await db.departure.update({ where: { departure_id: departure.departure_id }, data: { invoice_owner_user_id: null } });
+    await assert.rejects(readDashboard(db, routeMgrUser, { ...query, departure_id: String(departure.departure_id) }), { code: "NOT_FOUND" });
+    const empty = await readDashboard(db, routeMgrUser, query);
+    assert.equal(empty.operations.seats, 0);
+    assert.equal(empty.operations.departures, 0);
     assert.equal(report.totals.ticket_revenue, "4000000");
     assert.equal(report.totals.received, "4100000");
     assert.equal(report.totals.surplus, "100000");

@@ -198,6 +198,7 @@ try {
     for (const [method, body] of Object.entries(methods)) endpoints.push({ route, path, allowed, method, body,
       success: method === "POST" ? 201 : 200 });
   }
+  route("staff/dashboard", "/api/staff/dashboard?from_date=2030-01-01&to_date=2030-01-31", ["RouteMgr", "HRMgr", "Admin"], { GET: undefined });
   route("account/me", "/api/account/me", roles, { GET: undefined });
   route("invoices/[id]", `/api/invoices/${invoice.invoice_id}`, ["Customer", "Admin"], { GET: undefined });
   route("leader/departures", "/api/leader/departures", ["Leader", "Admin"], { GET: undefined });

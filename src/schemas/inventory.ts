@@ -7,12 +7,14 @@ const id = z.number().int().positive().max(2147483647);
 const idempotencyKey = z.string().trim().regex(/^[A-Za-z0-9_-]{16,64}$/);
 
 export const createSupplyItemSchema = z.strictObject({
+  low_stock_threshold: z.number().int().min(0).max(2147483647).nullish(),
   name: z.string().trim().min(1).max(100),
   category: z.enum(supplyCategories),
   unit: z.string().trim().min(1).max(50),
 });
 
 export const updateSupplyItemSchema = z.strictObject({
+  low_stock_threshold: z.number().int().min(0).max(2147483647).nullish(),
   name: z.string().trim().min(1).max(100).optional(),
   category: z.enum(supplyCategories).optional(),
   unit: z.string().trim().min(1).max(50).optional(),
@@ -57,6 +59,7 @@ export type SupplyItemDto = {
   category: SupplyCategory;
   unit: string;
   is_active: boolean;
+  low_stock_threshold: number | null;
   on_hand: number;
   created_at: string;
 };
