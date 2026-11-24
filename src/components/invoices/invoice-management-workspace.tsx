@@ -222,7 +222,17 @@ function InvoiceManagementWorkspaceInner({
   const [departureDraft, setDepartureDraft] = useState<number | "all">("all");
   const [responsibleDraft, setResponsibleDraft] = useState<number | "all">("all");
 
-  const [selectedInvoice, setSelectedInvoice] = useState<ManagedInvoiceView | null>(null);
+  const [selectedModal, setSelectedModal] = useState<{
+    invoiceId: number;
+    preview: ManagedInvoiceView | null;
+  } | null>(null);
+  const [detailRevision, setDetailRevision] = useState(0);
+  const [detailState, setDetailState] = useState<{
+    invoiceId: number;
+    status: "loading" | "ready" | "error";
+    invoice?: ManagedInvoiceView;
+    errorMessage?: string;
+  } | null>(null);
 
   const read = useInvoiceManagement(source, query);
   const { capabilities, data } = read;
@@ -231,7 +241,7 @@ function InvoiceManagementWorkspaceInner({
   if (data && query.page > Math.max(1, data.totalPages)) {
     const clamped = clampPageNumber(query.page, data.totalPages);
     setQuery((prev) => ({ ...prev, page: clamped }));
-    setSelectedInvoice(null);
+    setSelectedModal(null);
   }
 
   // Customer tab state (connected to /api/staff/customers)
@@ -303,13 +313,71 @@ function InvoiceManagementWorkspaceInner({
     return () => controller.abort();
   }, [activeTab, selectedCustomerId, capabilities.canAccessWorkspace, customerSource]);
 
-  const hasOpenModal = selectedInvoice !== null;
+  const detailFetchInvoiceId =
+    selectedModal &&
+    source?.readInvoiceDetail &&
+    (!selectedModal.preview || selectedModal.preview.tickets.length === 0)
+      ? selectedModal.invoiceId
+      : null;
+
+  useEffect(() => {
+    if (!detailFetchInvoiceId || !source?.readInvoiceDetail) return;
+    const controller = new AbortController();
+
+    async function loadInvoiceDetail() {
+      setDetailState({ invoiceId: detailFetchInvoiceId!, status: "loading" });
+      try {
+        const detail = await source!.readInvoiceDetail!(detailFetchInvoiceId!, controller.signal);
+        if (!controller.signal.aborted) {
+          setDetailState({ invoiceId: detailFetchInvoiceId!, status: "ready", invoice: detail });
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const errorMessage =
+          err instanceof BookingClientError && err.status === 404
+            ? "Không tìm thấy hoặc bạn chỉ xem được chi tiết các hóa đơn do mình đứng tên phụ trách."
+            : "Không thể tải chi tiết hóa đơn và danh sách vé lúc này.";
+        setDetailState({
+          invoiceId: detailFetchInvoiceId!,
+          status: "error",
+          errorMessage,
+        });
+      }
+    }
+
+    void loadInvoiceDetail();
+    return () => controller.abort();
+  }, [detailFetchInvoiceId, detailRevision, source]);
+
+  function openInvoiceDetail(invoiceId: number, preview: ManagedInvoiceView | null = null) {
+    setDetailState(null);
+    setSelectedModal({ invoiceId, preview });
+  }
+
+  const needsDetailFetch = Boolean(
+    selectedModal &&
+      source?.readInvoiceDetail &&
+      (!selectedModal.preview || selectedModal.preview.tickets.length === 0),
+  );
+  const isDetailLoading =
+    needsDetailFetch &&
+    (!detailState ||
+      detailState.invoiceId !== selectedModal?.invoiceId ||
+      detailState.status === "loading");
+
+  const hasOpenModal = selectedModal !== null;
+  const staffOptions = data?.responsibleStaffOptions ?? [];
+  const hasStaffFilterOptions = staffOptions.length > 0;
+  const isStaffFilterUnavailable =
+    capabilities.canFilterByResponsibleStaff &&
+    read.phase === "ready" &&
+    !hasStaffFilterOptions;
   const canFilterM01 = !!source && (read.phase === "ready" || read.phase === "error");
 
   function handleApplyM01Filter(event: FormEvent) {
     event.preventDefault();
     if (!canFilterM01) return;
-    setSelectedInvoice(null);
+    setSelectedModal(null);
     setQuery({
       page: 1,
       q: qDraft.trim(),
@@ -318,7 +386,9 @@ function InvoiceManagementWorkspaceInner({
       checkInStatus: checkInStatusDraft,
       departureId: departureDraft === "all" ? null : departureDraft,
       responsibleUserId:
-        capabilities.canFilterByResponsibleStaff && responsibleDraft !== "all"
+        capabilities.canFilterByResponsibleStaff &&
+        hasStaffFilterOptions &&
+        responsibleDraft !== "all"
           ? responsibleDraft
           : null,
     });
@@ -331,7 +401,7 @@ function InvoiceManagementWorkspaceInner({
     setCheckInStatusDraft("all");
     setDepartureDraft("all");
     setResponsibleDraft("all");
-    setSelectedInvoice(null);
+    setSelectedModal(null);
     setQuery({
       page: 1,
       q: "",
@@ -494,6 +564,14 @@ function InvoiceManagementWorkspaceInner({
                         className={`${controlClass} w-full`}
                       >
                         <option value="all">Tất cả chuyến</option>
+                        {departureDraft !== "all" &&
+                          !(data?.departures ?? []).some(
+                            (dep) => dep.departureId === departureDraft,
+                          ) && (
+                            <option value={String(departureDraft)}>
+                              Chuyến #{departureDraft}
+                            </option>
+                          )}
                         {(data?.departures ?? []).map((dep) => (
                           <option key={dep.departureId} value={String(dep.departureId)}>
                             #{dep.departureId} · {dep.tripName} (
@@ -536,9 +614,14 @@ function InvoiceManagementWorkspaceInner({
                             <select
                               id="m01-responsible-staff"
                               value={
-                                responsibleDraft === "all" ? "all" : String(responsibleDraft)
+                                hasStaffFilterOptions && responsibleDraft !== "all"
+                                  ? String(responsibleDraft)
+                                  : "all"
                               }
-                              disabled={!canFilterM01}
+                              disabled={!canFilterM01 || isStaffFilterUnavailable}
+                              aria-describedby={
+                                isStaffFilterUnavailable ? "m01-responsible-staff-note" : undefined
+                              }
                               onChange={(e) =>
                                 setResponsibleDraft(
                                   e.target.value === "all" ? "all" : Number(e.target.value),
@@ -546,13 +629,25 @@ function InvoiceManagementWorkspaceInner({
                               }
                               className={`${controlClass} w-full`}
                             >
-                              <option value="all">Tất cả nhân viên phụ trách</option>
-                              {(data?.responsibleStaffOptions ?? []).map((staff) => (
+                              <option value="all">
+                                {isStaffFilterUnavailable
+                                  ? "Chưa hỗ trợ lọc theo nhân viên"
+                                  : "Tất cả nhân viên phụ trách"}
+                              </option>
+                              {staffOptions.map((staff) => (
                                 <option key={staff.userId} value={String(staff.userId)}>
                                   {staff.fullName} (#{staff.userId})
                                 </option>
                               ))}
                             </select>
+                            {isStaffFilterUnavailable && (
+                              <p
+                                id="m01-responsible-staff-note"
+                                className="text-xs text-[#5C636A]"
+                              >
+                                API danh sách chưa trả responsible_user_id nên bộ lọc này chưa khả dụng.
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <div className="flex min-w-0 flex-col justify-between gap-1.5">
@@ -615,7 +710,9 @@ function InvoiceManagementWorkspaceInner({
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E0E0E0] pt-3">
                     <p className="text-xs text-[#5C636A]">
                       {capabilities.canFilterByResponsibleStaff
-                        ? "Quản trị viên có thể lọc theo từng nhân viên phụ trách hóa đơn hoặc xem toàn hệ thống."
+                        ? isStaffFilterUnavailable
+                          ? "Quản trị viên xem toàn hệ thống (bộ lọc theo từng nhân viên phụ trách chưa khả dụng do API không trả ID phụ trách)."
+                          : "Quản trị viên có thể lọc theo từng nhân viên phụ trách hóa đơn hoặc xem toàn hệ thống."
                         : "Danh sách tự động giới hạn theo các hóa đơn mà bạn được phân công đứng tên phụ trách."}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -755,32 +852,36 @@ function InvoiceManagementWorkspaceInner({
                                           </p>
                                         )}
                                       </td>
-                                      <td className="px-3 py-3 text-center text-xs whitespace-nowrap">
-                                        <p className="font-mono font-semibold text-[#212529]">
-                                          {invoice.tickets.length} vé
-                                        </p>
-                                        <p className="mt-0.5 text-[#5C636A]">
-                                          Lên xe: {checkedInCount} · Vắng: {absentCount}
-                                        </p>
-                                      </td>
-                                      <td className="px-3 py-3 text-right">
-                                        <p className="font-mono font-semibold whitespace-nowrap">
-                                          {formatVnd(invoice.totalAmount)}
-                                        </p>
-                                        <div className="mt-1">
-                                          <InvoiceStatusBadge status={invoice.status} />
-                                        </div>
-                                      </td>
-                                      <td className="px-3 py-3 text-right">
-                                        <button
-                                          type="button"
-                                          onClick={() => setSelectedInvoice(invoice)}
-                                          aria-label={`Xem chi tiết hóa đơn #${invoice.invoiceId}`}
-                                          className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4"
-                                        >
-                                          Chi tiết & in
-                                        </button>
-                                      </td>
+                                       <td className="px-3 py-3 text-center text-xs">
+                                         <p className="font-mono font-semibold text-[#212529] whitespace-nowrap">
+                                           {invoice.ticketCount ?? invoice.tickets.length} vé
+                                         </p>
+                                         <p className="mt-0.5 text-[#5C636A]">
+                                           {invoice.tickets.length > 0
+                                             ? `Lên xe: ${checkedInCount} · Vắng: ${absentCount}`
+                                             : (invoice.ticketCount ?? 0) > 0
+                                               ? "Xem chi tiết để xem điểm danh"
+                                               : "Chưa có vé"}
+                                         </p>
+                                       </td>
+                                       <td className="px-3 py-3 text-right">
+                                         <p className="font-mono font-semibold whitespace-nowrap">
+                                           {formatVnd(invoice.totalAmount)}
+                                         </p>
+                                         <div className="mt-1">
+                                           <InvoiceStatusBadge status={invoice.status} />
+                                         </div>
+                                       </td>
+                                       <td className="px-3 py-3 text-right">
+                                         <button
+                                           type="button"
+                                           onClick={() => openInvoiceDetail(invoice.invoiceId, invoice)}
+                                           aria-label={`Xem chi tiết hóa đơn #${invoice.invoiceId}`}
+                                           className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4"
+                                         >
+                                           Chi tiết & in
+                                         </button>
+                                       </td>
                                     </tr>
                                   );
                                 })}
@@ -858,7 +959,8 @@ function InvoiceManagementWorkspaceInner({
                                           · {ticket.passengerName}
                                         </p>
                                         <p className="mt-0.5 font-mono text-xs text-[#5C636A]">
-                                          Mã vé #{ticket.detailId}
+                                          Chi tiết vé #{ticket.detailId}
+                                          {ticket.passengerPhone ? ` · ${ticket.passengerPhone}` : ""}
                                         </p>
                                       </th>
                                       <td className="px-3 py-3">
@@ -890,10 +992,15 @@ function InvoiceManagementWorkspaceInner({
                                         <CheckInStatusBadge status={ticket.checkInStatus} />
                                       </td>
                                       <td className="px-3 py-3 text-right">
-                                        {parentInvoice ? (
+                                        {parentInvoice || source?.readInvoiceDetail ? (
                                           <button
                                             type="button"
-                                            onClick={() => setSelectedInvoice(parentInvoice)}
+                                            onClick={() =>
+                                              openInvoiceDetail(
+                                                ticket.invoiceId,
+                                                parentInvoice ?? null,
+                                              )
+                                            }
                                             className="min-h-11 whitespace-nowrap font-semibold text-[#186734] underline underline-offset-4"
                                           >
                                             Mở #{ticket.invoiceId}
@@ -1205,7 +1312,7 @@ function InvoiceManagementWorkspaceInner({
                                             <td className="px-4 py-3 text-right">
                                               <button
                                                 type="button"
-                                                onClick={() => setSelectedInvoice(inv)}
+                                                onClick={() => openInvoiceDetail(inv.invoiceId, inv)}
                                                 className="min-h-11 font-semibold text-[#186734] underline underline-offset-4"
                                               >
                                                 Chi tiết ({inv.tickets.length} vé)
@@ -1234,11 +1341,27 @@ function InvoiceManagementWorkspaceInner({
         )}
 
       {/* Invoice Detail & Print Dialog */}
-      {selectedInvoice && (
+      {selectedModal && (
         <InvoiceDetailDialog
-          key={`${read.identityKey}:${selectedInvoice.invoiceId}`}
-          invoice={selectedInvoice}
-          onClose={() => setSelectedInvoice(null)}
+          key={`${read.identityKey}:${selectedModal.invoiceId}`}
+          invoice={
+            detailState?.invoiceId === selectedModal.invoiceId && detailState.status === "ready"
+              ? (detailState.invoice ?? selectedModal.preview)
+              : selectedModal.preview
+          }
+          loading={isDetailLoading}
+          error={
+            !isDetailLoading &&
+            detailState?.invoiceId === selectedModal.invoiceId &&
+            detailState.status === "error"
+              ? (detailState.errorMessage ?? "Không thể tải chi tiết hóa đơn.")
+              : null
+          }
+          onRetry={() => setDetailRevision((value) => value + 1)}
+          onClose={() => {
+            setDetailState(null);
+            setSelectedModal(null);
+          }}
           onSelectDeparture={(depId) => {
             setActiveTab("invoices");
             handleJumpToDeparture(depId);
