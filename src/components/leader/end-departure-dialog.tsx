@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { AlertTriangle, Flag, Loader2, X } from "lucide-react";
 import type { ManifestDto } from "@/schemas/checkin";
 import { cn } from "@/lib/utils";
@@ -19,16 +20,6 @@ export function EndDepartureDialog({ manifest, onClose, onEnded }: {
   const inFlight = useRef(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const { departure, summary } = manifest;
-
-  const onEscape = useEffectEvent(() => { if (!inFlight.current) onClose(); });
-  useEffect(() => {
-    cancelRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onEscape(); };
-    document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = overflow; };
-  }, []);
 
   async function confirm() {
     if (inFlight.current) return;
@@ -49,14 +40,15 @@ export function EndDepartureDialog({ manifest, onClose, onEnded }: {
 
   const unfinished = summary.pending + summary.absent;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-      onClick={(event) => { if (event.target === event.currentTarget && !inFlight.current) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="end-departure-title"
-        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-[8px] border border-[#E0E0E0] bg-white pb-[env(safe-area-inset-bottom)] sm:max-w-md sm:rounded-[8px]">
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !inFlight.current) onClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60" />
+        <Dialog.Popup initialFocus={cancelRef}
+          className="fixed inset-x-0 bottom-0 z-[51] max-h-[90dvh] overflow-y-auto rounded-t-[8px] border border-[#E0E0E0] bg-white pb-[env(safe-area-inset-bottom)] sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[8px]">
         <div className="flex items-center justify-between gap-2 border-b border-[#E0E0E0] px-4 py-3">
-          <h2 id="end-departure-title" className="flex items-center gap-2 text-lg font-bold">
+          <Dialog.Title className="flex items-center gap-2 text-lg font-bold">
             <AlertTriangle aria-hidden="true" className="size-5 text-[#C62828]" /> Xác nhận kết thúc chuyến
-          </h2>
+          </Dialog.Title>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng"
             className="flex size-11 items-center justify-center rounded-[5px] text-[#5C636A] hover:bg-neutral-100">
             <X aria-hidden="true" className="size-5" />
@@ -102,7 +94,8 @@ export function EndDepartureDialog({ manifest, onClose, onEnded }: {
             {busy ? "Đang kết thúc…" : "Xác nhận kết thúc"}
           </button>
         </div>
-      </div>
-    </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

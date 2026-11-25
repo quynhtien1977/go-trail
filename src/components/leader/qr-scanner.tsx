@@ -14,7 +14,7 @@ type BarcodeDetectorCtor = {
 };
 type Decoder = (video: HTMLVideoElement) => Promise<string | null>;
 
-export type CameraPhase = "requesting" | "scanning" | "paused" | "denied" | "unavailable" | "insecure";
+export type CameraPhase = "requesting" | "scanning" | "paused" | "denied" | "unavailable" | "insecure" | "decoder-error";
 
 const SCAN_INTERVAL_MS = 200;
 const MAX_DECODE_EDGE = 640;
@@ -100,7 +100,19 @@ export function QrScanner({ onDetected, disabled }: { onDetected: (text: string)
       const capabilities = (track?.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorch({ supported: Boolean(capabilities.torch), on: false });
 
-      const decode = await createDecoder();
+      let decode: Decoder;
+      try {
+        decode = await createDecoder();
+      } catch {
+        if (!cancelled) {
+          stream.getTracks().forEach((item) => item.stop());
+          if (streamRef.current === stream) streamRef.current = null;
+          if (video.srcObject === stream) video.srcObject = null;
+          setTorch({ supported: false, on: false });
+          setPhase("decoder-error");
+        }
+        return;
+      }
       if (cancelled) return;
       setPhase("scanning");
       const tick = async () => {
@@ -174,7 +186,7 @@ export function QrScanner({ onDetected, disabled }: { onDetected: (text: string)
           </button>
         ) : <span />}
         <button type="button" onClick={() => setWanted((value) => !value)}
-          disabled={shownPhase === "denied" || shownPhase === "unavailable" || shownPhase === "insecure"} className={buttonOutline}>
+          disabled={shownPhase === "denied" || shownPhase === "unavailable" || shownPhase === "insecure" || shownPhase === "decoder-error"} className={buttonOutline}>
           {wanted ? <Pause aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}
           {wanted ? "Tạm dừng" : "Tiếp tục quét"}
         </button>
@@ -195,10 +207,12 @@ function CameraOverlay({ phase, onRetry }: { phase: CameraPhase; onRetry: () => 
       detail: "Không tìm thấy camera hoặc camera đang được ứng dụng khác dùng. Hãy nhập mã vé bên dưới.", retry: "Thử lại" },
     insecure: { icon: <VideoOff aria-hidden="true" className="size-10" />, title: "Không mở được camera trên kết nối này",
       detail: "Trình duyệt chỉ cho dùng camera trên trang bảo mật (https). Hãy nhập mã vé bên dưới." },
+    "decoder-error": { icon: <VideoOff aria-hidden="true" className="size-10" />, title: "Không đọc được mã QR",
+      detail: "Kiểm tra kết nối rồi thử lại, hoặc nhập mã vé bên dưới.", retry: "Thử lại" },
   };
   const item = content[phase as Exclude<CameraPhase, "scanning">];
   return (
-    <div role={phase === "denied" || phase === "unavailable" ? "alert" : "status"}
+    <div role={phase === "denied" || phase === "unavailable" || phase === "decoder-error" ? "alert" : "status"}
       className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-5 text-center text-white">
       <div className="text-neutral-300">{item.icon}</div>
       <p className="text-base font-bold">{item.title}</p>
