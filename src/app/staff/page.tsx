@@ -2,7 +2,7 @@ import { getRouteActor } from "@/server/auth/session";
 import { accountsService } from "@/server/services/accounts";
 import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
-import { Navbar } from "@/components/ui/navbar";
+import { BackOfficeShell } from "@/components/accounts/back-office-shell";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
 import type { Role } from "@/schemas/auth";
@@ -58,10 +58,8 @@ export default async function StaffPage() {
   const resp = getRoleResponsibilities(user.role);
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
-      <Navbar />
-
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-[126px] sm:pt-[134px] pb-8 sm:pb-12 space-y-8">
+    <BackOfficeShell active="overview" title="Tổng quan vận hành">
+      <div className="space-y-8">
         {/* Header Staff */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm">
           <div className="flex items-center gap-4 min-w-0">
@@ -90,6 +88,14 @@ export default async function StaffPage() {
               className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
             >
               Mở quản lý hóa đơn & vé theo chuyến
+            </Link>
+          )}
+          {(user.role === "RouteMgr" || user.role === "Admin") && (
+            <Link
+              href="/staff/customers"
+              className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+            >
+              Mở quản lý khách hàng
             </Link>
           )}
           <Link
@@ -134,7 +140,7 @@ export default async function StaffPage() {
 
         {/* Phân hệ Quản lý Tuyến & Điểm đón xe */}
         <StaffCatalogManager actorRole={user.role as Role} />
-      </main>
-    </div>
+      </div>
+    </BackOfficeShell>
   );
 }
