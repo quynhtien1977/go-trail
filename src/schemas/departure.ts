@@ -24,3 +24,7 @@ export type ManagedDepartureDto = {
   invoice_owner: { user_id: number; full_name: string } | null;
   pickups: { dep_pickup_id: number; pickup_id: number; name: string; address: string; pickup_time: string }[];
 };
+
+// L02: the Leader's result for ending a departure. Deliberately not ManagedDepartureDto, which carries price
+// and invoice owner fields meant for RouteMgr/Admin. `changed` is false when the departure had already Ended.
+export type EndedDepartureDto = { departure_id: number; status: "Ended"; changed: boolean };

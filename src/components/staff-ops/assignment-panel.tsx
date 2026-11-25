@@ -6,7 +6,7 @@ import type { AssignmentDto } from "@/schemas/assignment";
 import { Button } from "@/components/ui/button";
 import { assignmentApi, errorMessage, fleetApi, personnelApi, type CrewRole, type DepartureStatus } from "@/lib/staff-ops-client";
 import {
-  crewRoleLabel, DepartureStatusPill, EmptyState, Notice, Pill, ResourceView, SelectField, useResource, type NoticeValue,
+  crewRoleLabel, DepartureStatusPill, EmptyState, Notice, Pager, Pill, ResourceView, SelectField, useResource, type NoticeValue,
 } from "./shared";
 
 // Mirrors services/assignments.ts so the UI can explain why an action is unavailable.
@@ -176,7 +176,9 @@ function AddCrewForm({ vehicle, busy, onSubmit }: {
   const [role, setRole] = useState<CrewRole>("Driver");
   const [staffId, setStaffId] = useState("");
   const [replaceId, setReplaceId] = useState("");
-  const candidates = useResource(`crew-candidates:${role}`, () => personnelApi.list({ staff_type: role, status: "Active", pageSize: 50 }));
+  const [page, setPage] = useState(1);
+  const candidates = useResource(`crew-candidates:${role}:${page}`,
+    () => personnelApi.list({ staff_type: role, status: "Active", page, pageSize: 50 }));
   const sameRole = vehicle.staff.filter((item) => item.role_in_trip === role);
   const taken = new Set(sameRole.map((item) => item.staff_id));
   const options = (candidates.data?.items ?? []).filter((item) => !taken.has(item.staff_id));
@@ -193,7 +195,7 @@ function AddCrewForm({ vehicle, busy, onSubmit }: {
     <form onSubmit={submit} className="space-y-3 rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
       <div className="grid gap-3 sm:grid-cols-3">
         <SelectField id={`crew-role-${vehicle.dep_vehicle_id}`} label="Vai trò" value={role}
-          onChange={(value) => { setRole(value as CrewRole); setStaffId(""); setReplaceId(""); }}
+          onChange={(value) => { setRole(value as CrewRole); setStaffId(""); setReplaceId(""); setPage(1); }}
           options={(["Driver", "Assistant", "Leader"] as const).map((value) => ({ value, label: crewRoleLabel[value] }))} />
         <SelectField id={`crew-staff-${vehicle.dep_vehicle_id}`} label="Nhân sự" value={staffId} onChange={setStaffId} required
           disabled={candidates.loading && !candidates.data}
@@ -203,7 +205,13 @@ function AddCrewForm({ vehicle, busy, onSubmit }: {
           disabled={sameRole.length === 0}
           options={[{ value: "", label: "Không thay" }, ...sameRole.map((item) => ({ value: String(item.dep_staff_id), label: item.full_name }))]} />
       </div>
-      {candidates.error && <p className="text-xs text-red-600">{candidates.error}</p>}
+      {candidates.data && <Pager label={`Phân trang nhân sự xe ${vehicle.dep_vehicle_id}`} page={candidates.data.pagination.page}
+        totalPages={candidates.data.pagination.totalPages} totalItems={candidates.data.pagination.totalItems} disabled={candidates.loading}
+        onChange={(next) => { setPage(next); setStaffId(""); }} />}
+      {candidates.error && <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-red-600">
+        <span>{candidates.error}</span><Button type="button" variant="outline" size="sm" onClick={candidates.reload}>Thử lại</Button>
+        {page > 1 && <Button type="button" variant="outline" size="sm" onClick={() => setPage(page - 1)}>Trang trước</Button>}
+      </div>}
       <div className="flex justify-end">
         <Button type="submit" size="sm" variant="outline" disabled={!staffId} isLoading={busy}><Plus /> {replaceId ? "Thay người" : "Thêm vào tổ lái"}</Button>
       </div>
@@ -213,7 +221,8 @@ function AddCrewForm({ vehicle, busy, onSubmit }: {
 
 function AddVehicleForm({ assigned, busy, onSubmit }: { assigned: number[]; busy: boolean; onSubmit: (vehicleId: number) => void }) {
   const [vehicleId, setVehicleId] = useState("");
-  const vehicles = useResource("assignable-vehicles", () => fleetApi.list({ status: "Ready", pageSize: 50 }));
+  const [page, setPage] = useState(1);
+  const vehicles = useResource(`assignable-vehicles:${page}`, () => fleetApi.list({ status: "Ready", page, pageSize: 50 }));
   const options = (vehicles.data?.items ?? []).filter((item) => !assigned.includes(item.vehicle_id));
   return (
     <form className="flex flex-col gap-3 rounded-2xl border border-dashed border-zinc-300 p-3 sm:flex-row sm:items-end dark:border-zinc-700"
@@ -222,6 +231,13 @@ function AddVehicleForm({ assigned, busy, onSubmit }: { assigned: number[]; busy
         <SelectField id="assign-vehicle" label="Gán thêm xe" value={vehicleId} onChange={setVehicleId} required
           options={[{ value: "", label: vehicles.error ? "Lỗi tải danh sách xe" : vehicles.data ? (options.length ? "Chọn xe sẵn sàng" : "Không còn xe sẵn sàng") : "Đang tải..." },
             ...options.map((item) => ({ value: String(item.vehicle_id), label: `${item.plate_number} · ${item.vehicle_type} · ${item.seat_count} ghế` }))]} />
+        {vehicles.data && <Pager label="Phân trang xe" page={vehicles.data.pagination.page} totalPages={vehicles.data.pagination.totalPages}
+          totalItems={vehicles.data.pagination.totalItems} disabled={vehicles.loading}
+          onChange={(next) => { setPage(next); setVehicleId(""); }} />}
+        {vehicles.error && <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-red-600">
+          <span>{vehicles.error}</span><Button type="button" variant="outline" size="sm" onClick={vehicles.reload}>Thử lại</Button>
+          {page > 1 && <Button type="button" variant="outline" size="sm" onClick={() => setPage(page - 1)}>Trang trước</Button>}
+        </div>}
       </div>
       <Button type="submit" variant="outline" disabled={!vehicleId} isLoading={busy}><Plus /> Gán xe</Button>
     </form>

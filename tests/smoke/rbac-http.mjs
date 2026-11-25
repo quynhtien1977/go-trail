@@ -14,6 +14,8 @@ const roles = ["Customer", "Leader", "RouteMgr", "HRMgr", "Admin"];
 const database = await createTestDatabase({ beforeMigration: "20261021000000_five_roles" });
 const db = database.client;
 const secret = randomBytes(32).toString("hex");
+// Fixture webhook key; never inherit a real SEPAY_API_KEY from the environment.
+const sepayKey = randomBytes(24).toString("hex");
 const actors = new Map();
 let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
@@ -33,7 +35,11 @@ async function apiFiles(dir) {
 async function assertRouteCoverage(endpoints) {
   const expected = endpoints.map(e => `${e.method} ${e.route}`);
   expected.push("GET auth/[...nextauth]", "POST auth/[...nextauth]", "POST auth/register",
-    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats");
+    "GET trips", "GET trips/[id]", "GET trips/[id]/pickups", "GET trips/[id]/departures", "GET departures/[id]/seats",
+    "GET departures/[id]/pickups",
+    // P01: machine-to-machine, authenticated by SEPAY_API_KEY instead of a session role.
+    // No role may drive it, which the P01 block below asserts for all five roles.
+    "POST webhooks/sepay");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -57,7 +63,7 @@ await once(lease, "listening");
 const port = lease.address().port;
 await new Promise(resolve => lease.close(resolve));
 const base = `http://127.0.0.1:${port}`, origin = `https://localhost:${port}`;
-async function request(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
+async function sendRequest(endpoint, actor, { claims = {}, originHeader = origin, body = endpoint.body?.(), extraHeaders } = {}) {
   const headers = new Headers(extraHeaders);
   if (actor) {
     const token = await encode({ secret, maxAge: 8 * 60 * 60, token: { sub: String(actor.user_id), role: actor.role,
@@ -69,6 +75,10 @@ async function request(endpoint, actor, { claims = {}, originHeader = origin, bo
   const response = await fetch(base + endpoint.path, { method: endpoint.method, headers,
     body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(10000) });
   requests++;
+  return response;
+}
+async function request(endpoint, actor, options) {
+  const response = await sendRequest(endpoint, actor, options);
   assert.match(response.headers.get("content-type") ?? "", /application\/json/, `${endpoint.method} ${endpoint.route}: JSON required, never a login redirect`);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
   return { status: response.status, body: await response.json(), retryAfter: response.headers.get("retry-after"), label: `${endpoint.method} ${endpoint.route}` };
@@ -113,7 +123,7 @@ async function startServer(bank = {}) {
   child = spawn(process.execPath, ["--import", "./tests/helpers/preload-redis.mjs", "node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
-      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1",
+      UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1", SEPAY_API_KEY: sepayKey,
       BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
     stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
@@ -244,6 +254,18 @@ try {
     license_class: "D", license_expiry: "2036-12-31" }) });
   route("staff/personnel/[id]", `/api/staff/personnel/${personnel.staff_id}`, ["HRMgr", "Admin"], {
     GET: undefined, PATCH: () => ({ phone: "0907654321" }), DELETE: undefined });
+  // C03: a RouteMgr only reaches the customers of invoices they are responsible for, so the directory needs one.
+  const directoryInvoice = await db.invoice.create({ data: { customer_id: actors.get("OtherCustomer").user_id,
+    departure_id: departures[1].departure_id, payment_code: "RBAC-DIRECTORY", total_amount: "500000",
+    expires_at: new Date("2030-01-01"), responsible_user_id: actors.get("RouteMgr").user_id,
+    responsible_name_snapshot: "RouteMgr fixture", responsible_role_snapshot: "RouteMgr" } });
+  route("staff/customers", "/api/staff/customers", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/invoices", "/api/staff/invoices", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/invoices/[id]", `/api/staff/invoices/${directoryInvoice.invoice_id}`, ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/tickets", "/api/staff/tickets", ["RouteMgr", "Admin"], { GET: undefined });
+  route("staff/customers/[id]", `/api/staff/customers/${actors.get("OtherCustomer").user_id}`, ["RouteMgr", "Admin"], { GET: undefined });
+  route("account/bookings", "/api/account/bookings", ["Customer", "Admin"], { GET: undefined });
+  route("account/tickets", "/api/account/tickets", ["Customer", "Admin"], { GET: undefined });
   let bookingSeatId, bookingPickupId;
   route("departures/[id]/holds", "/api/departures/2147483647/holds", ["Customer", "Admin"], { POST: () => ({
     idempotency_key: `rbac-booking-key-${next()}`, seats: [{ dep_seat_id: bookingSeatId, dep_pickup_id: bookingPickupId,
@@ -260,9 +282,55 @@ try {
     bookingSeatId = seat.dep_seat_id; bookingPickupId = sale.pickups[0].dep_pickup_id;
     holdEndpoint.path = `/api/departures/${sale.departure_id}/holds`;
   };
-  assert.equal(endpoints.length, 38);
+  // L01: a Paid/Valid ticket on the Confirmed departure the Leader is assigned to. Its owner is a dedicated
+  // account outside `actors`, so the Customer-facing blocks below keep their exact ticket and booking lists.
+  const boardingOwner = await db.user.create({ data: { email: "boarding@rbac.example.test", password_hash: "unused",
+    full_name: "Boarding owner", phone: "0901234567", role: "Customer" } });
+  const boardingInvoice = await db.invoice.create({ data: { customer_id: boardingOwner.user_id, departure_id: departures[3].departure_id,
+    payment_code: "RBAC-BOARDING", status: "Paid", total_amount: "500000", expires_at: new Date("2030-01-01") } });
+  const boardingVehicle = await db.departureVehicle.findFirstOrThrow({ where: { departure_id: departures[3].departure_id } });
+  const boardingSeat = await db.departureSeat.create({ data: { dep_vehicle_id: boardingVehicle.dep_vehicle_id, seat_id: otherSeat.seat_id,
+    status: "Sold", invoice_id: boardingInvoice.invoice_id } });
+  const boardingPickup = await db.departurePickup.create({ data: { departure_id: departures[3].departure_id, pickup_id: pickup.pickup_id,
+    pickup_time: new Date("2030-01-02") } });
+  const boardingTicket = await db.invoiceDetail.create({ data: { invoice_id: boardingInvoice.invoice_id, dep_seat_id: boardingSeat.dep_seat_id,
+    dep_pickup_id: boardingPickup.dep_pickup_id, passenger_name: "Boarding passenger", passenger_phone: "0901234567",
+    emergency_contact: "Fixture contact", health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: "TK0000000000000000B0A2" } });
+  route("leader/departures/[id]/manifest", `/api/leader/departures/${departures[3].departure_id}/manifest`, ["Leader", "Admin"], { GET: undefined });
+  // A scan is idempotent, so both allowed roles succeed: the first checks in, the second reports AlreadyCheckedIn.
+  route("checkin", "/api/checkin", ["Leader", "Admin"], { POST: () => ({ action: "CheckIn",
+    departure_id: departures[3].departure_id, ticket_code: boardingTicket.ticket_code }) });
+  endpoints.at(-1).success = 200;
+  // L02: ending is idempotent, so the already Ended departure answers both allowed roles with 200.
+  route("leader/departures/[id]/end", `/api/leader/departures/${departures[5].departure_id}/end`, ["Leader", "Admin"], { POST: () => ({}) });
+  endpoints.at(-1).success = 200;
+  // I02: supply catalog and stock receipt.
+  const fixtureItem = await db.supplyItem.create({
+    data: { name: "Vật tư mẫu RBAC", category: "Gear", unit: "hộp", is_active: true },
+  });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies", "/api/staff/supplies", ["HRMgr", "Admin"], { POST: () => ({ name: `Vật tư ${next()}`, category: "Gear", unit: "hộp" }) });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { GET: undefined });
+  route("staff/supplies/[id]", `/api/staff/supplies/${fixtureItem.item_id}`, ["HRMgr", "Admin"], { PATCH: () => ({ unit: "gói" }) });
+  route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
+    POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
+  });
+  // P03: Admin payment reconciliation (read-only).
+  const paymentFixture = await db.payment.create({
+    data: {
+      invoice_id: invoice.invoice_id,
+      amount: "500000",
+      transaction_id: "RBAC-PAYMENT-1",
+      reference_code: "REF-RBAC-1",
+      status: "NeedsReview",
+      raw_payload: "{}",
+    },
+  });
+  route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
+  route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
+  assert.equal(endpoints.length, 55);
   await assertRouteCoverage(endpoints);
-  console.log("PASS: explicit A03 policies cover all 38 protected API methods; new/unclassified API methods fail this gate.");
+  console.log(`PASS: explicit A03 policies cover all ${endpoints.length} protected API methods; new/unclassified API methods fail this gate.`);
 
   await startServer();
   const deniedSnapshot = async () => {
@@ -274,6 +342,7 @@ try {
       db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }),
       db.auditLog.findMany({ orderBy: { log_id: "asc" } }), db.invoice.findMany({ orderBy: { invoice_id: "asc" } }),
       db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
+      db.payment.findMany({ orderBy: { payment_id: "asc" } }), db.refund.findMany({ orderBy: { refund_id: "asc" } }),
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
@@ -370,10 +439,33 @@ try {
   }
   console.log("PASS: K01 public seat map follows O03/O04 sale setup, returns only safe seat fields to guests/all roles, hides unavailable departures and never mutates holds.");
 
+  // Checkout consumes departure pickup IDs directly from the public HTTP contract, never from staff APIs.
+  const pickupRead = { method: "GET", route: "departures/[id]/pickups", path: `/api/departures/${saleId}/pickups` };
+  const beforePickupRead = await deniedSnapshot();
+  let publicPickups;
+  for (const actor of [undefined, ...roles.map(role => actors.get(role))]) {
+    const result = await request(pickupRead, actor);
+    expect(result, 200); noSecrets(result.body.data);
+    assert.deepEqual(Object.keys(result.body.data).sort(), ["departure_id", "pickups"]);
+    assert.equal(result.body.data.departure_id, saleId); assert.equal(result.body.data.pickups.length, 1);
+    for (const item of result.body.data.pickups) assert.deepEqual(Object.keys(item).sort(),
+      ["dep_pickup_id", "pickup_id", "name", "address", "pickup_time"].sort());
+    publicPickups = result.body.data;
+  }
+  expect(await request({ ...pickupRead, path: "/api/departures/2147483647/pickups" }), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...pickupRead, path: `/api/departures/${id}/pickups` }), 422, "INVALID_INPUT");
+  }
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Closed" } });
+  expect(await request(pickupRead), 404, "NOT_FOUND");
+  await db.departure.update({ where: { departure_id: saleId }, data: { status: "Open" } });
+  assert.equal(await deniedSnapshot(), beforePickupRead, "Public pickup reads cannot change invoices, seats, assignments or audits");
+  console.log("PASS: public departure pickup API is readable by guests/all roles, returns only assigned schedule fields and feeds real K02 holds without mutations.");
+
   // K02 extends the same real Draft -> assignment -> Open flow; only its unpaid stale holds may be reclaimed.
   await db.invoice.update({ where: { invoice_id: holdInvoice.invoice_id }, data: { expires_at: new Date(Date.now() - 1000) } });
   await db.departureSeat.update({ where: { dep_seat_id: saleSeats[1].dep_seat_id }, data: { locked_until: new Date(Date.now() - 1000) } });
-  const salePickup = await db.departurePickup.findFirstOrThrow({ where: { departure_id: saleId } });
+  const salePickup = publicPickups.pickups[0];
   const bookingBody = { idempotency_key: "http-booking-key-0001", seats: saleSeats.slice(0, 2).map(seat => ({
     dep_seat_id: seat.dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id, passenger_name: "Fixture passenger",
     passenger_phone: "0901234567", emergency_contact: "Fixture contact", health_declaration: true,
@@ -447,6 +539,260 @@ try {
   assert.equal(expiredRead.body.data.status, "Pending"); assert.deepEqual(expiredRead.body.data.payment, { status: "Expired" });
   assert.equal(await deniedSnapshot(), beforeExpiryRead, "Reading an expired Pending invoice must not release its seats or mutate status");
   console.log("PASS: K03 invoice/VietQR HTTP contract enforces owner/Admin, immutable employee snapshots, exact VND/UTC, no-store, safe configured/unconfigured states and read-only expiry.");
+
+  // C03: the customer directory and booking history over HTTP, with RouteMgr scoping and no PII beyond the contract.
+  const beforeDirectory = await deniedSnapshot();
+  const directoryList = { method: "GET", route: "staff/customers", path: "/api/staff/customers" };
+  const directoryRead = { method: "GET", route: "staff/customers/[id]", path: `/api/staff/customers/${actors.get("OtherCustomer").user_id}` };
+  const ownBookings = { method: "GET", route: "account/bookings", path: "/api/account/bookings" };
+  const summaryKeys = ["user_id", "full_name", "email", "phone", "status", "created_at", "invoice_count", "last_booking_at"].sort();
+  const historyKeys = ["invoice_id", "departure_id", "status", "total_amount", "created_at", "expires_at",
+    "responsible_name_snapshot", "responsible_role_snapshot", "trip_name", "departure_date", "tickets"].sort();
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const listed = await request(directoryList, actor);
+    expect(listed, 200); noSecrets(listed.body.data);
+    assert.deepEqual(Object.keys(listed.body.data).sort(), ["items", "pagination"]);
+    assert.deepEqual(Object.keys(listed.body.data.pagination).sort(), ["page", "pageSize", "totalItems", "totalPages"].sort());
+    assert.ok(listed.body.data.items.some(item => item.user_id === actors.get("OtherCustomer").user_id));
+    for (const item of listed.body.data.items) {
+      assert.deepEqual(Object.keys(item).sort(), summaryKeys);
+      assert.match(String(item.user_id), /^[1-9]\d*$/);
+    }
+    // Staff accounts are not customers and never appear in the directory.
+    for (const staffRole of ["Leader", "RouteMgr", "HRMgr", "Admin"]) {
+      assert.ok(!listed.body.data.items.some(item => item.user_id === actors.get(staffRole).user_id), `${staffRole} must not be listed as a customer`);
+    }
+  }
+  // Admin sees every customer; a RouteMgr only those tied to an invoice they are responsible for.
+  const adminList = await request(directoryList, actors.get("Admin"));
+  const managerList = await request(directoryList, actors.get("RouteMgr"));
+  assert.ok(adminList.body.data.pagination.totalItems >= managerList.body.data.pagination.totalItems);
+  for (const item of managerList.body.data.items) assert.ok(item.invoice_count >= 1, "a scoped directory never lists customers without a managed invoice");
+  for (const actor of [actors.get("Admin"), actors.get("RouteMgr")]) {
+    const detail = await request(directoryRead, actor);
+    expect(detail, 200); noSecrets(detail.body.data);
+    assert.deepEqual(Object.keys(detail.body.data).sort(), ["bookings", "customer"]);
+    assert.deepEqual(Object.keys(detail.body.data.customer).sort(), summaryKeys);
+    assert.ok(!JSON.stringify(detail.body.data).includes("ticket_code"), "C03 never returns ticket codes; P04 owns QR issuance");
+    for (const booking of detail.body.data.bookings) {
+      assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+      assert.match(booking.total_amount, /^(0|[1-9]\d*)$/);
+      for (const key of ["created_at", "expires_at", "departure_date"]) assert.equal(new Date(booking[key]).toISOString(), booking[key]);
+      for (const ticket of booking.tickets) {
+        assert.deepEqual(Object.keys(ticket).sort(), ["detail_id", "seat_name", "passenger_name", "status", "check_in_status"].sort());
+      }
+    }
+  }
+  const scopedDetail = await request(directoryRead, actors.get("RouteMgr"));
+  assert.deepEqual(scopedDetail.body.data.bookings.map(booking => booking.invoice_id), [directoryInvoice.invoice_id]);
+  // Out-of-scope and non-customer ids are indistinguishable from missing ones.
+  expect(await request({ ...directoryRead, path: `/api/staff/customers/${actors.get("HRMgr").user_id}` }, actors.get("RouteMgr")), 404, "NOT_FOUND");
+  expect(await request({ ...directoryRead, path: "/api/staff/customers/2147483647" }, actors.get("Admin")), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "1.5", "2147483648", "bad"]) {
+    expect(await request({ ...directoryRead, path: `/api/staff/customers/${id}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  for (const query of ["page=0", "pageSize=51", "status=Deleted", "q=", "unknown=1", "page=1&page=2"]) {
+    expect(await request({ ...directoryList, path: `/api/staff/customers?${query}` }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  // A Customer reads their own history only, and never another customer's invoices.
+  const own = await request(ownBookings, actors.get("Customer"));
+  expect(own, 200); noSecrets(own.body.data);
+  assert.deepEqual(Object.keys(own.body.data).sort(), ["bookings", "customer_id"]);
+  assert.equal(own.body.data.customer_id, actors.get("Customer").user_id);
+  assert.ok(!own.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(!JSON.stringify(own.body.data).includes("ticket_code"));
+  for (const booking of own.body.data.bookings) assert.deepEqual(Object.keys(booking).sort(), historyKeys);
+  const otherOwn = await request(ownBookings, actors.get("OtherCustomer"));
+  expect(otherOwn, 200);
+  assert.equal(otherOwn.body.data.customer_id, actors.get("OtherCustomer").user_id);
+  // Own history is every invoice of that customer, regardless of which employee is responsible for it.
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === directoryInvoice.invoice_id));
+  assert.ok(otherOwn.body.data.bookings.some(booking => booking.invoice_id === paidInvoice.invoice_id));
+  assert.ok(!otherOwn.body.data.bookings.some(booking => booking.invoice_id === invoice.invoice_id),
+    "a customer's own history must never include another customer's invoice");
+  assert.equal(await deniedSnapshot(), beforeDirectory, "C03 reads cannot change accounts, invoices, tickets, seats or audits");
+  console.log("PASS: C03 customer directory and booking history enforce Admin/RouteMgr scoping, Customer-own history, allowlisted fields without credentials or ticket codes, and no mutations.");
+
+  // P01: the SePay webhook is machine-to-machine. A session must never substitute for the API key,
+  // and recording must not touch invoices, seats, tickets or audits — that is P02's job.
+  const webhook = { method: "POST", route: "webhooks/sepay", path: "/api/webhooks/sepay" };
+  const transfer = (overrides = {}) => ({ id: 70001, gateway: "Vietcombank", transactionDate: "2026-11-11 14:02:37",
+    accountNumber: "0123499999", code: "RBAC-OWN", content: "RBAC-OWN thanh toan", transferType: "in",
+    transferAmount: 500000, accumulated: 1, subAccount: null, referenceCode: "RBACREF1", description: "", ...overrides });
+  const businessSnapshot = async () => createHash("sha256").update(JSON.stringify(await Promise.all([
+    db.invoice.findMany({ orderBy: { invoice_id: "asc" } }), db.invoiceDetail.findMany({ orderBy: { detail_id: "asc" } }),
+    db.departureSeat.findMany({ orderBy: { dep_seat_id: "asc" } }), db.auditLog.findMany({ orderBy: { log_id: "asc" } }),
+    db.refund.findMany({ orderBy: { refund_id: "asc" } }),
+  ]))).digest("hex");
+
+  const beforeWebhook = await deniedSnapshot();
+  for (const header of [undefined, "", "Apikey", `Apikey ${sepayKey}x`, `Bearer ${sepayKey}`, sepayKey]) {
+    expect(await request(webhook, null, { body: transfer(), extraHeaders: header === undefined ? undefined : { authorization: header } }),
+      401, "UNAUTHENTICATED");
+  }
+  for (const role of [...roles, "OtherCustomer"]) {
+    // A valid session of any role, including Admin, is not a webhook credential.
+    expect(await request(webhook, actors.get(role), { body: transfer() }), 401, "UNAUTHENTICATED");
+  }
+  assert.equal(await deniedSnapshot(), beforeWebhook, "rejected webhook calls must not write anything, not even a payment row");
+
+  const keyed = { authorization: `Apikey ${sepayKey}` };
+  // This block checks transport, authentication and recording over real HTTP, not confirmation (P02 has its own
+  // unit and PostgreSQL race tests). RBAC-OWN has no tickets, so P02 always holds its transfers for review and the
+  // business rows below must stay unchanged. Assert that precondition instead of relying on it silently.
+  assert.equal(await db.invoiceDetail.count({ where: { invoice_id: invoice.invoice_id } }), 0,
+    "fixture precondition: RBAC-OWN has no tickets; give this block its own invoice before adding any");
+  const businessBefore = await businessSnapshot();
+  const outgoing = await request(webhook, null, { body: transfer({ id: 70002, transferType: "out" }), extraHeaders: keyed });
+  assert.equal(outgoing.status, 200); assert.deepEqual(outgoing.body, { success: true });
+  assert.equal(await db.payment.count({ where: { transaction_id: "70002" } }), 0, "outgoing transfers are ignored, not recorded");
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ack = await request(webhook, null, { body: transfer(), extraHeaders: keyed });
+    assert.equal(ack.status, 200, "SePay must always get 200 once the transfer is recorded");
+    assert.deepEqual(ack.body, { success: true }, "the webhook answers SePay's own contract, not the { data } envelope");
+  }
+  const recorded = await db.payment.findMany({ where: { transaction_id: "70001" } });
+  assert.equal(recorded.length, 1, "retries of one transaction_id must leave exactly one row");
+  assert.equal(recorded[0].invoice_id, invoice.invoice_id, "the transfer attaches to the invoice named by payment_code");
+  assert.equal(recorded[0].amount.toFixed(0), "500000");
+  assert.equal(recorded[0].status, "NeedsReview", "an invoice without tickets is never confirmed (P02)");
+
+  const unmatched = await request(webhook, null, { body: transfer({ id: 70003, code: "NO-SUCH-CODE" }), extraHeaders: keyed });
+  assert.deepEqual(unmatched.body, { success: true });
+  assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70003" } })).invoice_id, null);
+
+  // SePay forwards the code in the customer's letter case (Test mode, 16/11/2026); it must still find the invoice.
+  const lowercase = await request(webhook, null, { body: transfer({ id: 70005, code: "rbac-own" }), extraHeaders: keyed });
+  assert.deepEqual(lowercase.body, { success: true });
+  assert.equal((await db.payment.findFirstOrThrow({ where: { transaction_id: "70005" } })).invoice_id, invoice.invoice_id,
+    "a lowercase payment code must reach the same invoice as its uppercase form");
+
+  for (const bad of [{ transferAmount: -1 }, { transferAmount: 1.5 }, { transferType: "IN" }, { id: 0 }]) {
+    expect(await request(webhook, null, { body: transfer({ ...bad, id: bad.id ?? 70004 }), extraHeaders: keyed }), 422, "INVALID_INPUT");
+  }
+  assert.equal(await db.payment.count({ where: { transaction_id: "70004" } }), 0);
+  assert.equal(await businessSnapshot(), businessBefore,
+    "transfers held for review must not change invoices, tickets, seats, refunds or audits");
+  console.log("PASS: P01 SePay webhook rejects every session and wrong key, records only incoming transfers once per transaction_id, always answers SePay's contract, and transfers held for review never alter invoices, seats, tickets or audits.");
+
+  // C00: a real Paid/Valid/Sold fixture and direct HTTP mutations, including Admin.
+  const paidTicket = await db.invoiceDetail.create({ data: { invoice_id: paidInvoice.invoice_id,
+    dep_seat_id: saleSeats[2].dep_seat_id, dep_pickup_id: salePickup.dep_pickup_id,
+    passenger_name: "Policy fixture", passenger_phone: "0901234567", emergency_contact: "Fixture contact",
+    health_declaration: true, unit_price: "500000", status: "Valid", ticket_code: "C00-VALID-TICKET" } });
+  const beforePolicyAttempts = await deniedSnapshot();
+  const noCancel = { method: "PATCH", route: "staff/departures/[id]", path: `/api/staff/departures/${saleId}` };
+  for (const role of roles) {
+    const actor = actors.get(role), canOperate = ["RouteMgr", "Admin"].includes(role);
+    for (const status of ["Cancelled", "Rescheduled"]) {
+      expect(await request(noCancel, actor, { body: { status } }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+    for (const body of [{ departure_date: "2033-01-03T02:00:00.000Z" },
+      { pickups: [{ pickup_id: operationsPickup.pickup_id, pickup_time: "2033-01-03T02:00:00.000Z" }] }]) {
+      expect(await request(noCancel, actor, { body }), canOperate ? 409 : 403,
+        canOperate ? "RESOURCE_CONFLICT" : "FORBIDDEN");
+    }
+  }
+  // Unsupported methods/routes have framework 404/405 responses rather than the application's JSON contract.
+  // Keep the strict JSON/no-store assertions above for every implemented endpoint.
+  const forbidden = [
+    ["PATCH", `/api/invoices/${paidInvoice.invoice_id}`, { status: "Cancelled" }],
+    ["DELETE", `/api/invoices/${paidInvoice.invoice_id}`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/cancel`],
+    ["POST", `/api/invoices/${paidInvoice.invoice_id}/refund`],
+    ["PATCH", `/api/tickets/${paidTicket.detail_id}`, { status: "Cancelled", departure_id: draft.departure_id }],
+    ["POST", `/api/tickets/${paidTicket.detail_id}/cancel`],
+    ["POST", `/api/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["POST", `/api/admin/refunds`, { invoice_id: paidInvoice.invoice_id, amount: "500000" }],
+    ["DELETE", `/api/staff/departures/${saleId}`],
+    ["POST", `/api/staff/departures/${saleId}/cancel`],
+    ["POST", `/api/staff/departures/${saleId}/reschedule`, { departure_date: "2033-01-03T02:00:00.000Z" }],
+  ];
+  for (const role of roles) {
+    for (const [method, path, body] of forbidden) {
+      const result = await sendRequest({ method, path }, actors.get(role), { body });
+      assert.ok([403, 404, 405].includes(result.status), `${role} ${method} ${path}: must reject without a redirect`);
+      await result.arrayBuffer();
+    }
+  }
+  assert.equal(await deniedSnapshot(), beforePolicyAttempts,
+    "C00 forbidden requests cannot mutate Paid/Valid/Sold, Pending holds, departure schedules, payments, refunds or audits");
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: paidInvoice.invoice_id } })).status, "Paid");
+  assert.equal((await db.invoiceDetail.findUniqueOrThrow({ where: { detail_id: paidTicket.detail_id } })).status, "Valid");
+  const soldPolicySeat = await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: saleSeats[2].dep_seat_id } });
+  assert.equal(soldPolicySeat.status, "Sold"); assert.equal(soldPolicySeat.locked_until, null);
+  assert.equal(await db.refund.count(), 0);
+  console.log("PASS: C00 all five roles, including Admin, cannot cancel/refund/reschedule through direct HTTP calls; Paid/Valid/Sold and all financial/history rows stay unchanged.");
+
+  // P04: "my tickets" over real HTTP. OtherCustomer now owns exactly one issued ticket (the C00 fixture above).
+  const ownTickets = (query = "") => ({ method: "GET", route: "account/tickets", path: `/api/account/tickets${query}` });
+  const ticketKeys = ["detail_id", "invoice_id", "invoice_status", "invoice_expires_at", "hold_expired", "status", "check_in_status", "ticket_code",
+    "trip_name", "departure_id", "departure_date", "passenger_name", "seat_name", "pickup", "unit_price", "responsible_name_snapshot"].sort();
+  const beforeTickets = await deniedSnapshot();
+  const owner = await request(ownTickets("?status=valid"), actors.get("OtherCustomer"));
+  expect(owner, 200); noSecrets(owner.body.data);
+  assert.deepEqual(owner.body.data.items.map(t => t.detail_id), [paidTicket.detail_id]);
+  assert.deepEqual(Object.keys(owner.body.data.items[0]).sort(), ticketKeys);
+  assert.equal(owner.body.data.items[0].ticket_code, "C00-VALID-TICKET", "the owner sees the issued code of a Paid/Valid ticket");
+  for (const leak of ["passenger_phone", "emergency_contact", "health_declaration", "customer_id", "responsible_user_id", "Fixture contact"]) {
+    assert.ok(!JSON.stringify(owner.body.data).includes(leak), `tickets must not expose ${leak}`);
+  }
+  const stranger = await request(ownTickets(), actors.get("Customer"));
+  expect(stranger, 200);
+  assert.ok(!stranger.body.data.items.some(t => t.detail_id === paidTicket.detail_id), "another customer's ticket is never listed");
+  assert.ok(!JSON.stringify(stranger.body.data).includes("C00-VALID-TICKET"), "nor its code");
+  assert.ok(stranger.body.data.items.every(t => t.ticket_code === null || (t.invoice_status === "Paid" && t.status === "Valid")));
+  // Admin may hold seats for itself (PRD 11, K02), so its list can be non-empty; it must still be only its own.
+  const adminTickets = await request(ownTickets("?pageSize=50"), actors.get("Admin"));
+  expect(adminTickets, 200);
+  const adminInvoiceIds = new Set((await db.invoice.findMany({ where: { customer_id: actors.get("Admin").user_id },
+    select: { invoice_id: true } })).map(row => row.invoice_id));
+  assert.ok(adminTickets.body.data.items.every(t => adminInvoiceIds.has(t.invoice_id)),
+    "Admin passes the Customer route but reads only tickets of its own invoices");
+  assert.ok(!adminTickets.body.data.items.some(t => t.detail_id === paidTicket.detail_id));
+  for (const query of ["?status=all", "?status=Valid", "?customer_id=1", "?pageSize=51", "?page=0", "?status=valid&status=pending"]) {
+    expect(await request(ownTickets(query), actors.get("OtherCustomer")), 422, "INVALID_INPUT");
+  }
+  assert.equal(await deniedSnapshot(), beforeTickets, "reading tickets cannot change any business or audit row");
+  console.log("PASS: P04 my tickets returns only the caller's tickets with an allowlisted contract, shows a code only for Paid/Valid, refuses malformed queries and never mutates.");
+
+  // L01: manifest and QR check-in over real HTTP. The matrix above already checked the boarding ticket in.
+  const manifestRead = endpoints.find(e => e.route === "leader/departures/[id]/manifest");
+  const checkinWrite = endpoints.find(e => e.route === "checkin");
+  const scanBody = (body) => ({ ...checkinWrite, body: () => body });
+  const beforeCheckin = await deniedSnapshot();
+  const crewManifest = await request(manifestRead, actors.get("Leader"));
+  expect(crewManifest, 200); noSecrets(crewManifest.body.data);
+  assert.deepEqual(Object.keys(crewManifest.body.data).sort(), ["crew", "departure", "passengers", "server_time", "summary"]);
+  assert.deepEqual(crewManifest.body.data.passengers.map(p => p.detail_id), [boardingTicket.detail_id]);
+  assert.deepEqual(crewManifest.body.data.summary, { total: 1, checked_in: 1, absent: 0, pending: 0 });
+  assert.doesNotMatch(JSON.stringify(crewManifest.body.data), /TK0000000000000000B0A2|ticket_code|RBAC-BOARDING|payment|email|health/,
+    "the manifest carries no QR code, payment, account or health data");
+  expect(await request(manifestRead, actors.get("OtherLeader")), 404, "NOT_FOUND");
+  expect(await request({ ...manifestRead, path: `/api/leader/departures/${departures[2].departure_id}/manifest` }, actors.get("Leader")), 404, "NOT_FOUND");
+  for (const id of ["0", "01", "-1", "2147483648", "bad"]) {
+    expect(await request({ ...manifestRead, path: `/api/leader/departures/${id}/manifest` }, actors.get("Leader")), 422, "INVALID_INPUT");
+  }
+  const rescan = await request(checkinWrite, actors.get("Leader"));
+  expect(rescan, 200);
+  assert.equal(rescan.body.data.result, "AlreadyCheckedIn"); assert.equal(rescan.body.data.changed, false);
+  const confirmed = departures[3].departure_id;
+  expect(await request(scanBody({ action: "CheckIn", departure_id: confirmed, ticket_code: "TK00000000000000000000" }), actors.get("Leader")),
+    404, "TICKET_NOT_FOUND");
+  expect(await request(scanBody({ action: "CheckIn", departure_id: departures[5].departure_id, ticket_code: boardingTicket.ticket_code }),
+    actors.get("Leader")), 409, "CHECKIN_CLOSED");
+  expect(await request(scanBody({ action: "CheckIn", departure_id: confirmed, ticket_code: boardingTicket.ticket_code }),
+    actors.get("OtherLeader")), 404, "NOT_FOUND");
+  expect(await request(scanBody({ action: "MarkAbsent", departure_id: confirmed, detail_id: boardingTicket.detail_id }),
+    actors.get("Leader")), 409, "ALREADY_CHECKED_IN");
+  for (const body of [{ action: "CheckIn", departure_id: confirmed }, { action: "CheckIn", departure_id: confirmed,
+    ticket_code: boardingTicket.ticket_code, check_in_status: "Absent" }, { action: "CheckIn", departure_id: confirmed, ticket_code: "x".repeat(1100) }]) {
+    expect(await request(scanBody(body), actors.get("Leader")), body.ticket_code?.length === 1100 ? 413 : 422, "INVALID_INPUT");
+  }
+  assert.equal(await deniedSnapshot(), beforeCheckin, "reads, repeated scans and rejected check-ins change nothing");
+  console.log("PASS: L01 manifest is scoped to the assigned Leader and Confirmed/Running/Ended, omits codes and money; check-in over HTTP is idempotent with distinct errors and no writes on rejection.");
 
   // K04: retries are budgeted too; rotating browser-supplied source headers cannot reset the account budget.
   const beforeQuota = await deniedSnapshot();
@@ -523,7 +869,7 @@ try {
     expect(await request(startup, fresh), 200);
     expect(await request(startup, fresh, { claims: { authenticated_at: Math.floor(Date.now() / 1000) - 8 * 60 * 60 } }), 401, "UNAUTHENTICATED");
   }
-  console.log("PASS: Locked and revoked sessions fail all 38 methods for every role; fresh sessions work and absolute expiry remains enforced.");
+  console.log(`PASS: Locked and revoked sessions fail all ${endpoints.length} methods for every role; fresh sessions work and absolute expiry remains enforced.`);
   const oldAccountant = { user_id: legacy.user_id, role: "Accountant", auth_version: 4 };
   for (const endpoint of endpoints) expect(await request(endpoint, oldAccountant), 401, "UNAUTHENTICATED");
   const admin = { ...actors.get("Admin"), auth_version: 1 };

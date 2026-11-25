@@ -7,9 +7,9 @@ import type { ManagedDepartureDto } from "@/schemas/departure";
 import type { AssignmentDto } from "@/schemas/assignment";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchStaffPickups, fetchStaffTrips, formatVnd } from "@/lib/catalog-client";
+import { fetchStaffPickupsPage, fetchStaffTrips, formatVnd } from "@/lib/catalog-client";
 import {
-  departureApi, errorMessage, formatVietnamDate, fromVietnamLocalInput, toVietnamLocalInput,
+  buildPickupSchedule, departureApi, errorMessage, formatVietnamDate, fromVietnamLocalInput, toVietnamLocalInput,
   type DepartureInput, type DepartureStatus,
 } from "@/lib/staff-ops-client";
 import { cn } from "@/lib/utils";
@@ -58,7 +58,8 @@ export function DepartureManager({ actorRole }: { actorRole: Role }) {
 // RouteMgr / Admin: departures per trip
 // ---------------------------------------------------------------------------
 function TripDepartures({ actorRole, canAssign }: { actorRole: Role; canAssign: boolean }) {
-  const trips = useResource("staff-trips", () => fetchStaffTrips({ page: 1, pageSize: 50 }));
+  const [tripPage, setTripPage] = useState(1);
+  const trips = useResource(`staff-trips:${tripPage}`, () => fetchStaffTrips({ page: tripPage, pageSize: 50 }));
   const [tripId, setTripId] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | DepartureStatus>("");
   const [page, setPage] = useState(1);
@@ -66,8 +67,8 @@ function TripDepartures({ actorRole, canAssign }: { actorRole: Role; canAssign: 
   const [detailId, setDetailId] = useState<number | null>(null);
   const [notice, setNotice] = useState<NoticeValue>(null);
 
-  const selectedTripId = tripId ?? trips.data?.items[0]?.trip_id ?? null;
-  const selectedTrip = trips.data?.items.find((trip) => trip.trip_id === selectedTripId);
+  const selectedTrip = trips.data?.items.find((trip) => trip.trip_id === tripId) ?? trips.data?.items[0];
+  const selectedTripId = selectedTrip?.trip_id ?? null;
   const departures = useResource(selectedTripId === null ? null : `departures:${selectedTripId}:${status}:${page}`,
     () => departureApi.list(selectedTripId!, { page, pageSize: PAGE_SIZE, status: status || undefined }));
 
@@ -87,21 +88,26 @@ function TripDepartures({ actorRole, canAssign }: { actorRole: Role; canAssign: 
       <Notice notice={notice} onClose={() => setNotice(null)} />
 
       <ResourceView resource={trips} loadingLabel="Đang tải danh sách tuyến..." errorTitle="Không thể tải danh sách tuyến"
-        isEmpty={(data) => data.items.length === 0}
+        isEmpty={(data) => data.items.length === 0 && data.pagination.page === 1}
         empty={<EmptyState title="Chưa có tuyến nào" message="Tạo tuyến ở tab Tuyến & điểm đón trước khi lập chuyến." />}>
-        {(tripPage) => (
+        {(tripResult) => (
           <div className="space-y-4">
+            {tripResult.items.length > 0 ? <>
             <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
               <SelectField id="departure-trip" label="Tuyến" value={String(selectedTripId ?? "")}
                 onChange={(value) => { setTripId(Number(value)); setPage(1); }}
-                options={tripPage.items.map((trip) => ({ value: String(trip.trip_id), label: `#${trip.trip_id} · ${trip.name}${trip.is_active ? "" : " (tạm ẩn)"}` }))} />
+                options={tripResult.items.map((trip) => ({ value: String(trip.trip_id), label: `#${trip.trip_id} · ${trip.name}${trip.is_active ? "" : " (tạm ẩn)"}` }))} />
               <SelectField id="departure-status-filter" label="Trạng thái" value={status}
                 onChange={(value) => { setStatus(value as "" | DepartureStatus); setPage(1); }}
                 options={[{ value: "", label: "Tất cả" }, ...(["Draft", "Open", "Closed", "Confirmed", "Running", "Ended"] as const)
                   .map((value) => ({ value, label: departureStatusLabel[value].label }))]} />
             </div>
+            </> : <EmptyState title="Trang này không còn tuyến" message="Quay lại trang trước để chọn tuyến." />}
+            <Pager label="Phân trang tuyến" page={tripResult.pagination.page} totalPages={tripResult.pagination.totalPages}
+              totalItems={tripResult.pagination.totalItems} disabled={trips.loading}
+              onChange={(next) => { setTripPage(next); setTripId(null); setPage(1); }} />
 
-            <ResourceView resource={departures} loadingLabel="Đang tải chuyến..." errorTitle="Không thể tải danh sách chuyến"
+            {selectedTripId !== null && <ResourceView resource={departures} loadingLabel="Đang tải chuyến..." errorTitle="Không thể tải danh sách chuyến"
               isEmpty={(data) => data.items.length === 0}
               empty={<EmptyState icon={<CalendarDays className="size-10 text-zinc-300" aria-hidden />}
                 title={status ? "Không có chuyến ở trạng thái này" : "Tuyến chưa có chuyến nào"}
@@ -120,10 +126,12 @@ function TripDepartures({ actorRole, canAssign }: { actorRole: Role; canAssign: 
                     onChange={setPage} disabled={departures.loading} />
                 </>
               )}
-            </ResourceView>
+            </ResourceView>}
           </div>
         )}
       </ResourceView>
+      {trips.error && tripPage > 1 && <Button type="button" variant="outline" size="sm"
+        onClick={() => { setTripPage(tripPage - 1); setTripId(null); setPage(1); }}>Trang trước</Button>}
 
       {form && selectedTripId !== null && (
         <DepartureFormDrawer key={form.mode === "edit" ? form.departure.departure_id : "create"} tripId={selectedTripId} actorRole={actorRole}
@@ -303,7 +311,9 @@ function DepartureFormDrawer({ tripId, actorRole, departure, onClose, onSaved }:
   onSaved: (departure: ManagedDepartureDto, created: boolean) => void;
 }) {
   const ownerOnly = departure !== null && departure.status !== "Draft";
-  const pickups = useResource(ownerOnly ? null : `form-pickups:${tripId}`, () => fetchStaffPickups(tripId, { pageSize: 50 }));
+  const [pickupPage, setPickupPage] = useState(1);
+  const pickups = useResource(ownerOnly ? null : `form-pickups:${tripId}:${pickupPage}`,
+    () => fetchStaffPickupsPage(tripId, { page: pickupPage, pageSize: PAGE_SIZE }));
   const [departureDate, setDepartureDate] = useState(departure ? toVietnamLocalInput(departure.departure_date) : "");
   const [deadline, setDeadline] = useState(departure ? toVietnamLocalInput(departure.booking_deadline) : "");
   const [minPassengers, setMinPassengers] = useState(String(departure?.min_passengers ?? 10));
@@ -329,7 +339,7 @@ function DepartureFormDrawer({ tripId, actorRole, departure, onClose, onSaved }:
         booking_deadline: fromVietnamLocalInput(deadline),
         min_passengers: Number(minPassengers),
         price_override: priceOverride.trim() ? priceOverride.trim() : null,
-        pickups: Object.entries(schedule).filter(([, time]) => time).map(([id, time]) => ({ pickup_id: Number(id), pickup_time: fromVietnamLocalInput(time) })),
+        pickups: buildPickupSchedule(schedule),
         ...(isAdmin && owner ? { invoice_owner_user_id: Number(owner) } : {}),
       };
       onSaved(departure ? await departureApi.update(departure.departure_id, input) : await departureApi.create(tripId, input), !departure);
@@ -341,7 +351,7 @@ function DepartureFormDrawer({ tripId, actorRole, departure, onClose, onSaved }:
   }
 
   const title = ownerOnly ? `Đổi người phụ trách — chuyến #${departure.departure_id}` : departure ? `Sửa chuyến nháp #${departure.departure_id}` : "Tạo chuyến nháp";
-  const activePickups = (pickups.data ?? []).filter((item) => item.is_active || item.pickup_id in schedule);
+  const activePickups = (pickups.data?.items ?? []).filter((item) => item.is_active || item.pickup_id in schedule);
 
   return (
     <Drawer open onClose={onClose} title={title}
@@ -368,7 +378,10 @@ function DepartureFormDrawer({ tripId, actorRole, departure, onClose, onSaved }:
               <legend className="px-1 text-xs font-bold text-zinc-700 dark:text-zinc-300">Lịch điểm đón</legend>
               <ResourceView resource={pickups} loadingLabel="Đang tải điểm đón..." errorTitle="Không thể tải điểm đón"
                 isEmpty={() => activePickups.length === 0}
-                empty={<EmptyState title="Tuyến chưa có điểm đón hoạt động" message="Thêm điểm đón ở tab Tuyến & điểm đón. Chuyến cần ít nhất 1 điểm đón để mở bán." />}>
+                empty={<EmptyState title="Trang này không có điểm đón hoạt động"
+                  message={pickups.data && pickups.data.pagination.totalPages > 1
+                    ? "Thử chọn trang khác để xem thêm điểm đón."
+                    : "Thêm điểm đón ở tab Tuyến & điểm đón. Chuyến cần ít nhất 1 điểm đón để mở bán."} />}>
                 {() => (
                   <ul className="space-y-3">
                     {activePickups.map((pickup) => {
@@ -394,6 +407,11 @@ function DepartureFormDrawer({ tripId, actorRole, departure, onClose, onSaved }:
                   </ul>
                 )}
               </ResourceView>
+              {pickups.data && <Pager label="Phân trang điểm đón" page={pickups.data.pagination.page}
+                totalPages={pickups.data.pagination.totalPages} totalItems={pickups.data.pagination.totalItems}
+                onChange={setPickupPage} disabled={pickups.loading} />}
+              {pickups.error && pickupPage > 1 && <Button type="button" variant="outline" size="sm"
+                onClick={() => setPickupPage(pickupPage - 1)}>Trang trước</Button>}
             </fieldset>
           </>
         )}

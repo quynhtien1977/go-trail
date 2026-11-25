@@ -89,7 +89,7 @@ Ma trận đích theo [A03, comment quyết định của Cường ngày 18/10](
 | Hóa đơn, vé (`INVOICES`, `INVOICE_DETAILS`) | — | C, R own | Manifest asg, không hóa đơn/tài chính | R hóa đơn có responsible_user_id của mình | — | R toàn bộ; đổi người phụ trách cho đơn mới |
 | Manifest và check-in (`check_in_status`) | — | — | R/U asg | R chuyến mình phụ trách; không sửa check-in theo A03 | — | R/U |
 | Thanh toán (`PAYMENTS`) | — | R own qua DTO cần thiết | — | R trạng thái đơn mình phụ trách, không raw payment | — | R/U theo contract NeedsReview; không tùy ý đổi Paid |
-| Vật tư: danh mục, tồn, nhập/xuất, cấp theo chuyến (schema/API chưa có) | — | — | R vật tư của chuyến asg | R vật tư của chuyến mình phụ trách | CRUD danh mục; nhập/xuất/cấp/hoàn nhập theo ledger | Như HRMgr |
+| Vật tư: danh mục, tồn, nhập/xuất, cấp theo chuyến (schema I01 có, API chưa có) | — | — | R vật tư của chuyến asg | R vật tư của chuyến mình phụ trách | CRUD danh mục; nhập/xuất/cấp/hoàn nhập theo ledger | Như HRMgr |
 | Khách hàng và lịch sử đặt vé | — | R/U own | PII cần thiết trong manifest asg | Hành khách thuộc hóa đơn mình phụ trách | — | R toàn bộ |
 | Hoàn tiền/chính sách hoàn/đánh giá — deferred | — | — | — | — | — | — |
 | Tài khoản (`USERS`) | C (đăng ký Customer) | U own | U own | U own | C (chỉ tài khoản Leader), U own | CRU, D = khóa |
@@ -144,7 +144,7 @@ Draft → Open → Closed → Confirmed → Running → Ended
 
 **INVOICES.status:** Pending → Paid hoặc Expired. Paid không chuyển Cancelled/Expired. Expired chỉ có thể được xác nhận Paid theo contract tiền đến trễ 5.2.1; không do người dùng tự phục hồi.
 
-**INVOICE_DETAILS.status:** Pending → Valid khi nhận tiền hợp lệ; Pending → Cancelled khi hold hết hạn (dọn kỹ thuật). Valid không chuyển Cancelled trong MVP. Check-in Pending/CheckedIn/Absent không đổi quyền sở hữu vé/ghế.
+**INVOICE_DETAILS.status:** Pending → Valid khi nhận tiền hợp lệ; Pending → Cancelled khi hold hết hạn (dọn kỹ thuật). Valid không chuyển Cancelled trong MVP. Check-in Pending/CheckedIn/Absent không đổi quyền sở hữu vé/ghế. **Cancelled → Valid** chỉ được phép đúng một trường hợp: hóa đơn `Expired` được xác nhận theo contract tiền đến trễ 5.2.1 — vé bị hủy do dọn kỹ thuật lúc hết hạn được khôi phục cùng hóa đơn (P02, 16/11/2026). Vé `Cancelled` của hóa đơn khác không bao giờ được khôi phục.
 
 **DEPARTURE_SEATS.status:** Available ⇄ Locked → Sold. Chỉ hold chưa trả tiền hết hạn được nhả; Sold không trở lại Available trong MVP.
 
@@ -163,15 +163,25 @@ Draft → Open → Closed → Confirmed → Running → Ended
 ### 5.2. Xác nhận thanh toán (webhook SePay)
 `POST /api/webhooks/sepay`, xử lý theo thứ tự:
 1. Xác thực header `Authorization: Apikey <secret>` (hoặc chữ ký HMAC nếu cấu hình). Sai thì trả 401.
-2. Chỉ xử lý `transferType = "in"`. Tìm hóa đơn theo trường `code` (= `payment_code`).
+2. Chỉ xử lý `transferType = "in"`. Tìm hóa đơn theo trường `code` (= `payment_code`), **không phân biệt hoa thường**: SePay giữ nguyên kiểu chữ khách gõ (đã kiểm ở Test mode 16/11/2026), còn `payment_code` luôn sinh dạng chữ hoa nên chuẩn hóa về chữ hoa không thể khớp sang hóa đơn khác. Không tự bóc mã từ `content`; `code` rỗng hoặc không khớp thì ghi nhận với `invoice_id = NULL` để đối soát.
 3. Chống trùng: chèn `PAYMENTS` với `transaction_id` = `id` của SePay (UNIQUE). Nếu trùng, trả `{"success": true}` ngay, không làm gì thêm. SePay tự retry tối đa 7 lần trong khoảng 33 phút nếu endpoint lỗi, nên bước này bắt buộc.
 4. Trong một transaction, nếu hóa đơn còn hợp lệ (xem 5.2.1) và `transferAmount >= total_amount`: hóa đơn `Paid`, ghế `Sold` (`locked_until = NULL`), vé `Valid` kèm `ticket_code` (QR), payment `Success`.
-5. Mọi trường hợp còn lại: payment `NeedsReview`, **không đổi trạng thái ghế/hóa đơn**, Admin đối soát theo contract P03/B04; không tự phát hành vé, đổi Sold hoặc tạo refund khi chưa có điều kiện xác nhận hợp lệ. Giao dịch chưa giải quyết vẫn NeedsReview và được hiển thị để xử lý.
+5. Mọi trường hợp còn lại: payment `NeedsReview`, **không đổi trạng thái ghế/hóa đơn**, Admin đối soát theo contract P03 và quy tắc B04 đã chốt ở 15.7; không tự phát hành vé, đổi Sold hoặc tạo refund khi chưa có điều kiện xác nhận hợp lệ. Giao dịch chưa giải quyết vẫn NeedsReview và được hiển thị để xử lý.
 6. Luôn trả HTTP 200 với body `{"success": true}` sau khi đã ghi nhận, kể cả `NeedsReview`.
 
 **5.2.1. Hóa đơn còn hợp lệ** nghĩa là: status `Pending`, hoặc `Expired` nhưng mọi ghế của nó vẫn `Available` hoặc `Locked` bởi chính hóa đơn này (chưa ai lấy). Trường hợp sau được **khóa lại và xác nhận** (thanh toán đến trễ nhưng ghế chưa mất). Nếu có ghế đã bị người khác lấy thì `NeedsReview`.
 
-Các tình huống `NeedsReview`: chuyển thiếu/thừa theo quyết định B04, sai nội dung (không tìm thấy hóa đơn), ghế đã bị lấy hoặc chuyến không còn hợp lệ (kể cả dữ liệu Cancelled legacy). **B04 vẫn mở:** mâu thuẫn `>=` ở bước 4 với thừa tiền ở NeedsReview phải được chốt trước triển khai payment; quyết định không hủy/hoàn vé không phải quyết định giữ tiền chuyển thừa.
+Cách P02 áp điều này (16/11/2026):
+
+- Ghế của hóa đơn lấy theo vé (`INVOICE_DETAILS.dep_seat_id`), vì hết hạn sẽ gỡ `DEPARTURE_SEATS.invoice_id` nhưng giữ vé.
+- Ghế `Locked` bởi hóa đơn **khác** là "đã bị lấy", kể cả khi giữ chỗ đó cũng đã quá hạn mà chưa được dọn. Xác nhận là **tất cả hoặc không**: một ghế không hợp lệ thì không ghế nào được bán.
+- Chuyến phải còn trong giai đoạn bán (`Open` hoặc `Closed`) và `departure_date` chưa tới. Từ `Confirmed` trở đi đội ngũ đã được tính theo số vé đã bán (tỷ lệ Leader), nên vé đến muộn đi vào `NeedsReview` thay vì lặng lẽ phá điều kiện đó.
+- Hóa đơn đã `Paid` (lần chuyển thứ hai) hoặc `Cancelled` legacy luôn `NeedsReview`; không phát hành lại vé.
+- Một ràng buộc DB từ chối bán (ví dụ chỉ mục vé hoạt động duy nhất mỗi ghế) thì toàn bộ xác nhận hoàn tác nhưng khoản tiền **vẫn được ghi** `NeedsReview` — không bao giờ mất bản ghi tiền.
+
+Các tình huống `NeedsReview`: chuyển **thiếu** (`transferAmount < total_amount`), sai nội dung (không tìm thấy hóa đơn theo `payment_code`), ghế đã bị người khác lấy hoặc chuyến/hóa đơn không còn hợp lệ (kể cả dữ liệu Cancelled legacy).
+
+**B04 đã chốt 10/11/2026 — chuyển thừa là thanh toán hợp lệ:** `transferAmount > total_amount` đi theo bước 4 (`Paid`/`Sold`/`Valid`/`Success`), không phải `NeedsReview`. `PAYMENTS.amount` lưu đúng số tiền thực nhận và `raw_payload` giữ JSON webhook, nên phần chênh lệch luôn tra được bằng `PAYMENTS.amount - INVOICES.total_amount`; không cần cột mới và không phát sinh migration. MVP không hoàn phần thừa, không tạo `REFUNDS` và không bù trừ sang hóa đơn khác; Admin chỉ đối soát để thấy chênh lệch. Thừa tiền không nới lỏng điều kiện ghế: ghế đã bị người khác lấy thì vẫn `NeedsReview`. Chi tiết và kiểm thử bắt buộc: [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md).
 
 ### 5.3. Không hủy/hoàn vé trong MVP
 
@@ -179,10 +189,16 @@ Các tình huống `NeedsReview`: chuyển thiếu/thừa theo quyết định B
 - Hiển thị chính sách rõ trước khi tạo đơn và trước thanh toán: đã mua không hủy/hoàn trong phạm vi MVP.
 - Pending hết expires_at vẫn Expired; chỉ dọn vé Pending và ghế còn do invoice đó giữ. Đóng trình duyệt/thoát checkout không phải hủy vé đã mua. Cron không được ghi đè Sold/hold của hóa đơn mới.
 - Chặn các thao tác hủy/hoàn nếu được gửi trực tiếp tới server; không chỉ giấu UI. Route không triển khai trả 404; command trạng thái không hỗ trợ trả lỗi nghiệp vụ ổn định, dữ liệu không đổi.
-- Chuyển tiền sai/thiếu/thừa/trễ vẫn được ghi nhận NeedsReview theo 5.2/8.2; không đánh Success hoặc coi như hoàn tiền chỉ để đóng việc.
+- Chuyển tiền sai mã, thiếu, hoặc đến trễ khi ghế đã bị người khác lấy vẫn được ghi nhận NeedsReview theo 5.2/8.2; không đánh Success hoặc coi như hoàn tiền chỉ để đóng việc. Riêng chuyển **thừa** trên hóa đơn còn hợp lệ là thanh toán hợp lệ theo B04 (xem 5.2 và 15.7): xác nhận Success/Paid/Sold/Valid và không tạo refund cho phần chênh lệch.
 
 ### 5.4. Check-in ngày đi
 Leader mở web mobile, quét QR (`ticket_code`). Hệ thống kiểm tra vé `Valid`, đúng chuyến và Leader được phân công cho chuyến đó, rồi đặt `check_in_status = CheckedIn`, ghi `check_in_time`. Vé hủy hoặc sai chuyến báo lỗi rõ ràng. Leader có thể đánh dấu `Absent`. Khi Leader kết thúc chuyến, chuyến thành `Ended`; đánh giá sau chuyến được hoãn, không thay đổi Paid/Valid/Sold.
+
+Hợp đồng L01 (`SCRUM-37`, 16/11/2026):
+- Manifest và check-in chỉ dành cho Leader có hồ sơ STAFF Active được gán vai trò Leader của chuyến, khi chuyến `Confirmed`, `Running` hoặc `Ended`; Admin kế thừa cho mọi chuyến trong nhóm trạng thái này. Chuyến ngoài phạm vi hoặc không tồn tại cùng trả 404. RouteMgr đọc manifest chuyến mình phụ trách (3.2) chưa thuộc L01.
+- Manifest chỉ gồm vé `Valid` của hóa đơn `Paid`, xếp theo giờ đón rồi ghế; trả tên, SĐT, liên hệ khẩn cấp, ghế kèm xe (biển số, vì chuyến nhiều xe có thể trùng tên ghế), điểm đón và trạng thái check-in. Manifest kèm `crew` gồm tài xế/phụ xe cùng chuyến với SĐT và xe (3.3); API phân công dùng chung với HRMgr/RouteMgr vẫn chỉ trả tên. Không trả `ticket_code`, tiền, thanh toán, email hay cam kết sức khỏe.
+- Check-in và `Absent` mở khi chuyến `Confirmed` hoặc `Running`; `Ended` vẫn đọc được nhưng trả `CHECKIN_CLOSED`. `CheckedIn` chỉ đạt được bằng quét `ticket_code`; quét lại trả `AlreadyCheckedIn`, giữ giờ quét đầu tiên. `Absent` đánh dấu theo dòng manifest, lặp lại trả `AlreadyAbsent`; khách vắng đến muộn quét QR vẫn thành `CheckedIn`; `Absent` không ghi đè vé đã quét (`ALREADY_CHECKED_IN`).
+- Lỗi phân biệt: `TICKET_NOT_FOUND` (mã không tồn tại), `TICKET_WRONG_DEPARTURE` (vé của chuyến khác), `TICKET_NOT_VALID` (vé chưa thanh toán/đã hủy). Thứ tự khóa: departure `FOR SHARE` → vé `FOR UPDATE`, nên đổi trạng thái chuyến hoặc gỡ phân công đang chờ được đọc lại sau khi chờ khóa. Check-in không thuộc audit allowlist (không phải tiền, trạng thái chuyến hay quyền).
 
 ### 5.5. Nhân viên đứng tên chịu trách nhiệm hóa đơn
 
@@ -440,6 +456,27 @@ erDiagram
         datetime created_at
     }
 
+    SUPPLY_ITEMS {
+        int item_id PK
+        nvarchar name UK
+        varchar category "Food, Drink, Gear, Medical"
+        nvarchar unit "One counted unit, e.g. chai 500ml"
+        bit is_active "Retire instead of delete"
+        datetime created_at
+    }
+
+    SUPPLY_TRANSACTIONS {
+        int txn_id PK
+        int item_id FK
+        varchar txn_type "Receive, Issue, Return, Dispose"
+        int quantity "> 0; direction comes from txn_type"
+        int departure_id FK "Required for Issue/Return, NULL otherwise"
+        int created_by_user_id FK "Operator"
+        varchar idempotency_key UK "16-64 chars [A-Za-z0-9_-]"
+        nvarchar note "Nullable"
+        datetime created_at
+    }
+
     USERS ||--o{ INVOICES : "buys"
     USERS |o--o{ INVOICES : "responsible employee, optional legacy"
     USERS |o--o{ DEPARTURES : "invoice owner"
@@ -478,6 +515,9 @@ erDiagram
     DEPARTURE_SEATS ||--o{ INVOICE_DETAILS : "ticket history, at most one active"
     DEPARTURE_PICKUPS ||--o{ INVOICE_DETAILS : "boards at"
     INVOICE_DETAILS ||--o| REVIEWS : "reviewed"
+    SUPPLY_ITEMS ||--o{ SUPPLY_TRANSACTIONS : "ledger"
+    DEPARTURES |o--o{ SUPPLY_TRANSACTIONS : "issued to / returned from"
+    USERS ||--o{ SUPPLY_TRANSACTIONS : "records"
 ```
 
 ### 6.1. Ánh xạ PostgreSQL của schema khởi tạo
@@ -503,6 +543,11 @@ erDiagram
 - Không xóa tài khoản Accountant cũ, Refund/Cancelled hoặc sửa migration đã áp dụng trong thay đổi trách nhiệm hóa đơn. Loại giá trị Accountant khỏi UserRole và chuyển tài khoản thuộc migration A02 riêng; bỏ tính năng không đồng nghĩa xóa dữ liệu.
 - Checkpoint O03: migration `20261018000000_departure_invoice_owner` từ PR #7 đã merge vào develop qua PR #18: FK nullable RESTRICT và index; giữ nguyên NULL của legacy, không gán nhân viên giả. Rollout DB riêng của từng thành viên vẫn cần xác minh/ủy quyền.
 - Checkpoint K02 ngày 28/10: migration `20261019000000_invoice_hold_snapshot` bổ sung ba cột trách nhiệm, `idempotency_key`, FK/index và UNIQUE `(customer_id, idempotency_key)`. Ba cột snapshot phải cùng NULL hoặc cùng có giá trị; role snapshot là TEXT với CHECK `RouteMgr`, tách khỏi enum UserRole hiện tại để không chặn migration thay enum A02 và giữ ý nghĩa lịch sử. Invoice có idempotency key bắt buộc có snapshot đầy đủ/tên không trống; key đúng format 16–64 ký tự. Legacy không backfill suy đoán; không đổi RLS/grants hoặc xóa lịch sử. Đã kiểm thử cả thứ tự migration trên DB trống và nâng cấp sau A02; chưa chạy remote trong checkpoint này.
+
+### 6.3. Migration vật tư I01 (SCRUM-67)
+
+- Migration `20261114000000_inventory_ledger` tạo `supply_items`, `supply_transactions`, enum `SupplyCategory`/`SupplyTransactionType`, index FK, RLS và thu hồi quyền table/sequence/function của `PUBLIC`, `anon`, `authenticated`, `service_role`. Chỉ thêm bảng mới, không sửa dữ liệu hay migration cũ; `prisma migrate diff` từ DB đã chạy migration sang `schema.prisma` rỗng.
+- Seed development thêm 4 vật tư mẫu, mỗi vật tư một phiếu nhập và 3 phiếu cấp cho chuyến demo Closed, do HRMgr demo ghi; khóa idempotency cố định nên chạy lại không thêm dòng. Chưa áp dụng lên Supabase/DB riêng của thành viên.
 
 ## 7. Quy tắc dữ liệu và đồng thời
 
@@ -538,6 +583,8 @@ WHERE dep_seat_id = $seat_id
 ### 7.3. Công thức
 
 MVP v2 báo cáo doanh thu từ payment Success được đối soát, không cộng NeedsReview. Công thức trừ refund và lãi/lỗ bên dưới giữ để giải thích dữ liệu legacy/giai đoạn sau, không phải yêu cầu xây module chi phí/hoàn tiền hiện tại.
+
+Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn hơn hóa đơn. **Doanh thu vé tính theo `SUM(INVOICES.total_amount)` của hóa đơn `Paid`**; phần thu thừa `PAYMENTS.amount - INVOICES.total_amount` là chênh lệch thu, theo dõi riêng ở đối soát Admin và không cộng vào doanh thu vé. Công thức doanh thu thuần bên dưới dùng `PAYMENTS.amount` nên chỉ phản ánh tiền thực nhận, không phải doanh thu vé.
 - Số Leader tối thiểu = `CEIL(COUNT(INVOICE_DETAILS WHERE status = 'Valid') / LEADER_RATIO)`.
 - Doanh thu thuần chuyến = `SUM(PAYMENTS.amount WHERE status = 'Success')` − `SUM(REFUNDS.amount WHERE status = 'Completed')`.
 - Lãi/lỗ chuyến = doanh thu thuần − `SUM(DEPARTURE_COSTS.amount)`. Chi phí bảo dưỡng xe dài hạn không trừ vào một chuyến.
@@ -560,7 +607,7 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Admin thay role/status và audit trong cùng transaction; serialize thay đổi quyền bằng advisory lock để bảo vệ Admin Active cuối cùng. Từ chối chuyển role phá liên kết Leader/STAFF. Cấp tài khoản Leader + STAFF atomic thuộc bước nhân sự tiếp theo.
 - O02 (SCRUM-17, branch `feat/staff-personnel`): `GET/POST /api/staff/personnel`, `GET/PATCH/DELETE /api/staff/personnel/:id` cho HRMgr/Admin. Leader bắt buộc kèm `account` {email, password theo luật đăng ký}; server tạo USERS role Leader Active + STAFF trong một transaction và ghi `LeaderAccountCreated`; trùng email trả 409 và không tạo gì. Driver/Assistant không có tài khoản. Driver bắt buộc đủ số/hạng/hạn bằng, hạn ≥ ngày Việt Nam hiện tại; loại khác không nhận dữ liệu bằng lái. `staff_type` không đổi sau khi tạo. Sửa khóa row STAFF `FOR UPDATE` như phân công; nhân sự còn phân công ở chuyến chưa Ended không được chuyển Inactive, hạn bằng Driver phải phủ mọi ngày chuyến đó (409). DELETE chuyển Inactive, idempotent. DTO không trả password_hash/auth_version. Chưa làm: Leader tự xem hồ sơ của mình, khóa tài khoản khi Leader nghỉ (Admin vẫn dùng API access hiện có).
 - Audit dùng event allowlist: role/status tài khoản, trạng thái chuyến hoặc số tiền của payment/refund/chi phí. Không nhận mô tả tự do, credentials, thông tin ngân hàng hoặc request dump. Các workflow tiền/chuyến gọi helper trong transaction khi triển khai ở bước tương ứng.
-- `GET /api/invoices/:id` là DTO cho owner Customer/Admin, được mở rộng trong K03 theo 7.10; không mở quyền cho RouteMgr ở endpoint Customer. `GET /api/leader/departures` chỉ lấy staff Active, assignment Leader và trạng thái Confirmed/Running/Ended, tối đa 100; chưa có manifest hoặc paging. Admin được xem các chuyến trong nhóm trạng thái này.
+- `GET /api/invoices/:id` là DTO cho owner Customer/Admin, được mở rộng trong K03 theo 7.10; không mở quyền cho RouteMgr ở endpoint Customer. `GET /api/leader/departures` chỉ lấy staff Active, assignment Leader và trạng thái Confirmed/Running/Ended, tối đa 100, không paging; manifest từng chuyến theo L01 (5.4). Admin được xem các chuyến trong nhóm trạng thái này.
 
 ### 7.6. Quản lý catalog và khóa tuyến
 
@@ -600,7 +647,7 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Gán xe lại giữ nguyên hàng phân công và `dep_seat_id`, chỉ sinh ghế active chưa có. Không gỡ xe khi có ghế Locked/Sold hoặc lịch sử vé, hoặc khi đây là xe cuối của chuyến không còn Draft. Không thay đổi Sold/nhả ghế của booking. Gán lại cùng nhân sự/vai trò/xe trả phân công hiện có; chuyển xe cần gỡ phân công trước.
 - Chống trùng lịch theo **ngày Việt Nam của thời điểm khởi hành**, loại các chuyến Ended/Cancelled/Rescheduled khỏi kiểm tra bận. Chưa có thời điểm kết thúc nên chưa hỗ trợ kiểm tra giao nhau của chuyến nhiều ngày; đây là giới hạn dữ liệu hiện tại.
 - Thứ tự khóa: departure `FOR UPDATE`; tuyến trước điểm đón khi cần; xe theo ID tăng dần; nhân sự theo ID tăng dần; tài khoản liên quan `FOR SHARE` khi kiểm điều kiện. Người phụ trách mở chuyến cũng được giữ `FOR SHARE` tới commit. Hai chuyến khác nhau gán cùng nhân sự phải cùng khóa row STAFF trước kiểm lịch và ghi; không chỉ khóa hai departure riêng. Module O02 cập nhật hồ sơ/credential cần giữ quy ước khóa tương thích.
-- O05 (SCRUM-20, branch `feat/departure-status-machine`): cùng `PATCH /api/staff/departures/:id` nhận `status` Closed/Confirmed/Running, chỉ đổi trạng thái (gửi kèm field khác trả 422), khóa departure `FOR UPDATE` và ghi `DepartureStatusChanged` cùng transaction. Chỉ đi đúng một cạnh kế tiếp; nhảy cạnh, lặp lại trạng thái hiện tại, Draft/Ended/Cancelled/Rescheduled trả 409 `RESOURCE_CONFLICT`, dữ liệu không đổi. Open → Closed khi tới `booking_deadline` hoặc mọi ghế đã Sold; còn Pending/Locked chỉ chặn đóng sớm theo điều kiện hết ghế, không kéo dài deadline và không nhả hold khi đóng. Closed → Confirmed kiểm lại toàn bộ điều kiện mở bán, số vé Valid ≥ `min_passengers`, mỗi xe ≥ 1 Driver + ≥ 1 Assistant, số Leader ≥ CEIL(vé Valid / `LEADER_RATIO`, mặc định 15). Confirmed → Running do RouteMgr/Admin chủ động chuyển, sớm nhất tại `min(departure_date, pickup_time sớm nhất nếu có)`, kể cả điểm đón thuộc tối hôm trước; không có điểm đón thì dùng `departure_date`. Kiểm lại đầy đủ điều kiện vận hành/crew trước Running (xe, ghế, tư cách nhân sự, số Driver/Assistant/Leader), vì phân công có thể đã đổi sau khi chốt. Running → Ended thuộc L02.
+- O05 (SCRUM-20, branch `feat/departure-status-machine`): cùng `PATCH /api/staff/departures/:id` nhận `status` Closed/Confirmed/Running, chỉ đổi trạng thái (gửi kèm field khác trả 422), khóa departure `FOR UPDATE` và ghi `DepartureStatusChanged` cùng transaction. Chỉ đi đúng một cạnh kế tiếp; nhảy cạnh, lặp lại trạng thái hiện tại, Draft/Ended/Cancelled/Rescheduled trả 409 `RESOURCE_CONFLICT`, dữ liệu không đổi. Open → Closed khi tới `booking_deadline` hoặc mọi ghế đã Sold; còn Pending/Locked chỉ chặn đóng sớm theo điều kiện hết ghế, không kéo dài deadline và không nhả hold khi đóng. Closed → Confirmed kiểm lại toàn bộ điều kiện mở bán, số vé Valid ≥ `min_passengers`, mỗi xe ≥ 1 Driver + ≥ 1 Assistant, số Leader ≥ CEIL(vé Valid / `LEADER_RATIO`, mặc định 15). Confirmed → Running do RouteMgr/Admin chủ động chuyển, sớm nhất tại `min(departure_date, pickup_time sớm nhất nếu có)`, kể cả điểm đón thuộc tối hôm trước; không có điểm đón thì dùng `departure_date`. Kiểm lại đầy đủ điều kiện vận hành/crew trước Running (xe, ghế, tư cách nhân sự, số Driver/Assistant/Leader), vì phân công có thể đã đổi sau khi chốt. Running → Ended thuộc L02: `POST /api/leader/departures/:id/end` (không body), chỉ Leader được gán (STAFF Active) hoặc Admin; chuyến ngoài phân công hoặc chưa tới Confirmed trả 404 như manifest L01, Confirmed trả 409; khóa departure `FOR UPDATE`, ghi `DepartureStatusChanged` cùng transaction; gọi lại khi đã Ended trả `changed: false`, không ghi audit lần hai. Không đổi Paid/Valid/Sold, mã vé hay trạng thái check-in.
 - Bất biến phân công từ Confirmed: mỗi xe luôn có ≥ 1 Driver + ≥ 1 Assistant và số Leader ≥ CEIL(vé Valid / `LEADER_RATIO`). Ở Confirmed, gỡ nhân sự hoặc gỡ xe chỉ được khi vẫn giữ bất biến (409 nếu làm trống chỗ); không thêm xe mới (xe mới chưa có tổ lái). Thay nhân sự dùng `POST /api/staff/departures/:id/staff` kèm `replace_dep_staff_id` cùng vai trò, cùng xe: gỡ cũ + gán mới trong một transaction, người mới không đủ điều kiện thì giữ nguyên người cũ. Từ Running trở đi khóa toàn bộ phân công. **Đã chốt 03/11/2026:** (1) hết ghế chỉ tính Sold, Pending/Locked không kéo dài booking_deadline; (2) mốc sớm nhất Running theo lịch khởi hành/đón đầu như trên, thay đề xuất đầu ngày.
 - Booking/K02 phải đọc lại người phụ trách và ghi snapshot trong transaction của chính nó theo 7.8; O03 mở bán thành công không thay thế kiểm tra lúc tạo invoice. Chưa coi snapshot hóa đơn/thanh toán/O05 hoặc UI O06/O07 đã hoàn thành.
 
@@ -623,6 +670,14 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 - Handler → bound `bookingService.holdSeats` → policy service → repository Redis; sau khi được nhận mới vào transaction K02. Không gọi Redis khi đang giữ khóa tài nguyên SQL; transaction vẫn xác minh lại actor và toàn bộ điều kiện K02. 429/503 không tạo/gia hạn invoice, không sửa vé/ghế; idempotent replay giữ nguyên invoice/expires_at. Không thêm migration, cron, payment hoặc UI trong K04.
 - Đã kiểm định local: 174 tests, 833 HTTP checks/33 protected methods, 8 nhóm Auth HTTP và kiểm tra quota/TTL/concurrency trên Redis thật. Đây chưa phải CI/review chéo hoặc nghiệm thu UI K05; bằng chứng chi tiết trong tài liệu development nội bộ.
 
+### 7.12. Sổ vật tư I01 (schema) và I02 (danh mục, nhập kho)
+
+- Một kho MVP. `SUPPLY_ITEMS` là danh mục: tên duy nhất, nhóm Food/Drink/Gear/Medical (Medical = y tế, thêm ngày 23/11/2026 theo quyết định người dùng, migration `20261123000000_supply_medical_category` chỉ ADD VALUE) và `unit` mô tả một đơn vị đếm rõ ràng (ví dụ "chai 500ml", "gói 100g"); mọi số lượng là số nguyên của đơn vị đó. Ngừng dùng bằng `is_active = false`, không xóa.
+- `SUPPLY_TRANSACTIONS` là sổ cái chỉ ghi thêm: trigger chặn UPDATE/DELETE (SQLSTATE 23001); sửa sai bằng phiếu bù (Receive/Return/Dispose). `quantity > 0`, chiều cộng/trừ lấy từ `txn_type`. Issue (cấp cho chuyến) và Return (hoàn nhập dư) bắt buộc `departure_id`; Receive (nhập kho) và Dispose (xuất hủy/hao hụt) không có chuyến. Mỗi phiếu có `created_by_user_id` và `idempotency_key` UNIQUE toàn bảng, đúng format 16–64 ký tự `[A-Za-z0-9_-]`. FK RESTRICT tới vật tư, chuyến, người thao tác.
+- Tồn kho = SUM(Receive + Return) − SUM(Issue + Dispose) theo `item_id`, không lưu cột tồn. Tồn của một chuyến = Issue − Return theo (`item_id`, `departure_id`).
+- Việc của I02/I03 khi viết service (DB không kiểm): khóa row `supply_items` `FOR UPDATE` trước khi tính tồn để Issue/Dispose không làm tồn âm; Return không vượt số đã cấp ròng cho chuyến; chỉ vật tư active nhận phiếu mới; trạng thái chuyến được cấp/hoàn; retry cùng key trả phiếu cũ, cùng key khác payload trả 409. Quyền theo ma trận 3.2: HRMgr/Admin ghi; RouteMgr/Leader chỉ đọc vật tư của chuyến được phân công.
+- I02 (`SCRUM-68`): `GET/POST /api/staff/supplies`, `GET/PATCH /api/staff/supplies/:id`, `POST /api/staff/supplies/receive`, chỉ HRMgr/Admin (đọc toàn bộ danh mục/tồn cũng vậy; RouteMgr/Leader đọc vật tư theo chuyến ở I03). Không có DELETE: ngừng dùng bằng `is_active=false`. Tồn = tổng ledger, không cột cache. Nhập kho bắt buộc `idempotency_key`: khóa item `FOR UPDATE` rồi mới tra key, nên retry đồng thời cùng key trả đúng phiếu đầu (test đua PostgreSQL), cùng key khác payload trả 409. Audit `SupplyItemCreated`/`SupplyItemUpdated`/`SupplyReceived` cùng transaction.
+
 ## 8. Thanh toán và hoàn tiền
 
 ### 8.1. SePay: những gì cần biết
@@ -635,7 +690,9 @@ MVP v2 báo cáo doanh thu từ payment Success được đối soát, không c�
 
 Admin theo dõi NeedsReview, đối chiếu invoice/payment và ghi audit theo P03/B04. RouteMgr phụ trách hỗ trợ thông tin đơn; không tự đổi tiền, xác nhận Paid hoặc chi hoàn.
 
-Không cung cấp tạo/duyệt/Completed REFUNDS hoặc nút hoàn tiền. Tiền sai mã/thiếu/thừa/trễ vẫn có bản ghi, không bị bỏ qua hoặc tự tính doanh thu. Trường hợp chưa có cách giải quyết hợp lệ giữ NeedsReview cho Admin; không giả lập hoàn tiền đã thực hiện. Quy tắc overpayment còn cần B04, không suy ra từ chính sách không hoàn vé.
+Không cung cấp tạo/duyệt/Completed REFUNDS hoặc nút hoàn tiền. Tiền sai mã/thiếu/thừa/trễ vẫn có bản ghi, không bị bỏ qua hoặc tự tính doanh thu. Trường hợp chưa có cách giải quyết hợp lệ giữ NeedsReview cho Admin; không giả lập hoàn tiền đã thực hiện.
+
+Quy tắc overpayment đã chốt ở B04 ngày 10/11/2026 (xem 5.2, 15.7 và [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md)): chuyển thừa vẫn xác nhận `Paid`/`Sold`/`Valid`/`Success`, `PAYMENTS.amount` lưu số tiền thực nhận, MVP không hoàn phần thừa. Màn đối soát phải cho Admin thấy số thực nhận và chênh lệch so với `total_amount`; Admin không có thao tác hoàn tiền, sửa số tiền hay đổi `Paid` thủ công.
 
 ### 8.3. Giai đoạn tương lai
 
@@ -693,14 +750,25 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | `GET /api/trips`, `GET /api/departures/:id/seats` | Tuyến, chuyến, sơ đồ ghế | Public |
 | `POST /api/departures/:id/holds` | Giữ ghế + tạo hóa đơn (K02 hiện hành) | Customer; Admin kế thừa cho chính actor |
 | `GET /api/invoices/:id` | Chi tiết, snapshot nhân viên, trạng thái và dữ liệu/link VietQR (K03) | Chủ hóa đơn Customer, Admin |
-| `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản | SePay (API Key) |
-| `POST /api/checkin` | Quét QR check-in / đánh dấu vắng | Leader |
-| `PATCH /api/departures/:id/status` | Mở/đóng/chốt/kết thúc chuyến; không hủy/dời | RouteMgr, Admin, Leader (kết thúc) |
+| `GET /api/departures/:id/pickups` | Điểm đón đã gán cho chuyến đang mở bán: dep_pickup_id, pickup_id, tên, địa chỉ, giờ UTC; chỉ pickup active cùng tuyến; dùng dep_pickup_id để giữ ghế | Public (Guest/Customer), cùng điều kiện hiển thị như sơ đồ ghế |
+| `POST /api/webhooks/sepay` | Nhận thông báo chuyển khoản. P01: xác thực, chỉ `transferType = "in"`, ghi `PAYMENTS` với `transaction_id` UNIQUE, trả `{"success": true}` sau khi ghi bền vững. P02: trong cùng transaction, xác nhận `Paid`/`Sold`/`Valid` kèm `ticket_code` khi đủ điều kiện 5.2/5.2.1, ngược lại `NeedsReview` và không đổi gì khác. Thân phản hồi theo hợp đồng SePay, không bọc `{ data }` | SePay (API Key); mọi session của mọi role đều bị từ chối 401 |
+| `GET /api/leader/departures/:id/manifest` | Manifest chuyến được phân công (L01, 5.4): thông tin chuyến, tổng số khách/đã check-in/vắng/chưa đến, `crew` (tài xế/phụ xe: tên, SĐT, biển số), danh sách vé `Valid` của hóa đơn `Paid` kèm ghế và biển số xe, điểm đón, SĐT, liên hệ khẩn cấp, trạng thái và giờ check-in (UTC); không có `ticket_code` hay dữ liệu tiền | Leader được gán; Admin |
+| `POST /api/checkin` | `{action:"CheckIn", departure_id, ticket_code}` hoặc `{action:"MarkAbsent", departure_id, detail_id}`; trả `result` (`CheckedIn`/`AlreadyCheckedIn`/`MarkedAbsent`/`AlreadyAbsent`), `changed` và dòng manifest. Lỗi theo 5.4; canonical Origin, thân JSON ≤ 1 KiB | Leader được gán; Admin |
+| `PATCH /api/staff/departures/:id` (`status`) | Mở/đóng/chốt/chạy chuyến theo O03/O05; không hủy/dời | RouteMgr, Admin |
+| `POST /api/leader/departures/:id/end` | Kết thúc chuyến Running → Ended (L02); trả `{ departure_id, status, changed }` | Leader được gán; Admin |
 | `POST /api/departures/:id/assignments` | Phân công xe, nhân sự | HRMgr, Admin |
-| `/api/admin/payments` | Đối soát NeedsReview theo contract P03/B04 | Admin |
+| `GET /api/staff/customers` | Danh bạ khách hàng: tìm theo tên/email/SĐT, lọc trạng thái tài khoản, phân trang; mỗi dòng có số hóa đơn và lần đặt gần nhất trong phạm vi người đọc | Admin toàn bộ; RouteMgr chỉ khách của hóa đơn mình phụ trách |
+| `GET /api/staff/customers/:id` | Hồ sơ khách và lịch sử đặt vé chỉ đọc (hóa đơn, vé, ghế, snapshot nhân viên phụ trách), tối đa 50 hóa đơn mới nhất; ngoài phạm vi trả `404` | Admin toàn bộ; RouteMgr chỉ hóa đơn mình phụ trách |
+| `GET /api/staff/invoices`, `GET /api/staff/invoices/:id` | M01: hóa đơn theo trạng thái/chuyến/khoảng ngày/tìm theo mã thanh toán, tên hoặc SĐT khách, phân trang ≤ 100; chi tiết gồm vé (ghế, hành khách, SĐT, liên hệ khẩn cấp, điểm đón, trạng thái vé và check-in tách riêng) và thanh toán ở mức trạng thái (số tiền, trạng thái, thời gian). Không trả `ticket_code`, cam kết sức khỏe, mã giao dịch/tham chiếu ngân hàng hay raw payload (Admin xem ở P03). Chỉ đọc, ngoài phạm vi trả 404 | Admin toàn bộ; RouteMgr chỉ hóa đơn có `responsible_user_id` của mình |
+| `GET /api/staff/tickets` | M01: tra cứu vé theo chuyến, tên/SĐT hành khách, trạng thái vé/check-in; `ticket_code` chỉ khớp **đúng nguyên mã** (không phân biệt hoa thường) và không bao giờ được trả về | Admin toàn bộ; RouteMgr vé của hóa đơn mình phụ trách hoặc chuyến mình phụ trách |
+| `GET /api/account/bookings` | Lịch sử đặt vé của chính mình, tối đa 50 hóa đơn mới nhất, không có `ticket_code` | Customer (chỉ dữ liệu của mình) |
+| `GET /api/account/tickets` | "Vé của tôi" (P04): từng vé kèm chuyến, ghế, điểm đón và giờ đón (UTC), đơn giá VND, nhân viên phụ trách (snapshot). `ticket_code` chỉ có khi hóa đơn `Paid` và vé `Valid`; còn lại `null`. `invoice_status` là trạng thái lưu trong DB (giống `/api/invoices/:id`); `hold_expired` là phán quyết của server theo cùng mốc giờ với bộ lọc, nên client không phải so `invoice_expires_at` với đồng hồ máy. Lọc `status=valid\|pending\|expired` (bỏ trống = tất cả; `pending` chỉ gồm giữ chỗ còn hạn, giữ chỗ quá hạn tính vào `expired` mà không ghi gì vào DB), phân trang `page`/`pageSize` ≤ 50. Mã vé do P02 sinh lúc xác nhận; QR vẽ phía client từ `ticket_code` | Customer (chỉ vé của mình); Admin đi qua nhưng chỉ đọc vé của chính mình |
+
+Lịch sử đặt vé giới hạn 50 hóa đơn mới nhất cho tra cứu hỗ trợ; `invoice_count` là tổng trong phạm vi người đọc nên có thể lớn hơn số dòng trả về. Nếu cần xem quá 50 thì bổ sung phân trang cho lịch sử ở bước sau, không nới giới hạn trong handler.
+| `GET /api/admin/payments`, `GET /api/admin/payments/:id` | Đối soát P03 (chỉ đọc): lọc `status`/`transaction_id`/`reference_code`/`payment_code`/khoảng ngày, phân trang ≤ 100; mỗi dòng có số tiền nhận, `difference` so với hóa đơn (âm = thiếu, dương = thừa theo B04, không hoàn), khách, chuyến và `review_reason`. P02 không lưu lý do, nên `review_reason` chạy lại đúng thứ tự kiểm tra của P02 trên dữ liệu hiện tại (`unmatched_payment_code`, `underpaid`, `invoice_already_paid`, `invoice_not_payable`, `departure_not_selling`, `no_tickets`, `departure_already_started`, `seats_taken`; `unexplained` khi dữ liệu hiện tại không còn giải thích được) — là gợi ý, không phải dữ kiện lưu trữ. `raw_payload` chỉ ở chi tiết. Không bán ghế, đổi invoice hay chuyển NeedsReview sang Success | Admin |
 | `/api/cron/*` | Tác vụ nền | `CRON_SECRET` |
 
-**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền nhưng chưa có schema/API.
+**Màn hình:** trang chủ/catalog; /login và /register chỉ Customer; /staff/login cho nội bộ. Customer: checkout, VietQR/đếm ngược, vé QR và hóa đơn có tên nhân viên phụ trách, chính sách không hủy/hoàn. Leader: /leader, chuyến/manifest/quét QR. RouteMgr: /staff, tuyến/chuyến/manifest, hóa đơn mình chịu trách nhiệm. HRMgr: /staff, xe/nhân sự/phân công/vật tư theo A03. Admin: /admin, tài khoản/cấu hình/audit, phân công trách nhiệm và đối soát. Không cung cấp UI hủy/hoàn, đánh giá hoặc lãi-lỗ trong MVP v2. Chuyển Accountant theo A02; contract vật tư đã chốt quyền; schema I01 có (6.3, 7.12); API I02 danh mục/nhập kho có, I03 xuất/cấp/hoàn nhập chưa có.
 
 ## 12. Yêu cầu phi chức năng
 
@@ -730,8 +798,8 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 2. A03 đã review/chốt contract ngày 21/10; Tiến An thực hiện A02 rồi A04 theo assignee Jira hiện tại, phối hợp Cường và các nhánh đang mở. Auth hai cổng đã có; không làm lại login. C04 quản trị khách hàng/tài khoản vẫn chờ API A01/C03. Xem checkpoint mới nhất trong development.md trước khi chọn task.
 3. Xe/nhân sự, tạo chuyến, chỉ định RouteMgr phụ trách hóa đơn, gán xe/sinh ghế, trạng thái Draft→Ended (O01–O07).
 4. Giữ ghế + invoice có snapshot người phụ trách + checkout/VietQR, thông báo không hủy/hoàn (K01–K06).
-5. SePay + NeedsReview sau quyết định B04 + vé QR; quản trị hóa đơn/hiển thị người phụ trách (P01–P06, M01/M02).
-6. Leader check-in và kết thúc; quản trị khách hàng và vật tư theo scope v2 có thể chia việc độc lập sau khi contract tương ứng được chốt. Vật tư cần ERD/ledger riêng trước code, chưa có trong ERD baseline này.
+5. SePay + NeedsReview theo quyết định B04 (đã chốt 10/11/2026, hết chốt chặn) + vé QR; quản trị hóa đơn/hiển thị người phụ trách (P01–P06, M01/M02).
+6. Leader check-in và kết thúc; quản trị khách hàng và vật tư theo scope v2 có thể chia việc độc lập sau khi contract tương ứng được chốt. ERD/ledger vật tư I01 đã có (6.3, 7.12); API I02/I03 làm tiếp.
 7. Dashboard doanh thu, cron, kiểm thử end-to-end và báo cáo; không chi phí/lãi-lỗ/đánh giá/hoàn tiền. C00 xác minh chính sách không hủy/hoàn, không triển khai engine refund.
 
 ---
@@ -844,7 +912,7 @@ Tiền tố mã thanh toán (ví dụ `TB`) và webhook "Tiền vào" được c
 
 ### 15.7. Quyết định đã chốt trước khi tạo migration
 
-**Lịch sử: người dùng đã xác nhận 4 quyết định khi bootstrap.** Điểm 4 về hủy/dời đã được thay thế bởi quyết định 17/10: không hỗ trợ trong MVP; các điểm 1–3 còn hiệu lực (Cancelled vẫn dùng để dọn hold Pending hết hạn). Riêng quy tắc chuyển thừa tiền ở mục 5.2 vẫn cần chốt trước bước payment.
+**Lịch sử: người dùng đã xác nhận 4 quyết định khi bootstrap.** Điểm 4 về hủy/dời đã được thay thế bởi quyết định 17/10: không hỗ trợ trong MVP; các điểm 1–3 còn hiệu lực (Cancelled vẫn dùng để dọn hold Pending hết hạn). Điểm 5 là quyết định B04 chốt ngày 10/11/2026, bổ sung sau bootstrap và không kéo theo migration.
 
 | # | Vấn đề | Quyết định |
 |---|---|---|
@@ -852,10 +920,11 @@ Tiền tố mã thanh toán (ví dụ `TB`) và webhook "Tiền vào" được c
 | 2 | Mục 5.1: bước 2 khóa ghế và ghi `invoice_id`, nhưng bước 3 mới tạo `INVOICES` (khóa ngoại chưa có). | Trong cùng một transaction: `INSERT INVOICES` trước (`Pending`, `payment_code` duy nhất, ví dụ `TB000123`), rồi khóa ghế theo `dep_seat_id` tăng dần bằng câu UPDATE ở 7.1, rồi `INSERT INVOICE_DETAILS`. Ghế nào `Rows Affected = 0` thì rollback toàn bộ. Nghiệp vụ không đổi, chỉ làm rõ thứ tự thực thi. |
 | 3 | Giá trị mặc định của `SYSTEM_SETTINGS`. | Đã chốt `SEAT_TTL_MINUTES = 15`, `MAX_SEATS_PER_INVOICE = 10`, `LEADER_RATIO = 15`. Seed tạo khi chưa có, giữ nguyên giá trị đã chỉnh. |
 | 4 | Mục 4 chỉ vẽ mũi tên `Cancelled/Rescheduled` từ `Closed`, nhưng mục 8.4 xử lý hóa đơn `Paid`, mà hóa đơn `Paid` đã tồn tại ngay khi chuyến còn `Open` hoặc đã `Confirmed`. | **Superseded 17/10:** không hỗ trợ hủy/dời trong MVP; giữ enum/lịch sử, chặn các cạnh này ở service. |
+| 5 | Mục 5.2: bước 4 nhận `transferAmount >= total_amount` là hợp lệ, nhưng đoạn liệt kê sau 5.2.1 lại đưa cả chuyển **thừa** vào `NeedsReview`. | **B04 chốt 10/11/2026:** chuyển thừa là thanh toán hợp lệ, giữ `>=` ở bước 4 → `Paid`/`Sold`/`Valid`/`Success`. `PAYMENTS.amount` lưu số tiền thực nhận nên chênh lệch tra được, không thêm cột, không migration. MVP không hoàn phần thừa và không tạo `REFUNDS`; `NeedsReview` chỉ còn thiếu tiền, sai mã, ghế đã bị lấy, chuyến/hóa đơn không hợp lệ. Doanh thu vé theo `total_amount` (7.3). Chi tiết: [docs/decisions/003-b04-overpayment-rule.md](decisions/003-b04-overpayment-rule.md). |
 
 ### 15.8. Kiểm thử tối thiểu khi tới các bước liên quan
-- **Bước 4 (khóa ghế):** `rtk npm run test:bookings:concurrency` chạy `tests/integration/booking-concurrency.mjs` trên PostgreSQL local dùng một lần, nhiều kết nối; 8 khách tranh một ghế có đúng một invoice/ticket/hold commit. Bao gồm retry đồng thời, payload khác cùng key, thứ tự nhiều ghế, cleanup, race assignment/account/payment-state và deadline. CI chạy gate này; PGlite không thay thế bằng chứng cạnh tranh thật.
-- **Bước 5 (webhook):** gọi 2 lần với cùng `transaction_id` chỉ tạo 1 `PAYMENTS`; chuyển thiếu tiền hoặc sai nội dung cho `NeedsReview` và không đổi trạng thái ghế/hóa đơn.
-- **Không hủy/hoàn:** Customer/nhân viên/Admin gọi trực tiếp không thể hủy Paid/Valid, nhả Sold hoặc dời/hủy chuyến; Pending hết hạn nhả đúng hold; không tạo Refund. Giữ tests constraint legacy, không viết engine refund.
+- **Bước 4 (khóa ghế):** `rtk npm run test:bookings:concurrency` chạy `tests/integration/booking-concurrency.mjs` trên PostgreSQL local dùng một lần, nhiều kết nối; 8 khách tranh một ghế có đúng một invoice/ticket/hold commit. Bao gồm retry đồng thời, payload khác cùng key, thứ tự nhiều ghế, cleanup, race assignment/account/payment-state và deadline. Phải chứng minh lỗi ở ghế sau hoàn tác cả hóa đơn/ghế đã acquire trước đó, Sold không đổi, hold mới không bị cleanup cũ nhả; đọc lại DB sau reassignment để đối chiếu FK/name/role snapshot của cả hóa đơn cũ và mới. CI chạy gate này; PGlite không thay thế bằng chứng cạnh tranh thật.
+- **Bước 5 (webhook):** gọi 2 lần với cùng `transaction_id` chỉ tạo 1 `PAYMENTS`; chuyển thiếu tiền hoặc sai nội dung cho `NeedsReview` và không đổi trạng thái ghế/hóa đơn. Theo B04: chuyển đúng bằng và chuyển **thừa** đều cho `Success` + `Paid`/`Sold`/`Valid`, với `PAYMENTS.amount` bằng đúng `transferAmount` nhận được (không làm tròn về `total_amount`) và `REFUNDS` vẫn rỗng; webhook trùng của bản thừa tiền cũng chỉ tạo một `PAYMENTS`; thừa tiền nhưng ghế đã bị người khác lấy vẫn `NeedsReview` và không phát hành vé. Dùng Decimal/`numeric(14,0)`, không số thực.
+- **Không hủy/hoàn:** Customer/nhân viên/Admin gọi trực tiếp không thể hủy Paid/Valid, nhả Sold hoặc dời/hủy chuyến; Pending hết hạn nhả đúng hold; không tạo Refund. HTTP tests phải gọi cả thao tác bị cấm trên endpoint hiện có và đường dẫn/method hủy/hoàn không được cung cấp; so dữ liệu trước/sau gồm lịch chuyến, hóa đơn/vé/ghế, payment/refund và audit. TTL/reclaim có hiệu lực không đồng nghĩa cron dọn toàn bộ invoice đã triển khai. Policy trên UI cần xác minh cùng checkout tích hợp thực tế. Giữ tests constraint legacy, không viết engine refund.
 - **Người phụ trách:** invoice mới có FK + snapshot đúng assignment; thiếu/Locked/sai role bị chặn; rollback/idempotency; race đổi assignment/khóa nhân viên; đổi tên/role sau lập không sửa snapshot; đọc khác owner bị chặn.
 - **Hai cổng Auth:** cả hai chiều sai cổng bị chặn trước session; callback độc hại/sai role; redirect anonymous đúng gate không loop; session đã tồn tại, logout, CSRF, shared limiter, auth_version và expiry; browser Customer/Leader mobile.

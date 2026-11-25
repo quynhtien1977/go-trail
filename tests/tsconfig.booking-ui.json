@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "../next-env.d.ts",
+    "../src/types/next-auth.d.ts",
+    "../src/components/booking/**/*.tsx",
+    "../src/components/catalog/trip-booking-sidebar.tsx",
+    "../src/lib/booking-client.ts",
+    "../src/lib/booking-presentation.ts",
+    "../src/lib/booking-checkout.ts",
+    "../src/app/checkout/**/*.tsx"
+  ],
+  "exclude": ["../node_modules"]
+}

@@ -153,13 +153,13 @@ export function Notice({ notice, onClose }: { notice: NoticeValue; onClose: () =
   );
 }
 
-export function Pager({ page, totalPages, totalItems, onChange, disabled }: {
-  page: number; totalPages: number; totalItems: number; onChange: (page: number) => void; disabled?: boolean;
+export function Pager({ page, totalPages, totalItems, onChange, disabled, label = "Phân trang" }: {
+  page: number; totalPages: number; totalItems: number; onChange: (page: number) => void; disabled?: boolean; label?: string;
 }) {
-  if (totalPages <= 1) return null;
+  if (totalPages <= 1 && page <= 1) return null;
   return (
-    <nav className="flex items-center justify-between gap-3 pt-3 text-xs text-zinc-600 dark:text-zinc-400" aria-label="Phân trang">
-      <span>Trang {page}/{totalPages} · {totalItems} mục</span>
+    <nav className="flex items-center justify-between gap-3 pt-3 text-xs text-zinc-600 dark:text-zinc-400" aria-label={label}>
+      <span>Trang {page}/{Math.max(1, totalPages)} · {totalItems} mục</span>
       <div className="flex gap-2">
         <Button type="button" variant="outline" size="icon-sm" aria-label="Trang trước" disabled={disabled || page <= 1} onClick={() => onChange(page - 1)}>
           <ChevronLeft />

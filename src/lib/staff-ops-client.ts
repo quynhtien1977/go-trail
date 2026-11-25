@@ -150,6 +150,14 @@ export function fromVietnamLocalInput(value: string): string {
   return new Date(`${value}:00+07:00`).toISOString();
 }
 
+/** Include every selected pickup, even when it is on another page of the form. */
+export function buildPickupSchedule(schedule: Record<number, string>): DepartureInput["pickups"] {
+  return Object.entries(schedule).map(([id, time]) => {
+    if (!time) throw new Error("Vui lòng nhập giờ đón cho mọi điểm đã chọn, kể cả ở trang khác.");
+    return { pickup_id: Number(id), pickup_time: fromVietnamLocalInput(time) };
+  });
+}
+
 export function formatVietnamDate(iso: string, withTime = true): string {
   return new Date(iso).toLocaleString("vi-VN", {
     timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric",

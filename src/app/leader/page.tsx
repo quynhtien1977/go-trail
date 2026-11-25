@@ -4,6 +4,7 @@ import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,15 @@ export default async function LeaderPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/leader/supplies"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            Xem vật tư chuyến được phân công
+          </Link>
         </div>
 
         {/* Departures List */}
