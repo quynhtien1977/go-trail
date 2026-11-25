@@ -54,6 +54,9 @@ test("catalog items need a unique name, a category and an explicit counted unit"
   await assert.rejects(sql.query("INSERT INTO supply_items (name, category, unit) VALUES ('Bánh mì', 'Food', ' ')"), { code: "23514" });
   await assert.rejects(sql.query("INSERT INTO supply_items (name, category, unit) VALUES ('Bánh mì', 'Snack', 'ổ')"), { code: "22P02" });
   const row = (await sql.query("INSERT INTO supply_items (name, category, unit) VALUES ('Bánh mì', 'Food', 'ổ') RETURNING is_active")).rows[0];
+  // Medical (y tế) was appended on 23/11/2026; an unknown category is still rejected by the enum.
+  await sql.query("INSERT INTO supply_items (name, category, unit) VALUES ('Băng cá nhân', 'Medical', 'hộp 20 miếng')");
+  await assert.rejects(sql.query("INSERT INTO supply_items (name, category, unit) VALUES ('Khác', 'Other', 'cái')"), { code: '22P02' });
   assert.equal(row.is_active, true);
 });
 

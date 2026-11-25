@@ -40,6 +40,8 @@ export type AdminPaymentSummaryDto = {
     created_at: string;
     expires_at: string;
     difference: string;
+    // Snapshot at invoice creation, never the current staff name.
+    responsible_name_snapshot: string | null;
     customer: {
       user_id: number;
       full_name: string;
@@ -59,7 +61,6 @@ export type AdminPaymentSummaryDto = {
 export type AdminPaymentDetailDto = AdminPaymentSummaryDto & {
   raw_payload: string;
   invoice: (NonNullable<AdminPaymentSummaryDto["invoice"]> & {
-    responsible_name_snapshot: string | null;
     ticket_count: number;
   }) | null;
 };

@@ -1,6 +1,11 @@
 import type { Page } from "@/schemas/catalog";
 import type { CustomerDetailDto, CustomerSummaryDto } from "@/schemas/customer";
 import type { InvoiceDto } from "@/schemas/invoice";
+import type {
+  StaffInvoiceDetailDto,
+  StaffInvoiceSummaryDto,
+  StaffTicketSearchResultDto,
+} from "@/schemas/staff-invoice";
 import { BookingClientError } from "./booking-client";
 
 export type ManagedInvoiceStatus = InvoiceDto["status"];
@@ -18,6 +23,7 @@ export type ManagedTicketView = {
   customerId: number | null;
   customerName: string;
   passengerName: string;
+  passengerPhone?: string | null;
   seatName: string;
   pickupName?: string | null;
   pickupAddress?: string | null;
@@ -45,6 +51,7 @@ export type ManagedInvoiceView = {
   expiresAt: string;
   responsibleNameSnapshot: string | null;
   responsibleRoleSnapshot: string | null;
+  ticketCount?: number;
   tickets: {
     detailId: number;
     seatName: string;
@@ -95,6 +102,10 @@ export type InvoiceManagementSource = {
     query: InvoiceManagementQuery,
     signal: AbortSignal,
   ) => Promise<InvoiceManagementPageResult>;
+  readInvoiceDetail?: (
+    invoiceId: number,
+    signal: AbortSignal,
+  ) => Promise<ManagedInvoiceView>;
 };
 
 export type InvoiceManagementCapabilities = {
@@ -299,6 +310,7 @@ export function mapCustomerDetailToManagedInvoices(
     expiresAt: booking.expires_at,
     responsibleNameSnapshot: booking.responsible_name_snapshot,
     responsibleRoleSnapshot: booking.responsible_role_snapshot,
+    ticketCount: booking.tickets.length,
     tickets: booking.tickets.map((ticket) => ({
       detailId: ticket.detail_id,
       seatName: ticket.seat_name,
@@ -355,3 +367,179 @@ export function fetchStaffCustomerDetail(
 ): Promise<CustomerDetailDto> {
   return readStaffJson<CustomerDetailDto>(`/api/staff/customers/${customerId}`, signal);
 }
+
+const STAFF_MANAGEMENT_PAGE_SIZE = 10;
+const FULL_TICKET_CODE_PATTERN = /^TK[0-9A-Fa-f]{20}$/i;
+
+/**
+ * Builds strict query parameters for GET /api/staff/invoices, omitting empty/unselected filters
+ * because the API rejects empty or unknown query parameters with HTTP 422.
+ */
+export function buildStaffInvoiceSearchParams(query: InvoiceManagementQuery): URLSearchParams {
+  const params = new URLSearchParams({
+    page: String(clampPageNumber(query.page, Number.MAX_SAFE_INTEGER)),
+    pageSize: String(STAFF_MANAGEMENT_PAGE_SIZE),
+  });
+  if (query.invoiceStatus !== "all") params.set("status", query.invoiceStatus);
+  if (query.departureId !== null) params.set("departure_id", String(query.departureId));
+  if (query.responsibleUserId !== null) {
+    params.set("responsible_user_id", String(query.responsibleUserId));
+  }
+  const term = query.q.trim();
+  if (term) params.set("search", term);
+  return params;
+}
+
+/**
+ * Builds strict query parameters for GET /api/staff/tickets, routing the search keyword to
+ * exact full ticket code, phone digits, or passenger name without leaking partial ticket codes.
+ */
+export function buildStaffTicketSearchParams(query: InvoiceManagementQuery): URLSearchParams {
+  const params = new URLSearchParams({
+    page: String(clampPageNumber(query.page, Number.MAX_SAFE_INTEGER)),
+    pageSize: String(STAFF_MANAGEMENT_PAGE_SIZE),
+  });
+  if (query.ticketStatus !== "all") params.set("status", query.ticketStatus);
+  if (query.checkInStatus !== "all") params.set("check_in_status", query.checkInStatus);
+  if (query.departureId !== null) params.set("departure_id", String(query.departureId));
+  const term = query.q.trim();
+  if (term) {
+    if (FULL_TICKET_CODE_PATTERN.test(term)) params.set("ticket_code", term);
+    else if (/^\d+$/.test(term)) params.set("passenger_phone", term);
+    else params.set("passenger_name", term);
+  }
+  return params;
+}
+
+function mapStaffInvoiceBase(dto: StaffInvoiceSummaryDto): Omit<ManagedInvoiceView, "tickets"> {
+  return {
+    invoiceId: dto.invoice_id,
+    paymentCode: dto.payment_code,
+    departureId: dto.departure.departure_id,
+    tripName: dto.departure.trip_name,
+    departureAt: dto.departure.departure_date,
+    customerId: dto.customer.user_id,
+    customerName: dto.customer.full_name,
+    customerEmail: null,
+    customerPhone: dto.customer.phone,
+    status: dto.status,
+    totalAmount: dto.total_amount,
+    createdAt: dto.created_at,
+    expiresAt: dto.expires_at,
+    responsibleNameSnapshot: dto.responsible_name_snapshot,
+    responsibleRoleSnapshot: dto.responsible_role_snapshot,
+    ticketCount: dto.ticket_count,
+  };
+}
+
+/** Maps a staff invoice list DTO without fabricating tickets (loaded lazily per dialog open). */
+export function mapStaffInvoiceSummaryToView(dto: StaffInvoiceSummaryDto): ManagedInvoiceView {
+  return {
+    ...mapStaffInvoiceBase(dto),
+    tickets: [],
+  };
+}
+
+/** Maps a staff invoice detail DTO including per-ticket status, check-in status, and pickup point. */
+export function mapStaffInvoiceDetailToView(dto: StaffInvoiceDetailDto): ManagedInvoiceView {
+  return {
+    ...mapStaffInvoiceBase(dto),
+    ticketCount: dto.tickets.length,
+    tickets: dto.tickets.map((ticket) => ({
+      detailId: ticket.detail_id,
+      seatName: ticket.seat_name,
+      passengerName: ticket.passenger_name,
+      pickupName: ticket.pickup.name,
+      pickupAddress: ticket.pickup.address,
+      pickupAt: ticket.pickup.pickup_time,
+      unitPrice: ticket.unit_price,
+      status: ticket.status,
+      checkInStatus: ticket.check_in_status,
+    })),
+  };
+}
+
+/** Maps a staff ticket search DTO without inventing missing customer, pickup, or role fields. */
+export function mapStaffTicketToView(dto: StaffTicketSearchResultDto): ManagedTicketView {
+  return {
+    detailId: dto.detail_id,
+    invoiceId: dto.invoice_id,
+    paymentCode: dto.invoice.payment_code,
+    invoiceStatus: dto.invoice.status,
+    departureId: dto.departure.departure_id,
+    tripName: dto.departure.trip_name,
+    departureAt: dto.departure.departure_date,
+    customerId: null,
+    customerName: "—",
+    passengerName: dto.passenger_name,
+    passengerPhone: dto.passenger_phone,
+    seatName: dto.seat_name,
+    pickupName: null,
+    pickupAddress: null,
+    pickupAt: null,
+    unitPrice: dto.unit_price,
+    status: dto.status,
+    checkInStatus: dto.check_in_status,
+    responsibleNameSnapshot: dto.invoice.responsible_name_snapshot,
+    responsibleRoleSnapshot: null,
+  };
+}
+
+/** Combines paginated M01 invoice and ticket responses into the M02 workspace presentation payload. */
+export function mapStaffManagementPage(
+  query: InvoiceManagementQuery,
+  invoicesPage: Page<StaffInvoiceSummaryDto>,
+  ticketsPage: Page<StaffTicketSearchResultDto>,
+): InvoiceManagementPageResult {
+  const invoices = invoicesPage.items.map(mapStaffInvoiceSummaryToView);
+  const tickets = ticketsPage.items.map(mapStaffTicketToView);
+
+  const departures: DepartureFilterOption[] = [];
+  const seenDepartures = new Set<number>();
+  for (const invoice of invoices) {
+    if (seenDepartures.has(invoice.departureId)) continue;
+    seenDepartures.add(invoice.departureId);
+    departures.push({
+      departureId: invoice.departureId,
+      tripName: invoice.tripName,
+      departureAt: invoice.departureAt,
+    });
+  }
+
+  return {
+    invoices,
+    tickets,
+    departures,
+    responsibleStaffOptions: [],
+    page: clampPageNumber(query.page, Number.MAX_SAFE_INTEGER),
+    totalPages: Math.max(invoicesPage.pagination.totalPages, ticketsPage.pagination.totalPages),
+    totalInvoices: invoicesPage.pagination.totalItems,
+    totalTickets: ticketsPage.pagination.totalItems,
+  };
+}
+
+/** M01-backed data source for /staff/invoices. Does not list responsible user IDs or ticket codes. */
+export const staffInvoiceSource: InvoiceManagementSource = {
+  async readManagementPage(query, signal) {
+    const invoiceParams = buildStaffInvoiceSearchParams(query);
+    const ticketParams = buildStaffTicketSearchParams(query);
+    const [invoicesPage, ticketsPage] = await Promise.all([
+      readStaffJson<Page<StaffInvoiceSummaryDto>>(
+        `/api/staff/invoices?${invoiceParams.toString()}`,
+        signal,
+      ),
+      readStaffJson<Page<StaffTicketSearchResultDto>>(
+        `/api/staff/tickets?${ticketParams.toString()}`,
+        signal,
+      ),
+    ]);
+    return mapStaffManagementPage(query, invoicesPage, ticketsPage);
+  },
+  async readInvoiceDetail(invoiceId, signal) {
+    const detail = await readStaffJson<StaffInvoiceDetailDto>(
+      `/api/staff/invoices/${invoiceId}`,
+      signal,
+    );
+    return mapStaffInvoiceDetailToView(detail);
+  },
+};

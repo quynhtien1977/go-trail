@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const supplyCategories = ["Food", "Drink", "Gear"] as const;
+export const supplyCategories = ["Food", "Drink", "Gear", "Medical"] as const;
 export type SupplyCategory = (typeof supplyCategories)[number];
 
 const id = z.number().int().positive().max(2147483647);

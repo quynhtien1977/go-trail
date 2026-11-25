@@ -459,7 +459,7 @@ erDiagram
     SUPPLY_ITEMS {
         int item_id PK
         nvarchar name UK
-        varchar category "Food, Drink, Gear"
+        varchar category "Food, Drink, Gear, Medical"
         nvarchar unit "One counted unit, e.g. chai 500ml"
         bit is_active "Retire instead of delete"
         datetime created_at
@@ -672,7 +672,7 @@ Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn h
 
 ### 7.12. Sổ vật tư I01 (schema) và I02 (danh mục, nhập kho)
 
-- Một kho MVP. `SUPPLY_ITEMS` là danh mục: tên duy nhất, nhóm Food/Drink/Gear và `unit` mô tả một đơn vị đếm rõ ràng (ví dụ "chai 500ml", "gói 100g"); mọi số lượng là số nguyên của đơn vị đó. Ngừng dùng bằng `is_active = false`, không xóa.
+- Một kho MVP. `SUPPLY_ITEMS` là danh mục: tên duy nhất, nhóm Food/Drink/Gear/Medical (Medical = y tế, thêm ngày 23/11/2026 theo quyết định người dùng, migration `20261123000000_supply_medical_category` chỉ ADD VALUE) và `unit` mô tả một đơn vị đếm rõ ràng (ví dụ "chai 500ml", "gói 100g"); mọi số lượng là số nguyên của đơn vị đó. Ngừng dùng bằng `is_active = false`, không xóa.
 - `SUPPLY_TRANSACTIONS` là sổ cái chỉ ghi thêm: trigger chặn UPDATE/DELETE (SQLSTATE 23001); sửa sai bằng phiếu bù (Receive/Return/Dispose). `quantity > 0`, chiều cộng/trừ lấy từ `txn_type`. Issue (cấp cho chuyến) và Return (hoàn nhập dư) bắt buộc `departure_id`; Receive (nhập kho) và Dispose (xuất hủy/hao hụt) không có chuyến. Mỗi phiếu có `created_by_user_id` và `idempotency_key` UNIQUE toàn bảng, đúng format 16–64 ký tự `[A-Za-z0-9_-]`. FK RESTRICT tới vật tư, chuyến, người thao tác.
 - Tồn kho = SUM(Receive + Return) − SUM(Issue + Dispose) theo `item_id`, không lưu cột tồn. Tồn của một chuyến = Issue − Return theo (`item_id`, `departure_id`).
 - Việc của I02/I03 khi viết service (DB không kiểm): khóa row `supply_items` `FOR UPDATE` trước khi tính tồn để Issue/Dispose không làm tồn âm; Return không vượt số đã cấp ròng cho chuyến; chỉ vật tư active nhận phiếu mới; trạng thái chuyến được cấp/hoàn; retry cùng key trả phiếu cũ, cùng key khác payload trả 409. Quyền theo ma trận 3.2: HRMgr/Admin ghi; RouteMgr/Leader chỉ đọc vật tư của chuyến được phân công.

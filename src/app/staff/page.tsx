@@ -4,7 +4,7 @@ import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
 import { RoleBadge } from "@/components/ui/role-badge";
-import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
+import { StaffOperations } from "@/components/staff-ops/staff-operations";
 import type { Role } from "@/schemas/auth";
 import Link from "next/link";
 
@@ -83,16 +83,24 @@ export default async function StaffPage() {
           </div>
         </div>
 
-        {(user.role === "RouteMgr" || user.role === "Admin") && (
-          <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3">
+          {(user.role === "RouteMgr" || user.role === "Admin") && (
             <Link
               href="/staff/invoices"
               className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
             >
               Mở quản lý hóa đơn & vé theo chuyến
             </Link>
-          </div>
-        )}
+          )}
+          <Link
+            href="/staff/supplies"
+            className="inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]"
+          >
+            {user.role === "RouteMgr"
+              ? "Xem vật tư cấp theo chuyến"
+              : "Mở kho vật tư & cấp theo chuyến"}
+          </Link>
+        </div>
 
         {/* Operational Modules Card */}
         <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm space-y-6">
@@ -120,12 +128,12 @@ export default async function StaffPage() {
           </div>
 
           <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
-            * Phân hệ CRUD danh mục tuyến và điểm đón đã sẵn sàng bên dưới dành cho RouteMgr và Admin.
+            * Các phân hệ bên dưới hiển thị theo vai trò; mọi thao tác đều được máy chủ kiểm tra quyền lại.
           </div>
         </div>
 
-        {/* Phân hệ Quản lý Tuyến & Điểm đón xe */}
-        <StaffCatalogManager actorRole={user.role as Role} />
+        {/* Phân hệ vận hành theo vai trò: chuyến, tuyến, đội xe, nhân sự (O06) */}
+        <StaffOperations actorRole={user.role as Role} />
       </main>
     </div>
   );

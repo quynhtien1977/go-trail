@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { accountDataService } from "@/server/services/account-data";
 import { LeaderShell } from "@/components/leader/leader-shell";
 import { TripList } from "@/components/leader/trip-list";
@@ -13,6 +14,10 @@ export default async function LeaderPage() {
   return (
     <LeaderShell topBar={{ kind: "brand" }}>
       <TripList departures={departures} />
+      <Link href="/leader/supplies"
+        className="mt-6 inline-flex min-h-11 items-center rounded-[5px] border border-[#186734] bg-white px-4 text-sm font-semibold text-[#186734]">
+        Xem vật tư chuyến được phân công
+      </Link>
     </LeaderShell>
   );
 }

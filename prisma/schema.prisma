@@ -119,6 +119,7 @@ enum SupplyCategory {
   Food
   Drink
   Gear
+  Medical
 }
 
 enum SupplyTransactionType {
