@@ -26,6 +26,11 @@ export const receiveSupplySchema = z.strictObject({
   note: z.string().trim().max(500).nullish(),
 });
 
+export const movementSchema = receiveSupplySchema.extend({
+  recipient_staff_id: id,
+  note: z.string().trim().min(1).max(500),
+});
+
 const pageField = (max: number, fallback: number) =>
   z.union([
     z.number().int().min(1).max(max),
