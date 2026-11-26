@@ -4,16 +4,30 @@ import type { DataClient, Transaction } from "./database";
 export function visibleDeparture(db: DataClient, id: number, role: string, userId: number) {
   return db.departure.findFirst({ where: { departure_id: id,
     ...(role === "RouteMgr" ? { invoice_owner_user_id: userId } : {}),
-    ...(role === "Leader" ? { staff: { some: { role_in_trip: "Leader", staff: { user_id: userId } } } } : {}),
+    ...(role === "Leader" ? { status: { in: ["Confirmed", "Running", "Ended"] },
+      staff: { some: { role_in_trip: "Leader", staff: { user_id: userId, staff_type: "Leader", status: "Active" } } } } : {}),
   }, select: { departure_id: true } });
 }
 
-export async function assignedRecipient(tx: Transaction, departureId: number, recipientId: number) {
+export async function lockDepartureForSupply(tx: Transaction, departureId: number) {
+  const rows = await tx.$queryRaw<{ status: string }[]>`
+    SELECT status FROM departures WHERE departure_id = ${departureId} FOR SHARE`;
+  return rows[0] ?? null;
+}
+
+export async function assignedRecipient(tx: Transaction, departureId: number, recipientId: number, allowInactive: boolean) {
   const rows = await tx.$queryRaw<{ staff_id: number }[]>`
     SELECT a.staff_id FROM departure_staff a JOIN staff s USING (staff_id)
-    WHERE a.departure_id = ${departureId} AND a.staff_id = ${recipientId} AND s.status = 'Active'
+    WHERE a.departure_id = ${departureId} AND a.staff_id = ${recipientId}
+      AND (${allowInactive}::boolean OR s.status = 'Active')
     FOR SHARE OF a, s`;
   return rows.length > 0;
+}
+
+export async function wasIssuedToRecipient(tx: Transaction, departureId: number, itemId: number, recipientId: number) {
+  const row = await tx.supplyTransaction.findFirst({ where: { departure_id: departureId, item_id: itemId,
+    recipient_staff_id: recipientId, txn_type: "Issue" }, select: { txn_id: true } });
+  return row !== null;
 }
 
 export function departureBalance(db: DataClient, departureId: number, itemId: number | null = null) {

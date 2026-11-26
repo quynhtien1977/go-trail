@@ -24,4 +24,16 @@ export async function verifySupplyRace(db, actor, departureId, recipientId, whil
   }
   assert.equal((await readSupplies(db, actor, departureId)).items[0].remaining, 0);
   console.log("PASS: concurrent issues and returns serialize, preserve balances and replay once.");
+
+  // The status must be re-read after an overlapping trip closure, before taking stock.
+  await db.departure.update({ where: { departure_id: departureId }, data: { status: "Running" } });
+  const closing = await whileBlocked("SELECT departure_id FROM departures WHERE departure_id = $1 FOR UPDATE", [departureId],
+    () => [move("Issue", "supply-issue-during-end", 1)],
+    connection => connection.query("UPDATE departures SET status = 'Ended' WHERE departure_id = $1", [departureId]), 1);
+  assert.equal(closing[0].status, "rejected");
+  assert.equal(closing[0].reason.code, "RESOURCE_CONFLICT");
+  assert.equal(await db.supplyTransaction.count({ where: { idempotency_key: "supply-issue-during-end" } }), 0);
+  assert.equal((await readSupplyItem(db, actor, item.item_id)).on_hand, 5);
+  await db.departure.update({ where: { departure_id: departureId }, data: { status: "Draft" } });
+  console.log("PASS: a supply issue waiting on an ending trip rechecks status and leaves stock unchanged.");
 }

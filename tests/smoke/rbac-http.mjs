@@ -381,6 +381,26 @@ try {
   await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: actors.get("RouteMgr").user_id } });
   console.log("PASS: assignment reads enforce RouteMgr ownership and assigned Leader operational-state scope.");
 
+  const supplyRead = endpoints.find(e => e.route === "staff/departures/[id]/supplies" && e.method === "GET");
+  for (const index of [0, 1, 2, 6, 7]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 404, "NOT_FOUND");
+  }
+  for (const index of [3, 4, 5]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 200);
+  }
+  expect(await request(supplyRead, actors.get("OtherLeader")), 404, "NOT_FOUND");
+  await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Inactive" } });
+  try {
+    expect(await request(supplyRead, actors.get("Leader")), 404, "NOT_FOUND");
+  } finally {
+    await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Active" } });
+  }
+  const supplyIssue = endpoints.find(e => e.route === "staff/departures/[id]/supplies/issue");
+  const supplyCount = await db.supplyTransaction.count();
+  expect(await request({ ...supplyIssue, path: `/api/staff/departures/${departures[5].departure_id}/supplies/issue` }, actors.get("HRMgr")), 409, "RESOURCE_CONFLICT");
+  assert.equal(await db.supplyTransaction.count(), supplyCount);
+  console.log("PASS: I03 HTTP scopes Leader reads and rejects new supplies on an ended departure.");
+
   // K01: use the real O03/O04 HTTP flow before exercising its public read contract.
   const saleDate = "2033-01-02T02:00:00.000Z", saleDeadline = "2033-01-01T02:00:00.000Z";
   const createdSale = await request({ method: "POST", route: "staff/trips/[id]/departures",
