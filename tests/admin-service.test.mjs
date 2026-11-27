@@ -3,6 +3,7 @@ import { describe, before, beforeEach, after, test } from "node:test";
 import { createTestDatabase } from "./helpers/test-database.mjs";
 import { listAuditLogs, listSettings, listUsers, updateSetting } from "../src/server/services/admin.ts";
 import { updateAccountAccess } from "../src/server/services/accounts.ts";
+import { writeCronDeparturesClosed } from "../src/server/audit.ts";
 
 describe("Admin console", () => {
   let database, db, admin, others;
@@ -67,6 +68,39 @@ describe("Admin console", () => {
       { action: "SettingChanged", record_id: "MAX_SEATS_PER_INVOICE", from: "10", to: "6" }]);
   });
 
+  test("reducing the Leader ratio cannot make a Confirmed departure understaffed", async () => {
+    const trip = await db.trip.create({ data: { name: "Ratio fixture", city: "Test", location_name: "Test", length_km: "1",
+      base_price: "100", description: "Fixture", schedule_content: "Fixture" } });
+    const pickup = await db.pickupPoint.create({ data: { trip_id: trip.trip_id, name: "Pickup", address: "Test" } });
+    const dep = await db.departure.create({ data: { trip_id: trip.trip_id, status: "Confirmed", min_passengers: 1,
+      departure_date: new Date("2035-01-02T00:00:00Z"), booking_deadline: new Date("2035-01-01T00:00:00Z") } });
+    const depPickup = await db.departurePickup.create({ data: { departure_id: dep.departure_id, pickup_id: pickup.pickup_id,
+      pickup_time: new Date("2035-01-02T00:00:00Z") } });
+    const vehicle = await db.vehicle.create({ data: { plate_number: "RATIO-TEST", vehicle_type: "Fixture", seat_count: 2,
+      seats: { create: [0, 1].map(i => ({ seat_name: `A0${i + 1}`, floor_level: 1, x_position: i, y_position: 0 })) } }, include: { seats: true } });
+    const assignment = await db.departureVehicle.create({ data: { departure_id: dep.departure_id, vehicle_id: vehicle.vehicle_id } });
+    const leader = await db.staff.findFirstOrThrow({ where: { staff_type: "Leader" } });
+    await db.departureStaff.create({ data: { departure_id: dep.departure_id, dep_vehicle_id: assignment.dep_vehicle_id,
+      staff_id: leader.staff_id, role_in_trip: "Leader" } });
+    const invoice = await db.invoice.create({ data: { customer_id: others[0].user_id, departure_id: dep.departure_id,
+      payment_code: "RATIO-PAID", total_amount: "200", status: "Paid", expires_at: new Date("2034-01-01T00:00:00Z") } });
+    for (const seat of vehicle.seats) {
+      const depSeat = await db.departureSeat.create({ data: { dep_vehicle_id: assignment.dep_vehicle_id, seat_id: seat.seat_id,
+        status: "Sold", invoice_id: invoice.invoice_id } });
+      await db.invoiceDetail.create({ data: { invoice_id: invoice.invoice_id, dep_seat_id: depSeat.dep_seat_id, dep_pickup_id: depPickup.dep_pickup_id,
+        passenger_name: "Passenger", passenger_phone: "0901234567", emergency_contact: "Contact", health_declaration: true, unit_price: "100", status: "Valid" } });
+    }
+    await assert.rejects(updateSetting(db, admin, "LEADER_RATIO", { setting_value: "1" }), { code: "RESOURCE_CONFLICT" });
+    assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "LEADER_RATIO" } })).setting_value, "15");
+    assert.equal(await db.auditLog.count({ where: { action: "SettingChanged" } }), 0);
+    await updateSetting(db, admin, "LEADER_RATIO", { setting_value: "2" });
+    assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "LEADER_RATIO" } })).setting_value, "2");
+    await db.departure.update({ where: { departure_id: dep.departure_id }, data: { status: "Running" } });
+    await assert.rejects(updateSetting(db, admin, "LEADER_RATIO", { setting_value: "1" }), { code: "RESOURCE_CONFLICT" });
+    await updateSetting(db, admin, "LEADER_RATIO", { setting_value: "3" });
+    assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "LEADER_RATIO" } })).setting_value, "3");
+  });
+
   test("audit log search filters by table, record, actor and time, newest first", async () => {
     await updateAccountAccess(db, admin, others[0].user_id, { role: "RouteMgr" });
     await updateSetting(db, admin, "LEADER_RATIO", { setting_value: "12" });
@@ -78,6 +112,7 @@ describe("Admin console", () => {
     assert.deepEqual(byRecord.items.map((item) => item.action), ["RoleChanged"]);
     assert.equal((await listAuditLogs(db, admin, { from: "2099-01-01T00:00:00Z" })).pagination.totalItems, 0);
     await assert.rejects(listAuditLogs(db, admin, { table_name: "users; drop" }), { code: "INVALID_INPUT" });
+    await assert.rejects(listAuditLogs(db, admin, { user_id: "2147483648" }), { code: "INVALID_INPUT" });
   });
   test("legacy audit rows remain readable without disclosing arbitrary descriptions", async () => {
     for (const description of ["legacy message", JSON.stringify({ password: "legacy" })]) {
@@ -85,6 +120,25 @@ describe("Admin console", () => {
     }
     const logs = await listAuditLogs(db, admin);
     assert.deepEqual(logs.items.map(row => row.event), [null, null]);
+  });
+
+  test("Admin reads real scheduler audits with their actor and reason, without exposing arbitrary fields", async () => {
+    await writeCronDeparturesClosed(db, [{ record_id: 42, reason: "deadline" }, { record_id: 43, reason: "sold_out" }]);
+    await db.auditLog.create({ data: { user_id: null, action: "DepartureStatusChanged", table_name: "departures", record_id: "44",
+      description: JSON.stringify({ action: "DepartureStatusChanged", record_id: 44, from: "Open", to: "Closed", source: "cron",
+        reason: "deadline", password: "do-not-expose" }) } });
+    const logs = await listAuditLogs(db, admin, { table_name: "departures" });
+    const byId = new Map(logs.items.map(row => [row.record_id, row]));
+    assert.equal(logs.pagination.totalItems, 3);
+    for (const [recordId, reason] of [["42", "deadline"], ["43", "sold_out"]]) {
+      const row = byId.get(recordId);
+      assert.equal(row.user_id, null);
+      assert.equal(row.actor_name, "Hệ thống");
+      assert.deepEqual(row.event, { action: "DepartureStatusChanged", record_id: Number(recordId), from: "Open", to: "Closed", source: "cron", reason });
+    }
+    assert.equal(byId.get("44").event, null);
+    assert.ok(!JSON.stringify(logs).includes("do-not-expose"));
+    for (const actor of others) await assert.rejects(listAuditLogs(db, actor), { code: "FORBIDDEN" });
   });
 
   test("two admins cannot concurrently demote one another and leave zero admins", async () => {

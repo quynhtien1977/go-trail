@@ -34,10 +34,15 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("SupplyReceived"), record_id: id, item_id: id, quantity: z.number().int().positive() }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
+const cronDepartureEventSchema = z.strictObject({ action: z.literal("DepartureStatusChanged"), record_id: id,
+  from: z.literal("Open"), to: z.literal("Closed"), source: z.literal("cron"), reason: z.enum(["deadline", "sold_out"]) });
 
 export function readAuditEvent(description: string) {
   try {
-    const event = eventSchema.safeParse(JSON.parse(description));
+    const value: unknown = JSON.parse(description);
+    const cronEvent = cronDepartureEventSchema.safeParse(value);
+    if (cronEvent.success) return cronEvent.data;
+    const event = eventSchema.safeParse(value);
     return event.success ? event.data : null;
   } catch { return null; }
 }

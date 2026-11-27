@@ -42,6 +42,21 @@ export async function lockSetting(tx: Transaction, key: string) {
   const rows = await tx.$queryRaw<{ setting_value: string }[]>`SELECT setting_value FROM system_settings WHERE setting_key = ${key} FOR UPDATE`;
   return rows[0];
 }
+export async function lockSettingActor(tx: Transaction, userId: number): Promise<void> {
+  await tx.$queryRaw`SELECT user_id FROM users WHERE user_id = ${userId} FOR SHARE`;
+}
 export function setValue(tx: Transaction, key: string, value: string) {
   return tx.systemSetting.update({ where: { setting_key: key }, data: { setting_value: value } });
+}
+
+export async function hasUnderstaffedDeparture(tx: Transaction, ratio: number): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ departure_id: number }[]>`
+    SELECT d.departure_id FROM departures d WHERE d.status IN ('Confirmed', 'Running')
+      AND (SELECT COUNT(*) FROM departure_vehicles v JOIN departure_staff s ON s.dep_vehicle_id = v.dep_vehicle_id
+           WHERE v.departure_id = d.departure_id AND s.role_in_trip = 'Leader') * ${ratio}
+        < (SELECT COUNT(*) FROM departure_vehicles v JOIN departure_seats s ON s.dep_vehicle_id = v.dep_vehicle_id
+           JOIN invoice_details t ON t.dep_seat_id = s.dep_seat_id
+           WHERE v.departure_id = d.departure_id AND t.status = 'Valid')
+    LIMIT 1`;
+  return rows.length > 0;
 }

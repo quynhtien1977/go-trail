@@ -974,6 +974,15 @@ try {
   assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
   assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: due.departure_id } })).status, "Closed");
   assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged", record_id: String(due.departure_id) } }), 1);
+  const audit = { method: "GET", route: "admin/audit", path: `/api/admin/audit?table_name=departures&record_id=${due.departure_id}` };
+  const systemAudit = await request(audit, admin);
+  expect(systemAudit, 200);
+  assert.equal(systemAudit.body.data.items.length, 1);
+  assert.equal(systemAudit.body.data.items[0].actor_name, "Hệ thống");
+  assert.equal(systemAudit.body.data.items[0].user_id, null);
+  assert.equal(systemAudit.body.data.items[0].event.source, "cron");
+  assert.equal(systemAudit.body.data.items[0].event.reason, "deadline");
+  expect(await request({ ...audit, path: "/api/admin/audit?user_id=2147483648" }, admin), 422, "INVALID_INPUT");
   if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   await startServer({ CRON_SECRET: "" });
   for (const endpoint of cronEndpoints) {
