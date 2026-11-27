@@ -16,6 +16,7 @@ const db = database.client;
 const secret = randomBytes(32).toString("hex");
 // Fixture webhook key; never inherit a real SEPAY_API_KEY from the environment.
 const sepayKey = randomBytes(24).toString("hex");
+const cronKey = randomBytes(32).toString("hex");
 const actors = new Map();
 let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
@@ -39,7 +40,7 @@ async function assertRouteCoverage(endpoints) {
     "GET departures/[id]/pickups",
     // P01: machine-to-machine, authenticated by SEPAY_API_KEY instead of a session role.
     // No role may drive it, which the P01 block below asserts for all five roles.
-    "POST webhooks/sepay");
+    "POST webhooks/sepay", "POST cron/expire-invoices", "POST cron/auto-close-departures");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -124,7 +125,7 @@ async function startServer(bank = {}) {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
       UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1", SEPAY_API_KEY: sepayKey,
-      BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
+      CRON_SECRET: cronKey, BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
     stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
   child.stdout.resume(); child.stderr.resume();
@@ -355,6 +356,16 @@ try {
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
+  const cronEndpoints = ["expire-invoices", "auto-close-departures"].map(name =>
+    ({ method: "POST", route: `cron/${name}`, path: `/api/cron/${name}` }));
+  const beforeCronDenial = await deniedSnapshot();
+  for (const endpoint of cronEndpoints) {
+    expect(await request(endpoint), 401, "UNAUTHENTICATED");
+    expect(await request(endpoint, undefined, { extraHeaders: { authorization: "Bearer wrong-secret" } }), 401, "UNAUTHENTICATED");
+    for (const role of roles) expect(await request(endpoint, actors.get(role)), 401, "UNAUTHENTICATED");
+  }
+  assert.equal(await deniedSnapshot(), beforeCronDenial, "sessions and wrong cron secrets must not change business rows");
+  console.log("PASS: cron endpoints reject anonymous requests, wrong secrets, and every authenticated role without writes.");
   for (const endpoint of endpoints) {
     const before = await deniedSnapshot();
     expect(await request(endpoint), 401, "UNAUTHENTICATED");
@@ -941,6 +952,29 @@ try {
   expect(await request(startup, newCustomer), 200);
   expect(await request({ method: "GET", route: "staff/vehicles", path: "/api/staff/vehicles" }, newCustomer, { claims: { role: "Accountant" } }), 403, "FORBIDDEN");
   console.log(`PASS: actual Accountant migration and Admin unlock never revive pre-cutover sessions or retired privileges (${requests} HTTP checks).`);
+
+  stage = "Q03";
+  const cronTrip = await db.trip.create({ data: { ...tripInput, name: "Cron HTTP fixture" } });
+  const due = await db.departure.create({ data: { trip_id: cronTrip.trip_id, status: "Open", min_passengers: 1,
+    invoice_owner_user_id: admin.user_id, departure_date: new Date("2001-01-02T00:00:00Z"), booking_deadline: new Date("2001-01-01T00:00:00Z") } });
+  const stale = await db.invoice.create({ data: { customer_id: newCustomer.user_id, departure_id: due.departure_id,
+    payment_code: "CRON-HTTP-EXPIRED", total_amount: "500000", expires_at: new Date("2000-01-01T00:00:00Z") } });
+  for (const endpoint of cronEndpoints) {
+    const result = await request(endpoint, undefined, { originHeader: null, extraHeaders: { authorization: `Bearer ${cronKey}` } });
+    expect(result, 200);
+    assert.ok(Number.isInteger(result.body.data.processed) && result.body.data.processed >= 1);
+    assert.equal(typeof result.body.data.batch_full, "boolean");
+    expect(await request(endpoint, undefined, { originHeader: null, extraHeaders: { authorization: `Bearer ${cronKey}` } }), 200);
+  }
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
+  assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: due.departure_id } })).status, "Closed");
+  assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged", record_id: String(due.departure_id) } }), 1);
+  if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  await startServer({ CRON_SECRET: "" });
+  for (const endpoint of cronEndpoints) {
+    expect(await request(endpoint, undefined, { extraHeaders: { authorization: `Bearer ${cronKey}` } }), 503, "CRON_UNAVAILABLE");
+  }
+  console.log("PASS: authenticated Q03 jobs expire/close and audit once; missing scheduler secret fails closed with 503.");
 } catch (error) {
   // Keep the original assertion diagnosable even if a DB/socket cleanup also fails.
   console.error("RBAC_HTTP_FAILURE", {

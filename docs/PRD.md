@@ -238,7 +238,7 @@ erDiagram
 
     AUDIT_LOGS {
         int log_id PK
-        int user_id FK
+        int user_id FK "Nullable only for allowed system audit events"
         varchar action
         varchar table_name
         varchar record_id
@@ -554,6 +554,10 @@ erDiagram
 - Q02 bổ sung migration `20261124000200_supply_threshold`: thêm `low_stock_threshold` nullable, CHECK không âm; vật tư cũ giữ `NULL`, không tự gán ngưỡng hoặc sửa sổ vật tư. Supabase development của Tiến An đã áp dụng ngày 27/11/2026 theo ủy quyền; các thành viên khác áp dụng trên DB riêng sau khi PR #55 được merge và trước khi dùng Prisma Client mới.
 - Seed development thêm 4 vật tư mẫu, mỗi vật tư một phiếu nhập và 3 phiếu cấp cho chuyến demo Closed, do HRMgr demo ghi; khóa idempotency cố định nên chạy lại không thêm dòng. Chưa áp dụng lên Supabase/DB riêng của thành viên.
 
+### 6.4. Audit hệ thống Q03
+
+- Migration `20261127000000_system_audit_actor` cho phép `AUDIT_LOGS.user_id = NULL` đối với sự kiện tự động đổi trạng thái chuyến. CHECK chỉ cho `NULL` với `DepartureStatusChanged` của `departures`; audit của con người tiếp tục có FK người thực hiện. Không sửa dữ liệu cũ, quyền Data API hoặc RLS. Migration chỉ được áp dụng lên mỗi DB development khi có ủy quyền phù hợp.
+
 ## 7. Quy tắc dữ liệu và đồng thời
 
 ### 7.1. Khóa ghế nguyên tử
@@ -583,6 +587,7 @@ WHERE dep_seat_id = $seat_id
 - UNIQUE(`vehicle_id`, `seat_name`), UNIQUE(`departure_id`, `vehicle_id`), UNIQUE(`departure_id`, `pickup_id`); ngưỡng `REFUND_POLICY_RULES.hours_before_departure` unique để không mơ hồ khi chọn chính sách.
 - CHECK: tiền không âm (refund phải > 0), rating 1–5, tỷ lệ hoàn 0–100, số giờ chính sách không âm, sức chứa/min_passengers > 0, tọa độ ghế không âm/tầng >= 1, ngày kết thúc bảo dưỡng >= ngày bắt đầu, deadline <= ngày khởi hành.
 - CHECK trạng thái ghế: `Available` không có invoice/expiry; `Locked` có cả invoice và expiry; `Sold` có invoice, expiry NULL. Mỗi FK có index phục vụ truy vấn và kiểm tra tham chiếu.
+- Audit thay đổi trạng thái chuyến do scheduler phải ghi cùng transaction với actor hệ thống (`user_id = NULL`) và nguồn `cron`; không mạo danh nhân viên. CHECK DB giới hạn loại sự kiện được phép có actor hệ thống theo 6.4.
 - Service bắt buộc kiểm tra quan hệ chéo trong transaction: ghế thuộc đúng xe; điểm đón thuộc đúng tuyến; phân công xe thuộc đúng chuyến và role đúng loại nhân sự; invoice detail/ghế/điểm đón cùng chuyến; payment được refund thuộc đúng invoice; review thuộc vé của customer. FK đơn lẻ chưa kiểm tra các điều kiện này. Máy trạng thái và điều kiện chốt chạy thuộc bước 3–7.
 
 ### 7.3. Công thức
@@ -714,15 +719,19 @@ Không cung cấp trong MVP theo yêu cầu 17/10/2026. Không triển khai cạ
 
 ## 9. Tác vụ nền
 
-Hạn chế phụ thuộc vào cron: khóa ghế đã tự xử lý hết hạn nhờ 7.1. Cron chỉ để dọn dữ liệu.
+Hạn chế phụ thuộc vào cron: khóa ghế đã tự xử lý hết hạn nhờ 7.1; cron dọn trạng thái và đóng bán chuyến theo điều kiện bên dưới.
 
 | Tác vụ | Mục đích | Tần suất gợi ý |
 |---|---|---|
-| `expire-invoices` | `Pending` quá `expires_at` → `Expired`, vé `Cancelled`, ghế `Available` | 5 phút |
-| `auto-close-departures` | Open → Closed khi quá `booking_deadline` | 15 phút |
+| `expire-invoices` | `Pending` có `expires_at <= now` → `Expired`; chỉ hủy vé Pending và nhả ghế Locked còn thuộc hóa đơn đó | 5 phút |
+| `auto-close-departures` | Open → Closed khi đến `booking_deadline` hoặc mọi ghế đã Sold; hold Pending không được tính là Sold | 15 phút |
 | `document-alerts` | Cảnh báo bằng lái sắp hết hạn, xe đến hạn bảo dưỡng, thiếu Leader | Hằng ngày |
 
 Route cron nằm ở `/api/cron/*`, bảo vệ bằng header `Authorization: Bearer $CRON_SECRET`. Gói Hobby của Vercel chỉ cho cron chạy tối đa một lần mỗi ngày, nên chạy tần suất cao bằng GitHub Actions hoặc dịch vụ cron ngoài gọi vào route này.
+
+Q03 cung cấp hai route `POST /api/cron/expire-invoices` và `POST /api/cron/auto-close-departures`. Mỗi lần gọi xử lý tối đa 50 invoice hoặc departure; `data.batch_full = true` báo lô đã đầy và có thể cần gọi thêm, không khẳng định chắc chắn còn dữ liệu. Lần chạy trùng hoặc đồng thời an toàn; invoice/departure đang bị transaction khác khóa được bỏ qua và xem lại ở lần sau, còn việc lấy khóa ghế có thể đợi hoặc timeout và cần retry. Thiếu hoặc sai secret bị từ chối; thiếu cấu hình secret trả 503. Hai job dùng transaction riêng để giữ thứ tự khóa của booking/payment.
+
+Endpoint không tự tạo lịch chạy: môi trường triển khai phải cấu hình scheduler gọi `POST` và gửi secret qua header, không ghi secret vào URL/log. Nếu chọn GitHub Actions schedule, workflow phải tồn tại trên default branch (`main`); merge vào `develop` chưa tự bật lịch. Cấu hình scheduler và migration trên database của từng môi trường là các bước triển khai riêng.
 
 ## 10. Kiến trúc kỹ thuật: 3 layers
 
