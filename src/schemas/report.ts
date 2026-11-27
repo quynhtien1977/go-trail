@@ -2,9 +2,11 @@ import { z } from "zod";
 import { AppError } from "@/server/errors";
 
 const id = z.string().regex(/^[1-9]\d{0,9}$/).transform(Number).pipe(z.number().max(2147483647));
+// Local midnight on 0001-01-01 falls in year 0000 UTC, which PostgreSQL cannot parse.
+const reportDate = z.iso.date().refine(value => value >= "0001-01-02");
 export const reportFilters = z.strictObject({
-  from_date: z.iso.date(),
-  to_date: z.iso.date(),
+  from_date: reportDate,
+  to_date: reportDate,
   trip_id: id.optional(),
   departure_id: id.optional(),
 });
