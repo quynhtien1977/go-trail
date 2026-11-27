@@ -203,6 +203,11 @@ try {
   route("account/me", "/api/account/me", roles, { GET: undefined });
   route("invoices/[id]", `/api/invoices/${invoice.invoice_id}`, ["Customer", "Admin"], { GET: undefined });
   route("leader/departures", "/api/leader/departures", ["Leader", "Admin"], { GET: undefined });
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" }, create: { setting_key: "LEADER_RATIO", setting_value: "15", description: "Fixture" }, update: {} });
+  route("admin/users", "/api/admin/users", ["Admin"], { GET: undefined });
+  route("admin/settings", "/api/admin/settings", ["Admin"], { GET: undefined });
+  route("admin/settings/[key]", "/api/admin/settings/LEADER_RATIO", ["Admin"], { PATCH: () => ({ setting_value: "15" }) });
+  route("admin/audit", "/api/admin/audit", ["Admin"], { GET: undefined });
   route("admin/users/[id]/access", `/api/admin/users/${actors.get("OtherCustomer").user_id}/access`, ["Admin"], { PATCH: () => ({ status: "Active" }) });
   route("staff/trips", "/api/staff/trips", ["RouteMgr", "Admin"], { GET: undefined, POST: () => ({ ...tripInput, name: `Created trail ${next()}` }) });
   route("staff/trips/[id]", `/api/staff/trips/${trip.trip_id}`, ["RouteMgr", "Admin"], { GET: undefined, PATCH: () => ({ name: `Edited trail ${next()}` }), DELETE: undefined });
@@ -969,6 +974,15 @@ try {
   assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
   assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: due.departure_id } })).status, "Closed");
   assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged", record_id: String(due.departure_id) } }), 1);
+  const audit = { method: "GET", route: "admin/audit", path: `/api/admin/audit?table_name=departures&record_id=${due.departure_id}` };
+  const systemAudit = await request(audit, admin);
+  expect(systemAudit, 200);
+  assert.equal(systemAudit.body.data.items.length, 1);
+  assert.equal(systemAudit.body.data.items[0].actor_name, "Hệ thống");
+  assert.equal(systemAudit.body.data.items[0].user_id, null);
+  assert.equal(systemAudit.body.data.items[0].event.source, "cron");
+  assert.equal(systemAudit.body.data.items[0].event.reason, "deadline");
+  expect(await request({ ...audit, path: "/api/admin/audit?user_id=2147483648" }, admin), 422, "INVALID_INPUT");
   if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   await startServer({ CRON_SECRET: "" });
   for (const endpoint of cronEndpoints) {

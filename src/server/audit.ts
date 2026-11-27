@@ -6,10 +6,13 @@ import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
 import { insertAudit, insertAudits } from "./repositories/audit";
 
+import { settingKeys } from "@/schemas/admin";
+
 const id = z.number().int().positive().max(2147483647);
 const departureStatuses = ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"] as const;
 const amount = z.string().regex(/^(0|[1-9]\d{0,13})$/);
 const eventSchema = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("SettingChanged"), record_id: z.enum(settingKeys), from: z.string().max(20), to: z.string().max(20) }),
   z.strictObject({ action: z.literal("RoleChanged"), record_id: id, from: z.enum(userRoles), to: z.enum(userRoles) }),
   z.strictObject({ action: z.literal("AccountStatusChanged"), record_id: id,
     from: z.enum(["Active", "Locked"]), to: z.enum(["Active", "Locked"]) }),
@@ -31,6 +34,18 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("SupplyReceived"), record_id: id, item_id: id, quantity: z.number().int().positive() }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
+const cronDepartureEventSchema = z.strictObject({ action: z.literal("DepartureStatusChanged"), record_id: id,
+  from: z.literal("Open"), to: z.literal("Closed"), source: z.literal("cron"), reason: z.enum(["deadline", "sold_out"]) });
+
+export function readAuditEvent(description: string) {
+  try {
+    const value: unknown = JSON.parse(description);
+    const cronEvent = cronDepartureEventSchema.safeParse(value);
+    if (cronEvent.success) return cronEvent.data;
+    const event = eventSchema.safeParse(value);
+    return event.success ? event.data : null;
+  } catch { return null; }
+}
 
 // Call with the same transaction as the business change. Do not call after commit.
 // Allowlisted structured events cannot carry passwords, banking details or request dumps.
@@ -40,6 +55,7 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
   const value = event.data;
   const table_name = value.action === "MoneyRecorded" ? value.table_name
     : value.action === "DepartureStatusChanged" || value.action === "DepartureOwnerChanged" ? "departures"
+      : value.action === "SettingChanged" ? "system_settings"
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips"
         : value.action === "SupplyItemCreated" || value.action === "SupplyItemUpdated" ? "supply_items"

@@ -8,7 +8,9 @@ import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { assignStaff, assignVehicle } from "../../src/server/services/assignments.ts";
+import { updateAccountAccess } from "../../src/server/services/accounts.ts";
 import { updateDeparture } from "../../src/server/services/departures.ts";
+import { updateSetting } from "../../src/server/services/admin.ts";
 
 // Explicit integration gate: disposable local PostgreSQL only, never .env or DATABASE_URL.
 const name = `gotrail-assignments-test-${randomUUID()}`;
@@ -115,6 +117,110 @@ try {
   assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: left.departure_id } })).status, "Draft");
   assert.equal(await db.auditLog.count({ where: { action: "DepartureStatusChanged" } }), 0);
   console.log("PASS: concurrent owner lock blocks opening and rolls back status/audit.");
+
+  // SCRUM-49: a ratio change and a Closed -> Confirmed transition must serialize, without freezing independent departures.
+  await db.systemSetting.upsert({ where: { setting_key: "LEADER_RATIO" },
+    create: { setting_key: "LEADER_RATIO", setting_value: "15", description: "Fixture" }, update: { setting_value: "15" } });
+  const ratioCustomer = await db.user.create({ data: { email: "ratio-buyer@concurrency.example.test", password_hash: "unused",
+    full_name: "Buyer", phone: "0901234567", role: "Customer" } });
+  const ratioLeader = await db.user.create({ data: { email: "ratio-leader@concurrency.example.test", password_hash: "unused",
+    full_name: "Leader", phone: "0901234567", role: "Leader" } });
+  const ratioCrew = [
+    await db.staff.create({ data: { full_name: "Driver", phone: "0901234567", staff_type: "Driver", license_number: "RATIO-D",
+      license_class: "D", license_expiry: new Date("2036-01-01") } }),
+    await db.staff.create({ data: { full_name: "Assistant", phone: "0901234567", staff_type: "Assistant" } }),
+    await db.staff.create({ data: { full_name: "Leader", phone: "0901234567", staff_type: "Leader", user_id: ratioLeader.user_id } }),
+  ];
+  async function ratioFixture(suffix) {
+    const dep = await makeDeparture();
+    const vehicle = await db.vehicle.create({ data: { plate_number: `RATIO-${suffix}`, vehicle_type: "Fixture", seat_count: 2,
+      seats: { create: [0, 1].map(i => ({ seat_name: `A0${i + 1}`, floor_level: 1, x_position: i, y_position: 0 })) } } });
+    await assignVehicle(db, actors.HRMgr, dep.departure_id, { vehicle_id: vehicle.vehicle_id });
+    // Independent fixture departure days avoid busy-staff checks from the previous fixture.
+    for (const person of ratioCrew) await assignStaff(db, actors.HRMgr, dep.departure_id,
+      { vehicle_id: vehicle.vehicle_id, staff_id: person.staff_id, role_in_trip: person.staff_type });
+    const pickupRow = await db.departurePickup.findFirstOrThrow({ where: { departure_id: dep.departure_id } });
+    const invoice = await db.invoice.create({ data: { customer_id: ratioCustomer.user_id, departure_id: dep.departure_id,
+      payment_code: `RATIO-${suffix}`, total_amount: "1000000", status: "Paid", expires_at: new Date("2034-01-01") } });
+    const seats = await db.departureSeat.findMany({ where: { vehicle: { departure_id: dep.departure_id } } });
+    for (const seat of seats) {
+      await db.departureSeat.update({ where: { dep_seat_id: seat.dep_seat_id }, data: { status: "Sold", invoice_id: invoice.invoice_id } });
+      await db.invoiceDetail.create({ data: { invoice_id: invoice.invoice_id, dep_seat_id: seat.dep_seat_id, dep_pickup_id: pickupRow.dep_pickup_id,
+        passenger_name: "Passenger", passenger_phone: "0901234567", emergency_contact: "Contact", health_declaration: true, unit_price: "500000", status: "Valid" } });
+    }
+    await db.departure.update({ where: { departure_id: dep.departure_id }, data: { status: "Closed" } });
+    return dep;
+  }
+  async function waitForOneLock() {
+    for (let i = 0; i < 80; i++) {
+      const result = await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [applicationName]);
+      if (result.rows[0].n >= 1) return;
+      await delay(25);
+    }
+    throw new Error("Expected first transaction to wait before starting its competitor");
+  }
+  let ratioDep = await ratioFixture("CONFIRM-FIRST");
+  const confirmFirst = await whileBlocked("SELECT departure_id FROM departures WHERE departure_id=$1 FOR UPDATE", [ratioDep.departure_id],
+    () => [updateDeparture(db, actors.Admin, ratioDep.departure_id, { status: "Confirmed" }, new Date("2034-01-01")),
+      (async () => { await waitForOneLock(); return updateSetting(db, actors.Admin, "LEADER_RATIO", { setting_value: "1" }); })()], undefined, 2);
+  assert.equal(confirmFirst[0].status, "fulfilled");
+  assert.equal(confirmFirst[1].status, "rejected"); assert.equal(confirmFirst[1].reason.code, "RESOURCE_CONFLICT");
+  assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "LEADER_RATIO" } })).setting_value, "15");
+  assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: ratioDep.departure_id } })).status, "Confirmed");
+  // End the first fixture to release its crew for the second scenario; isolated test database only.
+  await db.departure.update({ where: { departure_id: ratioDep.departure_id }, data: { status: "Ended" } });
+  ratioDep = await ratioFixture("RATIO-FIRST");
+  const ratioFirst = await whileBlocked("SELECT setting_key FROM system_settings WHERE setting_key='LEADER_RATIO' FOR UPDATE", [],
+    () => [updateSetting(db, actors.Admin, "LEADER_RATIO", { setting_value: "1" }),
+      (async () => { await waitForOneLock(); return updateDeparture(db, actors.Admin, ratioDep.departure_id,
+        { status: "Confirmed" }, new Date("2034-01-01")); })()], undefined, 2);
+  assert.equal(ratioFirst[0].status, "fulfilled");
+  assert.equal(ratioFirst[1].status, "rejected"); assert.equal(ratioFirst[1].reason.code, "RESOURCE_CONFLICT");
+  assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: ratioDep.departure_id } })).status, "Closed");
+  assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "LEADER_RATIO" } })).setting_value, "1");
+  console.log("PASS: concurrent ratio changes and confirmation serialize in both lock orders, preserving the Leader minimum.");
+
+  // A request that passed authorization before waiting must not mutate settings after that account is locked.
+  await db.systemSetting.upsert({ where: { setting_key: "MAX_SEATS_PER_INVOICE" },
+    create: { setting_key: "MAX_SEATS_PER_INVOICE", setting_value: "10", description: "Fixture" }, update: { setting_value: "10" } });
+  for (const [key, initial, next, lockSql, revoke] of [
+    ["LEADER_RATIO", "1", "2", "SELECT pg_advisory_xact_lock(717049)", { status: "Locked" }],
+    ["MAX_SEATS_PER_INVOICE", "10", "9", "SELECT setting_key FROM system_settings WHERE setting_key='MAX_SEATS_PER_INVOICE' FOR UPDATE", { role: "Customer" }],
+  ]) {
+    const victim = await db.user.create({ data: { role: "Admin", email: `revoked-${key}@concurrency.example.test`,
+      password_hash: "unused", full_name: "Revoked admin", phone: "0901234567" } });
+    const identity = { user_id: victim.user_id, role: "Admin", auth_version: victim.auth_version };
+    const revoked = await whileBlocked(lockSql, [], () => [updateSetting(db, identity, key, { setting_value: next })],
+      () => updateAccountAccess(db, actors.Admin, victim.user_id, revoke), 1);
+    assert.equal(revoked[0].status, "rejected", `${key}: the revoked Admin must not change a setting`);
+    assert.equal(revoked[0].reason.code, "UNAUTHENTICATED");
+    assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: key } })).setting_value, initial);
+    assert.equal(await db.auditLog.count({ where: { user_id: victim.user_id, action: "SettingChanged" } }), 0);
+  }
+  console.log("PASS: locked or demoted Admin sessions cannot change settings after waiting on the ratio or setting lock.");
+
+  const concurrentAdmin = await db.user.create({ data: { role: "Admin", email: "late-revocation@concurrency.example.test",
+    password_hash: "unused", full_name: "Concurrent admin", phone: "0901234567" } });
+  const concurrentIdentity = { user_id: concurrentAdmin.user_id, role: "Admin", auth_version: concurrentAdmin.auth_version };
+  const settingFirst = await whileBlocked("LOCK TABLE audit_logs IN ACCESS EXCLUSIVE MODE", [], () => [
+    updateSetting(db, concurrentIdentity, "MAX_SEATS_PER_INVOICE", { setting_value: "9" }),
+    (async () => { await waitForOneLock(); return updateAccountAccess(db, actors.Admin, concurrentAdmin.user_id, { status: "Locked" }); })(),
+  ], undefined, 2);
+  assert.ok(settingFirst.every(result => result.status === "fulfilled"), "setting change commits before the queued account lock");
+  assert.equal((await db.systemSetting.findUniqueOrThrow({ where: { setting_key: "MAX_SEATS_PER_INVOICE" } })).setting_value, "9");
+  assert.equal((await db.user.findUniqueOrThrow({ where: { user_id: concurrentAdmin.user_id } })).status, "Locked");
+  assert.equal(await db.auditLog.count({ where: { user_id: concurrentAdmin.user_id, action: "SettingChanged" } }), 1);
+  console.log("PASS: locking an Admin waits for an already authorized setting change to commit, then revokes the account.");
+
+  const secondAdmin = await db.user.create({ data: { role: "Admin", email: "second@admin.example.test",
+    password_hash: "unused", full_name: "Second admin", phone: "0901234567" } });
+  const demotions = await whileBlocked("SELECT pg_advisory_xact_lock(717002)", [], () => [
+    updateAccountAccess(db, actors.Admin, secondAdmin.user_id, { role: "Customer" }),
+    updateAccountAccess(db, secondAdmin, actors.Admin.user_id, { role: "Customer" }),
+  ], undefined, 2);
+  assert.equal(demotions.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(await db.user.count({ where: { role: "Admin", status: "Active" } }), 1);
+  console.log("PASS: simultaneous Admin demotions preserve one active Admin.");
 } finally {
   await db?.$disconnect();
   await pool?.end();
