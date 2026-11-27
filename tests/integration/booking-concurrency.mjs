@@ -13,6 +13,7 @@ import { recordSepayPayment } from "../../src/server/services/payments.ts";
 import { checkIn } from "../../src/server/services/checkin.ts";
 import { endLeaderDeparture } from "../../src/server/services/departures.ts";
 import { createSupplyItem, readSupplyItem, receiveSupply } from "../../src/server/services/inventory.ts";
+import { closeDepartures, expireInvoices } from "../../src/server/services/cron.ts";
 
 // Disposable local PostgreSQL, multiple independent connections. Never read .env.
 const name = `gotrail-bookings-test-${randomUUID()}`;
@@ -264,6 +265,66 @@ try {
       content: `${code} fixture`, transferType: "in", transferAmount: amount, accumulated: 0, subAccount: "",
       referenceCode: `FIX${id}`, description: "" }), at);
   const activeTickets = seatId => db.invoiceDetail.count({ where: { dep_seat_id: seatId, status: { not: "Cancelled" } } });
+
+  // Q03: real scheduler transactions against a real SePay webhook, with deterministic lock ordering.
+  process.env.CRON_SECRET = "concurrency-fixture-cron-secret-0123456789";
+  const cronAuth = "Bearer concurrency-fixture-cron-secret-0123456789";
+  const cronTime = new Date(now.getTime() + 16 * 60_000);
+  f = await fixture();
+  const paymentFirst = await f.hold("Buyer0", [0], "cron-payment-first-01");
+  await db.departure.update({ where: { departure_id: f.departure.departure_id }, data: { booking_deadline: new Date(now.getTime() + 10 * 60_000) } });
+  let blocker = await pool.connect();
+  let webhook;
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT dep_seat_id FROM departure_seats WHERE dep_seat_id=$1 FOR UPDATE", [f.seats[0].dep_seat_id]);
+    webhook = sepay(paymentFirst.payment_code, 915001, 500000, cronTime);
+    await waitForLocks(1); // webhook holds departure SHARE and invoice UPDATE, waiting on seat
+    assert.equal((await expireInvoices(db, cronAuth, cronTime)).processed, 0);
+    assert.equal((await closeDepartures(db, cronAuth, cronTime)).processed, 0);
+    await blocker.query("COMMIT");
+    await webhook;
+  } finally { await blocker.query("ROLLBACK"); blocker.release(); await webhook; }
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: paymentFirst.invoice_id } })).status, "Paid");
+  assert.equal((await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[0].dep_seat_id } })).status, "Sold");
+  assert.equal((await db.payment.findUniqueOrThrow({ where: { transaction_id: "915001" } })).status, "Success");
+  assert.equal((await closeDepartures(db, cronAuth, cronTime)).processed, 1);
+  assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged" } }), 1);
+  pass("Q03 skips an invoice and departure being settled, preserving Paid/Valid/Sold, then closes after the webhook commits.");
+
+  f = await fixture();
+  const cronFirst = await f.hold("Buyer0", [0], "cron-before-payment-01");
+  blocker = await pool.connect();
+  let expiration;
+  webhook = undefined;
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT dep_seat_id FROM departure_seats WHERE dep_seat_id=$1 FOR UPDATE", [f.seats[0].dep_seat_id]);
+    expiration = expireInvoices(db, cronAuth, cronTime);
+    await waitForLocks(1); // cron holds the invoice and waits for the seat
+    webhook = sepay(cronFirst.payment_code, 915002, 500000, cronTime);
+    await waitForLocks(2); // webhook waits for that invoice
+    await blocker.query("COMMIT");
+    assert.equal((await expiration).processed, 1);
+    await webhook;
+  } finally { await blocker.query("ROLLBACK"); blocker.release(); await expiration; await webhook; }
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: cronFirst.invoice_id } })).status, "Paid");
+  assert.equal((await db.departureSeat.findUniqueOrThrow({ where: { dep_seat_id: f.seats[0].dep_seat_id } })).status, "Sold");
+  assert.equal((await db.invoiceDetail.findFirstOrThrow({ where: { invoice_id: cronFirst.invoice_id } })).status, "Valid");
+  assert.equal((await db.payment.findUniqueOrThrow({ where: { transaction_id: "915002" } })).status, "Success");
+  assert.equal(await activeTickets(f.seats[0].dep_seat_id), 1);
+  pass("Q03 expiration winning the invoice lock still permits the late webhook to restore an available seat exactly once.");
+
+  f = await fixture();
+  const duplicated = await f.hold("Buyer0", [0], "cron-duplicate-key-01");
+  const expiredRuns = await Promise.all(Array.from({ length: 6 }, () => expireInvoices(db, cronAuth, cronTime)));
+  assert.equal(expiredRuns.reduce((sum, result) => sum + result.processed, 0), 1);
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: duplicated.invoice_id } })).status, "Expired");
+  await db.departure.update({ where: { departure_id: f.departure.departure_id }, data: { booking_deadline: now } });
+  const closedRuns = await Promise.all(Array.from({ length: 6 }, () => closeDepartures(db, cronAuth, cronTime)));
+  assert.equal(closedRuns.reduce((sum, result) => sum + result.processed, 0), 1);
+  assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged" } }), 1);
+  pass("6 overlapping invocations expire once and close once, with a single system audit.");
 
   f = await fixture();
   const stale = await f.hold("Buyer0", [0], "late-pay-old-hold-01");

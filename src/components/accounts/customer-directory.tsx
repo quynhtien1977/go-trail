@@ -28,14 +28,13 @@ export function CustomerDirectory() {
   const [notice, setNotice] = useState<{ tone: "info" | "danger"; title: string; detail?: string } | null>(null);
   const enabled = sessionStatus === "authenticated" && caps.canReadCustomers;
 
-  const list = useLoad(enabled ? JSON.stringify(query) : null, (signal) => customerClient.list(query, signal));
-  // Stat tiles reuse the list endpoint: totalItems of a one-row page per status, in the actor's own scope.
-  const stats = useLoad(enabled ? "stats" : null, async (signal) => {
-    const [all, active, locked] = await Promise.all([
-      customerClient.list({ page: 1, pageSize: 10 }, signal),
-      customerClient.list({ page: 1, pageSize: 10, status: "Active" }, signal),
-      customerClient.list({ page: 1, pageSize: 10, status: "Locked" }, signal),
-    ]);
+  const list = useLoad(enabled ? JSON.stringify([session?.user?.user_id, session?.user?.auth_version, query]) : null, (signal) => customerClient.list(query, signal));
+  // Load counts after the list, one request at a time, to avoid a burst of duplicate directory queries.
+  const statsEnabled = enabled && list.state.phase === "ready";
+  const stats = useLoad(statsEnabled ? JSON.stringify([session?.user?.user_id, session?.user?.auth_version, "stats"]) : null, async (signal) => {
+    const all = await customerClient.list({ page: 1, pageSize: 10 }, signal);
+    const active = await customerClient.list({ page: 1, pageSize: 10, status: "Active" }, signal);
+    const locked = await customerClient.list({ page: 1, pageSize: 10, status: "Locked" }, signal);
     return { all: all.pagination.totalItems, active: active.pagination.totalItems, locked: locked.pagination.totalItems };
   });
 
@@ -52,6 +51,8 @@ export function CustomerDirectory() {
 
   const data = list.state.data;
   const failure = list.state.phase === "error" ? describeFailure(list.state.code, list.state.status) : null;
+  const statsFailure = statsEnabled && stats.state.phase === "error" ? describeFailure(stats.state.code, stats.state.status) : null;
+  const statsLoading = list.state.phase === "loading" || (statsEnabled && stats.state.phase === "loading");
 
   return (
     <div className="space-y-5">
@@ -68,10 +69,11 @@ export function CustomerDirectory() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatTile label="Tổng khách hàng" value={stats.state.data?.all ?? null} />
-        <StatTile label="Đang hoạt động" value={stats.state.data?.active ?? null} tone="success" />
-        <StatTile label="Đã khóa" value={stats.state.data?.locked ?? null} tone="danger" />
+        <StatTile label="Tổng khách hàng" value={stats.state.data?.all ?? null} loading={statsLoading} />
+        <StatTile label="Đang hoạt động" value={stats.state.data?.active ?? null} tone="success" loading={statsLoading} />
+        <StatTile label="Đã khóa" value={stats.state.data?.locked ?? null} tone="danger" loading={statsLoading} />
       </div>
+      {statsFailure && <FailureNotice failure={statsFailure} onRetry={stats.reload} />}
 
       {notice && <Notice tone={notice.tone} title={notice.title}>{notice.detail}</Notice>}
 
@@ -119,7 +121,7 @@ export function CustomerDirectory() {
       </section>
 
       {selected !== null && (
-        <CustomerDetailDrawer customerId={selected} canManage={caps.canManageAccounts} onClose={() => setSelected(null)}
+        <CustomerDetailDrawer key={`${session?.user?.user_id}-${session?.user?.auth_version}-${selected}`} customerId={selected} canManage={caps.canManageAccounts} onClose={() => setSelected(null)}
           onChanged={(message) => { setNotice({ tone: "info", title: message }); refreshAll(); }} />
       )}
     </div>
@@ -138,7 +140,7 @@ function FailureNotice({ failure, onRetry }: { failure: Failure; onRetry: () => 
 
 function CustomerTable({ items, onOpen }: { items: CustomerSummaryDto[]; onOpen: (id: number) => void }) {
   return (
-    <div className="hidden overflow-x-auto md:block">
+    <div className="hidden overflow-x-auto xl:block">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="border-b border-[#E0E0E0] bg-[#F8F9FA] text-[13px] font-semibold text-[#5C636A]">
           <tr>
@@ -148,7 +150,7 @@ function CustomerTable({ items, onOpen }: { items: CustomerSummaryDto[]; onOpen:
             <th scope="col" className="px-4 py-3 text-right">Số đơn</th>
             <th scope="col" className="px-4 py-3">Đặt gần nhất</th>
             <th scope="col" className="px-4 py-3">Ngày tạo</th>
-            <th scope="col" className="px-4 py-3 text-right"><span className="sr-only">Thao tác</span></th>
+              <th scope="col" className="relative px-4 py-3 text-right"><span className="sr-only">Thao tác</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#E0E0E0]">
@@ -184,7 +186,7 @@ function CustomerTable({ items, onOpen }: { items: CustomerSummaryDto[]; onOpen:
 
 function CustomerCards({ items, onOpen }: { items: CustomerSummaryDto[]; onOpen: (id: number) => void }) {
   return (
-    <ul className="divide-y divide-[#E0E0E0] md:hidden">
+    <ul className="divide-y divide-[#E0E0E0] xl:hidden">
       {items.map((customer) => (
         <li key={customer.user_id}>
           <button type="button" onClick={() => onOpen(customer.user_id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-[#F8F9FA]">

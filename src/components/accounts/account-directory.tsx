@@ -7,8 +7,8 @@ import { ChevronRight, ExternalLink, IdCard, Lock, LockOpen, RefreshCw, Search, 
 import type { Role } from "@/schemas/auth";
 import { cn } from "@/lib/utils";
 import {
-  AccountClientError, DEMO_ACCOUNTS, ROLES, ROLE_LABELS, accountActions, createDemoAccountSource, describeFailure,
-  directoryCapabilities, formatCount, formatDate, roleOptions,
+  AccountClientError, ROLES, ROLE_LABELS, accountActions, createAccountSource, describeFailure,
+  directoryCapabilities, formatDate, roleOptions,
   type AccountQuery, type AccountRow, type AccountSource, type AccountStatus, type Failure,
 } from "@/lib/customer-account-ui";
 import {
@@ -25,7 +25,7 @@ export function AccountDirectory() {
   const { data: session, status: sessionStatus } = useSession();
   const caps = directoryCapabilities(session?.user?.role);
   const actorId = session?.user?.user_id ?? null;
-  const [source] = useState<AccountSource>(() => createDemoAccountSource(withSignedInAdmin(session?.user)));
+  const [source] = useState<AccountSource>(createAccountSource);
   const [query, setQuery] = useState<AccountQuery>({ page: 1, pageSize: 20 });
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -34,7 +34,7 @@ export function AccountDirectory() {
   const [revision, setRevision] = useState(0);
   const enabled = sessionStatus === "authenticated" && caps.canManageAccounts;
 
-  const list = useLoad(enabled ? JSON.stringify([query, revision]) : null, (signal) => source.list(query, signal));
+  const list = useLoad(enabled ? JSON.stringify([actorId, session?.user?.auth_version, query, revision]) : null, (signal) => source.list(query, signal));
 
   if (sessionStatus === "loading") return <SkeletonRows />;
   if (!caps.canManageAccounts) {
@@ -67,12 +67,6 @@ export function AccountDirectory() {
         </button>
       </div>
 
-      {source.isDemo && (
-        <Notice tone="info" title="Đang hiển thị dữ liệu mẫu">
-          Danh sách tài khoản và các thay đổi trên trang này chỉ để minh họa, chưa lưu vào hệ thống.
-        </Notice>
-      )}
-
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {ROLES.map((role) => (
           <button key={role} type="button" aria-pressed={query.role === role}
@@ -80,7 +74,6 @@ export function AccountDirectory() {
             className={cn("flex items-center justify-between gap-2 rounded-[5px] border bg-white px-3 py-3 text-left text-sm",
               query.role === role ? "border-[#186734] ring-1 ring-[#186734]" : "border-[#E0E0E0] hover:border-[#6B7280]")}>
             <span className="text-[#5C636A]">{ROLE_LABELS[role]}</span>
-            <span className="font-bold tabular-nums">{data ? formatCount(data.roleCounts[role]) : "–"}</span>
           </button>
         ))}
       </div>
@@ -117,7 +110,8 @@ export function AccountDirectory() {
       <section aria-label="Danh sách tài khoản" className="overflow-hidden rounded-[5px] border border-[#E0E0E0] bg-white">
         {failure && !data ? (
           <div className="p-4"><Notice tone="danger" title={failure.title}
-            action={failure.retryable ? <button type="button" onClick={list.reload} className={buttonOutline}>Thử lại</button> : undefined}>{failure.detail}</Notice></div>
+            action={failure.signIn ? <Link href="/staff/login" className={buttonOutline}>Đăng nhập lại</Link>
+              : failure.retryable ? <button type="button" onClick={list.reload} className={buttonOutline}>Thử lại</button> : undefined}>{failure.detail}</Notice></div>
         ) : !data ? (
           <SkeletonRows />
         ) : data.items.length === 0 ? (
@@ -150,13 +144,6 @@ export function AccountDirectory() {
       )}
     </div>
   );
-}
-
-// The signed-in admin appears in the demo list so the "Bạn" row (no self-changes) can be seen.
-function withSignedInAdmin(user: { user_id?: number; name?: string | null; email?: string | null; role?: string } | undefined): AccountRow[] {
-  if (!user?.user_id || user.role !== "Admin" || DEMO_ACCOUNTS.some((row) => row.user_id === user.user_id)) return [...DEMO_ACCOUNTS];
-  return [{ user_id: user.user_id, full_name: user.name ?? "Quản trị viên", email: user.email ?? "", phone: "", role: "Admin", status: "Active",
-    created_at: "2026-01-01T00:00:00.000Z", has_staff_profile: false }, ...DEMO_ACCOUNTS];
 }
 
 type RowProps = { rows: AccountRow[]; actorId: number | null; onDetail: (id: number) => void; onAction: (pending: Pending) => void };
@@ -197,7 +184,7 @@ function RowActions({ account, actorId, onDetail, onAction, compact }: { account
 
 function NameCell({ account, actorId }: { account: AccountRow; actorId: number | null }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-full min-w-0 flex-1 items-center gap-3">
       <Avatar name={account.full_name} />
       <div className="min-w-0">
         <p className="flex items-center gap-1.5 font-bold">
@@ -212,7 +199,7 @@ function NameCell({ account, actorId }: { account: AccountRow; actorId: number |
 
 function AccountTable({ rows, actorId, onDetail, onAction }: RowProps) {
   return (
-    <div className="hidden overflow-x-auto md:block">
+    <div className="hidden overflow-x-auto xl:block">
       <table className="w-full min-w-[820px] text-left text-sm">
         <thead className="border-b border-[#E0E0E0] bg-[#F8F9FA] text-[13px] font-semibold text-[#5C636A]">
           <tr>
@@ -243,12 +230,12 @@ function AccountTable({ rows, actorId, onDetail, onAction }: RowProps) {
 
 function AccountCards({ rows, actorId, onDetail, onAction }: RowProps) {
   return (
-    <ul className="divide-y divide-[#E0E0E0] md:hidden">
+    <ul className="divide-y divide-[#E0E0E0] xl:hidden">
       {rows.map((account) => {
         const actions = accountActions(account, actorId);
         return (
           <li key={account.user_id} className="space-y-3 p-4">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col items-start gap-2 min-[440px]:flex-row min-[440px]:justify-between">
               <NameCell account={account} actorId={actorId} />
               <RoleTag role={account.role} />
             </div>

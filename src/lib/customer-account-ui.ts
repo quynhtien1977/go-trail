@@ -234,13 +234,32 @@ export function updateAccountAccess(userId: number, patch: AccessPatch, signal?:
 // ---------- Account directory source ----------
 
 export type AccountQuery = { page: number; pageSize: number; q?: string; role?: Role; status?: AccountStatus };
-export type AccountPage = Page<AccountRow> & { roleCounts: Record<Role, number> };
+export type AccountPage = Page<AccountRow> & { roleCounts?: Record<Role, number> };
 
 export type AccountSource = {
   readonly isDemo: boolean;
   list(query: AccountQuery, signal?: AbortSignal): Promise<AccountPage>;
-  updateAccess(userId: number, patch: AccessPatch): Promise<AccountRow>;
+  updateAccess(userId: number, patch: AccessPatch): Promise<AccessResult>;
 };
+
+// A01 returns a paginated list and an `is_staff` flag, but no per-role counts.
+export function createAccountSource(): AccountSource {
+  return {
+    isDemo: false,
+    async list(query, signal) {
+      const params = customerSearchParams(query);
+      if (query.role) params.set("role", query.role);
+      const page = await request<Page<Omit<AccountRow, "has_staff_profile"> & { is_staff: boolean }>>(
+        `/api/admin/users?${params}`, signal,
+      );
+      if (!Array.isArray(page?.items) || !page.pagination || page.items.some((item) => typeof item.is_staff !== "boolean")) {
+        throw new AccountClientError(502, "INVALID_RESPONSE", "Dữ liệu chưa sẵn sàng.");
+      }
+      return { ...page, items: page.items.map(({ is_staff, ...item }) => ({ ...item, has_staff_profile: is_staff })) };
+    },
+    updateAccess: updateAccountAccess,
+  };
+}
 
 function foldVietnamese(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();

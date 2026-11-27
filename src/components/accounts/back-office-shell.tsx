@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { useState, type ReactNode } from "react";
-import { Boxes, ClipboardCheck, Compass, IdCard, LayoutDashboard, LogOut, Menu, ReceiptText, Users, X } from "lucide-react";
+import { Boxes, Bus, ClipboardCheck, Compass, IdCard, LayoutDashboard, LogOut, Menu, ReceiptText, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initials, roleLabel } from "@/lib/customer-account-ui";
 
-export type BackOfficeSection = "overview" | "customers" | "accounts" | "invoices" | "reconciliation" | "supplies";
+export type BackOfficeSection = "overview" | "operations" | "customers" | "accounts" | "invoices" | "reconciliation" | "supplies";
 
 // Visibility mirrors the route groups and API roles (PRD 3.2); the server still re-checks every request.
 export function backOfficeNavigation(role: string | null | undefined) {
@@ -15,6 +15,7 @@ export function backOfficeNavigation(role: string | null | undefined) {
   const isRouteMgr = role === "RouteMgr";
   return [
     { key: "overview", href: isAdmin ? "/admin" : "/staff", label: "Tổng quan", icon: LayoutDashboard, show: true },
+    { key: "operations", href: "/staff", label: "Vận hành chuyến", icon: Bus, show: isAdmin },
     { key: "customers", href: "/staff/customers", label: "Khách hàng", icon: Users, show: isAdmin || isRouteMgr },
     { key: "accounts", href: "/admin/accounts", label: "Tài khoản", icon: IdCard, show: isAdmin },
     { key: "invoices", href: "/staff/invoices", label: "Hóa đơn & vé", icon: ReceiptText, show: isAdmin || isRouteMgr },
