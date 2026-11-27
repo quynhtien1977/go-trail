@@ -46,9 +46,9 @@ export function periodSupplies(db: Transaction, period: ReportPeriod, after: num
 }
 
 export function lowStock(db: Transaction, after: number) {
-  return db.$queryRaw<{ item_id: number; name: string; unit: string; low_stock_threshold: number; on_hand: number }[]>`
+  return db.$queryRaw<{ item_id: number; name: string; unit: string; low_stock_threshold: number | null; on_hand: number }[]>`
     SELECT i.item_id, i.name, i.unit, i.low_stock_threshold, COALESCE(SUM(${stockDelta}), 0)::int AS on_hand
     FROM supply_items i LEFT JOIN supply_transactions t USING (item_id)
-    WHERE i.is_active AND i.low_stock_threshold IS NOT NULL AND i.item_id > ${after}
-    GROUP BY i.item_id HAVING COALESCE(SUM(${stockDelta}), 0) <= i.low_stock_threshold ORDER BY i.item_id LIMIT 51`;
+    WHERE i.is_active AND i.item_id > ${after}
+    GROUP BY i.item_id HAVING COALESCE(SUM(${stockDelta}), 0) <= COALESCE(i.low_stock_threshold, 0) ORDER BY i.item_id LIMIT 51`;
 }

@@ -8,6 +8,7 @@ import {
   readAdminPayment,
 } from "../src/server/services/admin-payments.ts";
 import { recordSepayPayment } from "../src/server/services/payments.ts";
+import { updateSupplyItem } from "../src/server/services/inventory.ts";
 import { SEPAY_TEST_KEY, sepayAuth } from "./helpers/sepay.mjs";
 
 let database, db, adminUser, routeMgrUser, customerUser;
@@ -24,6 +25,52 @@ after(async () => {
 // P03 (SCRUM-33). Hooks live inside describe because `npm test` runs with --test-isolation=none,
 // where a top-level beforeEach would rebuild this fixture before every test of every file.
 describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
+  test("Q02 dashboard matches Q01 for expired Pending invoices and rejects invalid dates", async () => {
+    const period = { from_date: "2000-01-01", to_date: "2099-12-31", trip_id: String(trip.trip_id) };
+    await db.$executeRaw`UPDATE invoices SET expires_at = ${"2020-01-01T00:00:00Z"}::timestamptz WHERE invoice_id IN (${invoice1.invoice_id}, ${invoice2.invoice_id})`;
+    const before = await db.invoice.findMany({ orderBy: { invoice_id: "asc" } });
+    const report = await readRevenue(db, adminUser, period);
+    const dashboard = await readDashboard(db, adminUser, period);
+    assert.deepEqual(dashboard.revenue, report.totals);
+    assert.equal(dashboard.revenue.pending, 0);
+    assert.equal(dashboard.revenue.expired, 1);
+    assert.equal(dashboard.revenue.paid, 1);
+    assert.deepEqual(await db.invoice.findMany({ orderBy: { invoice_id: "asc" } }), before);
+    for (const from_date of ["0000-01-01", "0001-01-01"]) {
+      await assert.rejects(readDashboard(db, adminUser, { from_date, to_date: "2020-01-01" }), { code: "INVALID_INPUT", status: 422 });
+    }
+  });
+
+  test("Q02 scopes departure and supply totals to each RouteMgr without exposing personal data", async () => {
+    const otherManager = await db.user.create({ data: { role: "RouteMgr", email: "other-manager@q02.example.test",
+      password_hash: "fixture", full_name: "Other manager", phone: "0902222211" } });
+    const otherTrip = await db.trip.create({ data: { name: "Other trail", city: "Test", location_name: "Test",
+      length_km: "5", base_price: "2000000", description: "Test", schedule_content: "Test" } });
+    const otherDeparture = await db.departure.create({ data: { trip_id: otherTrip.trip_id,
+      departure_date: new Date("2035-11-28T08:00:00Z"), booking_deadline: new Date("2035-11-27T18:00:00Z"),
+      min_passengers: 1, status: "Open", invoice_owner_user_id: otherManager.user_id } });
+    const item = await db.supplyItem.create({ data: { name: "Scoped supply", category: "Drink", unit: "bottle" } });
+    await db.$executeRaw`INSERT INTO supply_transactions (item_id, created_by_user_id, txn_type, quantity, departure_id, idempotency_key, created_at) VALUES
+      (${item.item_id}, ${adminUser.user_id}, 'Receive', 10, NULL, 'q02-scoped-receive', ${"2035-11-28T03:00:00Z"}::timestamptz),
+      (${item.item_id}, ${adminUser.user_id}, 'Issue', 2, ${departure.departure_id}, 'q02-scoped-issue-first', ${"2035-11-28T03:00:00Z"}::timestamptz),
+      (${item.item_id}, ${adminUser.user_id}, 'Issue', 7, ${otherDeparture.departure_id}, 'q02-scoped-issue-other', ${"2035-11-28T03:00:00Z"}::timestamptz)`;
+    await db.$executeRaw`UPDATE departures SET departure_date = ${"2035-11-28T03:00:00Z"}::timestamptz`;
+    const period = { from_date: "2035-11-28", to_date: "2035-11-28" };
+    const first = await readDashboard(db, routeMgrUser, period);
+    const otherActor = { user_id: otherManager.user_id, role: "RouteMgr", auth_version: 0 };
+    const second = await readDashboard(db, otherActor, period);
+    const admin = await readDashboard(db, adminUser, period);
+    assert.deepEqual([first.operations.departures, second.operations.departures, admin.operations.departures], [1, 1, 2]);
+    assert.deepEqual([first.supplies_in_period.items[0].issued, second.supplies_in_period.items[0].issued,
+      admin.supplies_in_period.items[0].issued], [2, 7, 9]);
+    for (const result of [first, second]) {
+      assert.ok(!("revenue" in result) && !("warehouse_low_stock_now" in result));
+      assert.doesNotMatch(JSON.stringify(result), /customer_id|full_name|phone|email|payment_code/i);
+    }
+    await assert.rejects(readDashboard(db, routeMgrUser, { ...period, departure_id: String(otherDeparture.departure_id) }),
+      { code: "NOT_FOUND", status: 404 });
+  });
+
   test("Q02 pages warehouse alerts by item and restricts HR to resources", async () => {
     const hr = await db.user.create({ data: { role: "HRMgr", email: "warehouse@test.invalid",
       password_hash: "unused", full_name: "Warehouse", phone: "0901111112" } });
@@ -51,6 +98,37 @@ describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
     assert.ok(next.warehouse_low_stock_now.items[0].item_id > after);
     assert.equal(next.warehouse_low_stock_now.next_cursor, null);
     await assert.rejects(readDashboard(db, customerUser, period), { code: "FORBIDDEN" });
+  });
+
+  test("Q02 alerts for unconfigured items only when empty and respects a custom threshold", async () => {
+    const item = (name, threshold, active = true) => db.supplyItem.create({ data: {
+      name, category: "Drink", unit: "bottle", low_stock_threshold: threshold, is_active: active,
+    } });
+    const empty = await item("Unset empty", null);
+    const stocked = await item("Unset stocked", null);
+    const atLimit = await item("At custom limit", 2);
+    const aboveLimit = await item("Above custom limit", 2);
+    const zero = await item("Explicit zero", 0);
+    const retired = await item("Retired empty", null, false);
+    await db.supplyTransaction.createMany({ data: [
+      { item_id: stocked.item_id, quantity: 1, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-stocked" },
+      { item_id: atLimit.item_id, quantity: 2, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-at-limit" },
+      { item_id: aboveLimit.item_id, quantity: 3, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-above-limit" },
+    ] });
+    const period = { from_date: "2000-01-01", to_date: "2099-12-31" };
+    const before = await db.supplyItem.findMany({ orderBy: { item_id: "asc" } });
+    const first = (await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items;
+    assert.deepEqual(first.map(row => row.item_id), [empty.item_id, atLimit.item_id, zero.item_id]);
+    assert.deepEqual([first[0].low_stock_threshold, first[0].on_hand], [null, 0]);
+    assert.deepEqual([first[1].low_stock_threshold, first[1].on_hand], [2, 2]);
+    assert.deepEqual([first[2].low_stock_threshold, first[2].on_hand], [0, 0]);
+    assert.ok(!first.some(row => [stocked.item_id, aboveLimit.item_id, retired.item_id].includes(row.item_id)));
+    assert.deepEqual(await db.supplyItem.findMany({ orderBy: { item_id: "asc" } }), before);
+
+    await updateSupplyItem(db, adminUser, stocked.item_id, { low_stock_threshold: 1 });
+    assert.ok((await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items.some(row => row.item_id === stocked.item_id));
+    await updateSupplyItem(db, adminUser, stocked.item_id, { low_stock_threshold: null });
+    assert.ok(!(await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items.some(row => row.item_id === stocked.item_id));
   });
 
   test("Q01 counts each paid fare once, separates surplus and respects local midnight", async () => {
@@ -83,6 +161,71 @@ describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
     assert.equal(previous.totals.ticket_revenue, "0");
     assert.deepEqual(previous.groups, []);
     await assert.rejects(readRevenue(db, routeMgrUser, query), { code: "FORBIDDEN" });
+  });
+
+  test("Q01 classifies overdue holds at the reporting instant without modifying invoices", async () => {
+    const extraInvoice = (code, status) => db.invoice.create({ data: {
+      customer_id: customerUser.user_id, departure_id: departure.departure_id,
+      payment_code: code, total_amount: "2000000", status, expires_at: new Date("2035-11-28T00:00:00Z"),
+    } });
+    const overdue = await extraInvoice("TB-REPORT-OVERDUE", "Pending");
+    const active = await extraInvoice("TB-REPORT-ACTIVE", "Pending");
+    await extraInvoice("TB-REPORT-CLEANED", "Expired");
+    const query = { from_date: "2000-01-01", to_date: "2099-12-31", trip_id: String(trip.trip_id) };
+
+    // PostgreSQL CURRENT_TIMESTAMP is fixed for the transaction, so the exact-expiry case is deterministic.
+    await db.$transaction(async (tx) => {
+      // Keep every event in one Vietnam calendar day even if this test runs at midnight.
+      await tx.$executeRaw`UPDATE invoices SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz`;
+      await tx.$executeRaw`UPDATE payments SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP WHERE invoice_id = ${invoice1.invoice_id}`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE invoice_id IN (${overdue.invoice_id}, ${invoice2.invoice_id})`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP + INTERVAL '1 minute' WHERE invoice_id = ${active.invoice_id}`;
+      const snapshot = await tx.invoice.findMany({ orderBy: { invoice_id: "asc" } });
+
+      for (const group_by of ["day", "trip", "departure"]) {
+        const report = await readRevenue(tx, adminUser, { ...query, group_by });
+        assert.equal(report.totals.pending, 1, group_by);
+        assert.equal(report.totals.expired, 3, group_by);
+        assert.equal(report.totals.paid, 1, group_by);
+        assert.equal(report.groups.length, 1, group_by);
+        assert.equal(report.groups[0].expired, 3, group_by);
+      }
+      assert.deepEqual(await tx.invoice.findMany({ orderBy: { invoice_id: "asc" } }), snapshot);
+
+      await tx.invoice.update({ where: { invoice_id: invoice1.invoice_id }, data: { status: "Expired" } });
+      const afterCleanup = await readRevenue(tx, adminUser, query);
+      assert.equal(afterCleanup.totals.pending, 1);
+      assert.equal(afterCleanup.totals.expired, 3);
+      assert.equal(afterCleanup.totals.paid, 1);
+    }, { timeout: 20000 });
+  });
+
+  test("Q01 rejects calendar dates whose Vietnam-day boundaries PostgreSQL cannot represent", async () => {
+    for (const query of [
+      { from_date: "0000-01-01", to_date: "2020-01-01" },
+      { from_date: "0000-01-01", to_date: "0000-12-31" },
+      { from_date: "0001-01-01", to_date: "2020-01-01" },
+    ]) {
+      await assert.rejects(readRevenue(db, adminUser, query), { code: "INVALID_INPUT", status: 422 });
+    }
+    const earliest = await readRevenue(db, adminUser, { from_date: "0001-01-02", to_date: "0001-01-02" });
+    const latest = await readRevenue(db, adminUser, { from_date: "9999-12-31", to_date: "9999-12-31" });
+    assert.equal(earliest.totals.ticket_revenue, "0");
+    assert.equal(latest.totals.ticket_revenue, "0");
+  });
+
+  test("Q01 groups current invoice status by creation day and revenue by receipt day", async () => {
+    await db.$executeRaw`UPDATE invoices SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz WHERE invoice_id = ${invoice2.invoice_id}`;
+    await db.$executeRaw`UPDATE payments SET created_at = ${"2020-01-02T03:00:00Z"}::timestamptz WHERE payment_id = ${paymentOverpaidSuccess.payment_id}`;
+    const creationDay = await readRevenue(db, adminUser, { from_date: "2020-01-01", to_date: "2020-01-01" });
+    const receiptDay = await readRevenue(db, adminUser, { from_date: "2020-01-02", to_date: "2020-01-02" });
+    assert.equal(creationDay.totals.paid, 1);
+    assert.equal(creationDay.totals.ticket_revenue, "0");
+    assert.equal(receiptDay.totals.paid, 0);
+    assert.equal(receiptDay.totals.ticket_revenue, "2000000");
+    assert.equal(receiptDay.totals.received, "2100000");
+    assert.equal(receiptDay.totals.surplus, "100000");
   });
 
   beforeEach(async () => {

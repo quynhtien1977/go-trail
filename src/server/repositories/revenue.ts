@@ -16,7 +16,7 @@ export async function revenueReport(db: DataClient, period: ReportPeriod, group:
     ${departureId === undefined ? Prisma.empty : Prisma.sql`AND d.departure_id = ${departureId}`}`;
   const bucket = { day: Prisma.sql`to_char(event_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')`,
     trip: Prisma.sql`trip_id::text`, departure: Prisma.sql`departure_id::text` }[group];
-  // Record revenue once at the first successful receipt. Count invoices on their own creation date.
+  // Revenue follows the first successful receipt; invoice counts use creation date and current effective status.
   const rows = await db.$queryRaw<RevenueRow[]>`
     WITH events AS (
       SELECT p.created_at AS event_at, d.trip_id, d.departure_id,
@@ -30,7 +30,9 @@ export async function revenueReport(db: DataClient, period: ReportPeriod, group:
       FROM payments p LEFT JOIN invoices i USING (invoice_id) LEFT JOIN departures d USING (departure_id)
       WHERE p.created_at >= ${start.toISOString()}::timestamptz AND p.created_at < ${end.toISOString()}::timestamptz AND ${scope}
       UNION ALL
-      SELECT i.created_at, d.trip_id, d.departure_id, 0, 0, 0, 0, i.status::text
+      SELECT i.created_at, d.trip_id, d.departure_id, 0, 0, 0, 0,
+        CASE WHEN i.status = 'Pending' AND i.expires_at <= CURRENT_TIMESTAMP
+          THEN 'Expired' ELSE i.status::text END
       FROM invoices i JOIN departures d USING (departure_id)
       WHERE i.created_at >= ${start.toISOString()}::timestamptz AND i.created_at < ${end.toISOString()}::timestamptz AND ${scope}
     ), grouped AS (SELECT *, ${bucket} AS bucket FROM events)

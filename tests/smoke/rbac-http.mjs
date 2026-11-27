@@ -375,6 +375,36 @@ try {
   }
   console.log("PASS: every allowed role executes each permitted method successfully; DTOs omit credentials/session versions and expose receiving-bank fields only in the authorized invoice payment contract.");
 
+  const revenueRead = endpoints.find(e => e.route === "admin/reports/revenue");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/admin/reports/revenue?from_date=${fromDate}&to_date=2020-01-01`;
+    expect(await request({ ...revenueRead, path }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  console.log("PASS: Q01 rejects unsupported Vietnam-day boundaries as invalid input over HTTP.");
+
+  const dashboardRead = endpoints.find(e => e.route === "staff/dashboard");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/staff/dashboard?from_date=${fromDate}&to_date=2020-01-01`;
+    for (const role of ["RouteMgr", "HRMgr", "Admin"]) {
+      expect(await request({ ...dashboardRead, path }, actors.get(role)), 422, "INVALID_INPUT");
+    }
+  }
+  console.log("PASS: Q02 rejects unsupported Vietnam-day boundaries over HTTP for all allowed roles.");
+
+  const unconfiguredStock = await db.supplyItem.create({ data: { name: "Q02 empty stock fixture", category: "Drink", unit: "bottle" } });
+  for (const role of ["HRMgr", "Admin"]) {
+    const result = await request(dashboardRead, actors.get(role));
+    expect(result, 200);
+    const alert = result.body.data.warehouse_low_stock_now.items.find(item => item.item_id === unconfiguredStock.item_id);
+    assert.equal(alert?.on_hand, 0);
+    assert.equal(alert.low_stock_threshold, null);
+  }
+  const routeDashboard = await request(dashboardRead, actors.get("RouteMgr"));
+  expect(routeDashboard, 200);
+  assert.ok(!("warehouse_low_stock_now" in routeDashboard.body.data) && !("revenue" in routeDashboard.body.data));
+  assert.equal((await db.supplyItem.findUniqueOrThrow({ where: { item_id: unconfiguredStock.item_id } })).low_stock_threshold, null);
+  console.log("PASS: Q02 exposes unconfigured empty stock to HR/Admin without changing its threshold or leaking warehouse data to RouteMgr.");
+
   const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
   expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");
   expect(await request({ ...assignmentRead, path: `/api/staff/departures/${departures[0].departure_id}/assignments` }, actors.get("Leader")), 403, "FORBIDDEN");
@@ -382,6 +412,26 @@ try {
   expect(await request(assignmentRead, actors.get("RouteMgr")), 403, "FORBIDDEN");
   await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: actors.get("RouteMgr").user_id } });
   console.log("PASS: assignment reads enforce RouteMgr ownership and assigned Leader operational-state scope.");
+
+  const supplyRead = endpoints.find(e => e.route === "staff/departures/[id]/supplies" && e.method === "GET");
+  for (const index of [0, 1, 2, 6, 7]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 404, "NOT_FOUND");
+  }
+  for (const index of [3, 4, 5]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 200);
+  }
+  expect(await request(supplyRead, actors.get("OtherLeader")), 404, "NOT_FOUND");
+  await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Inactive" } });
+  try {
+    expect(await request(supplyRead, actors.get("Leader")), 404, "NOT_FOUND");
+  } finally {
+    await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Active" } });
+  }
+  const supplyIssue = endpoints.find(e => e.route === "staff/departures/[id]/supplies/issue");
+  const supplyCount = await db.supplyTransaction.count();
+  expect(await request({ ...supplyIssue, path: `/api/staff/departures/${departures[5].departure_id}/supplies/issue` }, actors.get("HRMgr")), 409, "RESOURCE_CONFLICT");
+  assert.equal(await db.supplyTransaction.count(), supplyCount);
+  console.log("PASS: I03 HTTP scopes Leader reads and rejects new supplies on an ended departure.");
 
   // K01: use the real O03/O04 HTTP flow before exercising its public read contract.
   const saleDate = "2033-01-02T02:00:00.000Z", saleDeadline = "2033-01-01T02:00:00.000Z";
