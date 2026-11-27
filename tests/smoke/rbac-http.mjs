@@ -16,6 +16,7 @@ const db = database.client;
 const secret = randomBytes(32).toString("hex");
 // Fixture webhook key; never inherit a real SEPAY_API_KEY from the environment.
 const sepayKey = randomBytes(24).toString("hex");
+const cronKey = randomBytes(32).toString("hex");
 const actors = new Map();
 let child, startupError = false, sequence = 0, requests = 0, stage = "matrix";
 const next = () => ++sequence;
@@ -39,7 +40,7 @@ async function assertRouteCoverage(endpoints) {
     "GET departures/[id]/pickups",
     // P01: machine-to-machine, authenticated by SEPAY_API_KEY instead of a session role.
     // No role may drive it, which the P01 block below asserts for all five roles.
-    "POST webhooks/sepay");
+    "POST webhooks/sepay", "POST cron/expire-invoices", "POST cron/auto-close-departures");
   const actual = [];
   for (const file of await apiFiles("src/app/api")) {
     const source = ts.createSourceFile(file, await readFile(file, "utf8"), ts.ScriptTarget.Latest, true);
@@ -124,7 +125,7 @@ async function startServer(bank = {}) {
     env: { ...process.env, VERCEL: "", NODE_ENV: "production", DATABASE_URL: database.connectionString,
       DIRECT_URL: database.connectionString, AUTH_SECRET: secret, NEXTAUTH_URL: origin,
       UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", GO_TRAIL_MOCK_REDIS: "1", SEPAY_API_KEY: sepayKey,
-      BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
+      CRON_SECRET: cronKey, BOOKING_RATE_LIMIT_NAMESPACE: "go-trail:booking:http-test", BANK_ID: "", BANK_ACCOUNT_NUMBER: "", BANK_ACCOUNT_NAME: "", ...bank },
     stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
   });
   child.stdout.resume(); child.stderr.resume();
@@ -198,6 +199,7 @@ try {
     for (const [method, body] of Object.entries(methods)) endpoints.push({ route, path, allowed, method, body,
       success: method === "POST" ? 201 : 200 });
   }
+  route("staff/dashboard", "/api/staff/dashboard?from_date=2030-01-01&to_date=2030-01-31", ["RouteMgr", "HRMgr", "Admin"], { GET: undefined });
   route("account/me", "/api/account/me", roles, { GET: undefined });
   route("invoices/[id]", `/api/invoices/${invoice.invoice_id}`, ["Customer", "Admin"], { GET: undefined });
   route("leader/departures", "/api/leader/departures", ["Leader", "Admin"], { GET: undefined });
@@ -320,6 +322,14 @@ try {
   route("staff/supplies/receive", "/api/staff/supplies/receive", ["HRMgr", "Admin"], {
     POST: () => ({ item_id: fixtureItem.item_id, quantity: 10, idempotency_key: `receive-rbac-${next()}`, note: "Nhập kho test" }),
   });
+  const supplyPath = `/api/staff/departures/${departures[3].departure_id}/supplies`;
+  route("staff/departures/[id]/supplies", supplyPath, ["Leader", "RouteMgr", "HRMgr", "Admin"], { GET: undefined });
+  for (const operation of ["issue", "return"]) {
+    route(`staff/departures/[id]/supplies/${operation}`, `${supplyPath}/${operation}`, ["HRMgr", "Admin"], {
+      POST: () => ({ item_id: fixtureItem.item_id, recipient_staff_id: staff.staff_id, quantity: 1,
+        idempotency_key: `supply-movement-rbac-${next()}`, note: "Trip supplies" }),
+    });
+  }
   // P03: Admin payment reconciliation (read-only).
   const paymentFixture = await db.payment.create({
     data: {
@@ -331,6 +341,7 @@ try {
       raw_payload: "{}",
     },
   });
+  route("admin/reports/revenue", "/api/admin/reports/revenue?from_date=2026-11-01&to_date=2026-11-30", ["Admin"], { GET: undefined });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
   await assertRouteCoverage(endpoints);
@@ -350,6 +361,16 @@ try {
       db.user.findMany({ orderBy: { user_id: "asc" }, select: { user_id: true, role: true, status: true, auth_version: true } })]);
     return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
   };
+  const cronEndpoints = ["expire-invoices", "auto-close-departures"].map(name =>
+    ({ method: "POST", route: `cron/${name}`, path: `/api/cron/${name}` }));
+  const beforeCronDenial = await deniedSnapshot();
+  for (const endpoint of cronEndpoints) {
+    expect(await request(endpoint), 401, "UNAUTHENTICATED");
+    expect(await request(endpoint, undefined, { extraHeaders: { authorization: "Bearer wrong-secret" } }), 401, "UNAUTHENTICATED");
+    for (const role of roles) expect(await request(endpoint, actors.get(role)), 401, "UNAUTHENTICATED");
+  }
+  assert.equal(await deniedSnapshot(), beforeCronDenial, "sessions and wrong cron secrets must not change business rows");
+  console.log("PASS: cron endpoints reject anonymous requests, wrong secrets, and every authenticated role without writes.");
   for (const endpoint of endpoints) {
     const before = await deniedSnapshot();
     expect(await request(endpoint), 401, "UNAUTHENTICATED");
@@ -370,6 +391,36 @@ try {
   }
   console.log("PASS: every allowed role executes each permitted method successfully; DTOs omit credentials/session versions and expose receiving-bank fields only in the authorized invoice payment contract.");
 
+  const revenueRead = endpoints.find(e => e.route === "admin/reports/revenue");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/admin/reports/revenue?from_date=${fromDate}&to_date=2020-01-01`;
+    expect(await request({ ...revenueRead, path }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  console.log("PASS: Q01 rejects unsupported Vietnam-day boundaries as invalid input over HTTP.");
+
+  const dashboardRead = endpoints.find(e => e.route === "staff/dashboard");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/staff/dashboard?from_date=${fromDate}&to_date=2020-01-01`;
+    for (const role of ["RouteMgr", "HRMgr", "Admin"]) {
+      expect(await request({ ...dashboardRead, path }, actors.get(role)), 422, "INVALID_INPUT");
+    }
+  }
+  console.log("PASS: Q02 rejects unsupported Vietnam-day boundaries over HTTP for all allowed roles.");
+
+  const unconfiguredStock = await db.supplyItem.create({ data: { name: "Q02 empty stock fixture", category: "Drink", unit: "bottle" } });
+  for (const role of ["HRMgr", "Admin"]) {
+    const result = await request(dashboardRead, actors.get(role));
+    expect(result, 200);
+    const alert = result.body.data.warehouse_low_stock_now.items.find(item => item.item_id === unconfiguredStock.item_id);
+    assert.equal(alert?.on_hand, 0);
+    assert.equal(alert.low_stock_threshold, null);
+  }
+  const routeDashboard = await request(dashboardRead, actors.get("RouteMgr"));
+  expect(routeDashboard, 200);
+  assert.ok(!("warehouse_low_stock_now" in routeDashboard.body.data) && !("revenue" in routeDashboard.body.data));
+  assert.equal((await db.supplyItem.findUniqueOrThrow({ where: { item_id: unconfiguredStock.item_id } })).low_stock_threshold, null);
+  console.log("PASS: Q02 exposes unconfigured empty stock to HR/Admin without changing its threshold or leaking warehouse data to RouteMgr.");
+
   const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
   expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");
   expect(await request({ ...assignmentRead, path: `/api/staff/departures/${departures[0].departure_id}/assignments` }, actors.get("Leader")), 403, "FORBIDDEN");
@@ -377,6 +428,26 @@ try {
   expect(await request(assignmentRead, actors.get("RouteMgr")), 403, "FORBIDDEN");
   await db.departure.update({ where: { departure_id: departures[3].departure_id }, data: { invoice_owner_user_id: actors.get("RouteMgr").user_id } });
   console.log("PASS: assignment reads enforce RouteMgr ownership and assigned Leader operational-state scope.");
+
+  const supplyRead = endpoints.find(e => e.route === "staff/departures/[id]/supplies" && e.method === "GET");
+  for (const index of [0, 1, 2, 6, 7]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 404, "NOT_FOUND");
+  }
+  for (const index of [3, 4, 5]) {
+    expect(await request({ ...supplyRead, path: `/api/staff/departures/${departures[index].departure_id}/supplies` }, actors.get("Leader")), 200);
+  }
+  expect(await request(supplyRead, actors.get("OtherLeader")), 404, "NOT_FOUND");
+  await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Inactive" } });
+  try {
+    expect(await request(supplyRead, actors.get("Leader")), 404, "NOT_FOUND");
+  } finally {
+    await db.staff.update({ where: { staff_id: staff.staff_id }, data: { status: "Active" } });
+  }
+  const supplyIssue = endpoints.find(e => e.route === "staff/departures/[id]/supplies/issue");
+  const supplyCount = await db.supplyTransaction.count();
+  expect(await request({ ...supplyIssue, path: `/api/staff/departures/${departures[5].departure_id}/supplies/issue` }, actors.get("HRMgr")), 409, "RESOURCE_CONFLICT");
+  assert.equal(await db.supplyTransaction.count(), supplyCount);
+  console.log("PASS: I03 HTTP scopes Leader reads and rejects new supplies on an ended departure.");
 
   // K01: use the real O03/O04 HTTP flow before exercising its public read contract.
   const saleDate = "2033-01-02T02:00:00.000Z", saleDeadline = "2033-01-01T02:00:00.000Z";
@@ -886,6 +957,29 @@ try {
   expect(await request(startup, newCustomer), 200);
   expect(await request({ method: "GET", route: "staff/vehicles", path: "/api/staff/vehicles" }, newCustomer, { claims: { role: "Accountant" } }), 403, "FORBIDDEN");
   console.log(`PASS: actual Accountant migration and Admin unlock never revive pre-cutover sessions or retired privileges (${requests} HTTP checks).`);
+
+  stage = "Q03";
+  const cronTrip = await db.trip.create({ data: { ...tripInput, name: "Cron HTTP fixture" } });
+  const due = await db.departure.create({ data: { trip_id: cronTrip.trip_id, status: "Open", min_passengers: 1,
+    invoice_owner_user_id: admin.user_id, departure_date: new Date("2001-01-02T00:00:00Z"), booking_deadline: new Date("2001-01-01T00:00:00Z") } });
+  const stale = await db.invoice.create({ data: { customer_id: newCustomer.user_id, departure_id: due.departure_id,
+    payment_code: "CRON-HTTP-EXPIRED", total_amount: "500000", expires_at: new Date("2000-01-01T00:00:00Z") } });
+  for (const endpoint of cronEndpoints) {
+    const result = await request(endpoint, undefined, { originHeader: null, extraHeaders: { authorization: `Bearer ${cronKey}` } });
+    expect(result, 200);
+    assert.ok(Number.isInteger(result.body.data.processed) && result.body.data.processed >= 1);
+    assert.equal(typeof result.body.data.batch_full, "boolean");
+    expect(await request(endpoint, undefined, { originHeader: null, extraHeaders: { authorization: `Bearer ${cronKey}` } }), 200);
+  }
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { invoice_id: stale.invoice_id } })).status, "Expired");
+  assert.equal((await db.departure.findUniqueOrThrow({ where: { departure_id: due.departure_id } })).status, "Closed");
+  assert.equal(await db.auditLog.count({ where: { user_id: null, action: "DepartureStatusChanged", record_id: String(due.departure_id) } }), 1);
+  if (child?.pid && child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  await startServer({ CRON_SECRET: "" });
+  for (const endpoint of cronEndpoints) {
+    expect(await request(endpoint, undefined, { extraHeaders: { authorization: `Bearer ${cronKey}` } }), 503, "CRON_UNAVAILABLE");
+  }
+  console.log("PASS: authenticated Q03 jobs expire/close and audit once; missing scheduler secret fails closed with 503.");
 } catch (error) {
   // Keep the original assertion diagnosable even if a DB/socket cleanup also fails.
   console.error("RBAC_HTTP_FAILURE", {

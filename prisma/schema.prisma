@@ -162,13 +162,13 @@ model SystemSetting {
 
 model AuditLog {
   log_id      Int      @id @default(autoincrement())
-  user_id     Int
+  user_id     Int?
   action      String
   table_name  String
   record_id   String
   description String
   created_at  DateTime @default(now()) @db.Timestamptz(6)
-  user        User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  user        User?    @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
 
   @@index([user_id])
   @@index([table_name, record_id, created_at])
@@ -186,6 +186,7 @@ model Staff {
   license_expiry DateTime?        @db.Date
   status         StaffStatus      @default(Active)
   user           User?            @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  supply_handoffs SupplyTransaction[]
   assignments    DepartureStaff[]
 
   @@map("staff")
@@ -530,6 +531,7 @@ model SupplyItem {
   unit         String
   is_active    Boolean             @default(true)
   created_at   DateTime            @default(now()) @db.Timestamptz(6)
+  low_stock_threshold Int?
   transactions SupplyTransaction[]
 
   @@map("supply_items")
@@ -543,6 +545,8 @@ model SupplyTransaction {
   quantity           Int
   departure_id       Int?
   created_by_user_id Int
+  recipient_staff_id Int?
+  recipient          Staff? @relation(fields: [recipient_staff_id], references: [staff_id], onDelete: Restrict)
   idempotency_key    String                @unique
   note               String?
   created_at         DateTime              @default(now()) @db.Timestamptz(6)

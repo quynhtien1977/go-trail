@@ -1,3 +1,4 @@
+import { verifySupplyRace } from "./supply-race.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -89,6 +90,8 @@ try {
   assert.equal(await db.departureStaff.count({ where: { staff_id: staff.staff_id } }), 1);
   console.log("PASS: two real concurrent staff assignments serialize; exactly one commits.");
 
+  const assigned = await db.departureStaff.findFirstOrThrow({ where: { staff_id: staff.staff_id } });
+  await verifySupplyRace(db, actors.HRMgr, assigned.departure_id, staff.staff_id, whileBlocked);
   await db.departureStaff.deleteMany({ where: { staff_id: staff.staff_id } });
   const inactivated = await whileBlocked("SELECT staff_id FROM staff WHERE staff_id = $1 FOR UPDATE", [staff.staff_id],
     () => [assign(left, leftVehicle), assign(right, rightVehicle)],

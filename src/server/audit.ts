@@ -4,7 +4,7 @@ import type { AuthDatabase } from "./auth/authorization";
 import { userRoles } from "@/schemas/auth";
 import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
-import { insertAudit } from "./repositories/audit";
+import { insertAudit, insertAudits } from "./repositories/audit";
 
 import { settingKeys } from "@/schemas/admin";
 
@@ -29,6 +29,8 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("TripAvailabilityChanged"), record_id: id, from: z.boolean(), to: z.boolean() }),
   z.strictObject({ action: z.literal("SupplyItemCreated"), record_id: id }),
   z.strictObject({ action: z.literal("SupplyItemUpdated"), record_id: id }),
+  z.strictObject({ action: z.literal("SupplyIssued"), record_id: id, item_id: id, departure_id: id, quantity: id }),
+  z.strictObject({ action: z.literal("SupplyReturned"), record_id: id, item_id: id, departure_id: id, quantity: id }),
   z.strictObject({ action: z.literal("SupplyReceived"), record_id: id, item_id: id, quantity: z.number().int().positive() }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
@@ -52,7 +54,18 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips"
         : value.action === "SupplyItemCreated" || value.action === "SupplyItemUpdated" ? "supply_items"
-          : value.action === "SupplyReceived" ? "supply_transactions" : "users";
+          : (value.action === "SupplyReceived" || value.action === "SupplyIssued" || value.action === "SupplyReturned") ? "supply_transactions" : "users";
   await insertAudit(tx, { user_id: actorId, action: value.action, table_name,
     record_id: String(value.record_id), description: JSON.stringify(value) });
+}
+
+// Only this narrowly defined event may be attributed to the scheduler, never to an invented user.
+export async function writeCronDeparturesClosed(tx: AuthDatabase, events: { record_id: number; reason: "deadline" | "sold_out" }[]): Promise<void> {
+  const parsed = z.array(z.strictObject({ record_id: id, reason: z.enum(["deadline", "sold_out"]) })).min(1).max(50).safeParse(events);
+  if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
+  const data = parsed.data.map(event => {
+    const value = { action: "DepartureStatusChanged", record_id: event.record_id, from: "Open", to: "Closed", source: "cron", reason: event.reason };
+    return { user_id: null, action: value.action, table_name: "departures", record_id: String(value.record_id), description: JSON.stringify(value) };
+  });
+  await insertAudits(tx, data);
 }
