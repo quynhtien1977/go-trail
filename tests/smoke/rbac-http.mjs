@@ -334,6 +334,7 @@ try {
       raw_payload: "{}",
     },
   });
+  route("admin/reports/revenue", "/api/admin/reports/revenue?from_date=2026-11-01&to_date=2026-11-30", ["Admin"], { GET: undefined });
   route("admin/payments", "/api/admin/payments", ["Admin"], { GET: undefined });
   route("admin/payments/[id]", `/api/admin/payments/${paymentFixture.payment_id}`, ["Admin"], { GET: undefined });
   await assertRouteCoverage(endpoints);
@@ -372,6 +373,13 @@ try {
     }
   }
   console.log("PASS: every allowed role executes each permitted method successfully; DTOs omit credentials/session versions and expose receiving-bank fields only in the authorized invoice payment contract.");
+
+  const revenueRead = endpoints.find(e => e.route === "admin/reports/revenue");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/admin/reports/revenue?from_date=${fromDate}&to_date=2020-01-01`;
+    expect(await request({ ...revenueRead, path }, actors.get("Admin")), 422, "INVALID_INPUT");
+  }
+  console.log("PASS: Q01 rejects unsupported Vietnam-day boundaries as invalid input over HTTP.");
 
   const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
   expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");

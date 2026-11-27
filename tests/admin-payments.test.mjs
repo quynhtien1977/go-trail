@@ -1,3 +1,4 @@
+import { readRevenue } from "../src/server/services/revenue.ts";
 import assert from "node:assert/strict";
 import { describe, before, beforeEach, after, test } from "node:test";
 import { createTestDatabase } from "./helpers/test-database.mjs";
@@ -22,6 +23,90 @@ after(async () => {
 // P03 (SCRUM-33). Hooks live inside describe because `npm test` runs with --test-isolation=none,
 // where a top-level beforeEach would rebuild this fixture before every test of every file.
 describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
+  test("Q01 counts each paid fare once, separates surplus and respects local midnight", async () => {
+    const date = new Date("2035-11-27T17:00:00Z");
+    await db.invoice.update({ where: { invoice_id: invoice1.invoice_id }, data: { status: "Paid" } });
+    await db.payment.create({ data: { invoice_id: invoice1.invoice_id, transaction_id: "second-fare",
+      amount: "2000000", reference_code: "paid", status: "Success", raw_payload: "{}", created_at: date } });
+    const query = { from_date: "2035-11-28", to_date: "2035-11-28", trip_id: String(trip.trip_id) };
+    await db.$executeRaw`UPDATE payments SET created_at = ${date.toISOString()}::timestamptz WHERE invoice_id IS NOT NULL`;
+    const report = await readRevenue(db, adminUser, query);
+    assert.equal(report.totals.ticket_revenue, "4000000");
+    assert.equal(report.totals.received, "4100000");
+    assert.equal(report.totals.surplus, "100000");
+    assert.equal(report.totals.needs_review_amount, "1500000");
+    assert.equal(report.groups[0].bucket, "2035-11-28");
+    const previous = await readRevenue(db, adminUser, { ...query, from_date: "2035-11-27", to_date: "2035-11-27" });
+    assert.equal(previous.totals.ticket_revenue, "0");
+    assert.deepEqual(previous.groups, []);
+    await assert.rejects(readRevenue(db, routeMgrUser, query), { code: "FORBIDDEN" });
+  });
+
+  test("Q01 classifies overdue holds at the reporting instant without modifying invoices", async () => {
+    const extraInvoice = (code, status) => db.invoice.create({ data: {
+      customer_id: customerUser.user_id, departure_id: departure.departure_id,
+      payment_code: code, total_amount: "2000000", status, expires_at: new Date("2035-11-28T00:00:00Z"),
+    } });
+    const overdue = await extraInvoice("TB-REPORT-OVERDUE", "Pending");
+    const active = await extraInvoice("TB-REPORT-ACTIVE", "Pending");
+    await extraInvoice("TB-REPORT-CLEANED", "Expired");
+    const query = { from_date: "2000-01-01", to_date: "2099-12-31", trip_id: String(trip.trip_id) };
+
+    // PostgreSQL CURRENT_TIMESTAMP is fixed for the transaction, so the exact-expiry case is deterministic.
+    await db.$transaction(async (tx) => {
+      // Keep every event in one Vietnam calendar day even if this test runs at midnight.
+      await tx.$executeRaw`UPDATE invoices SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz`;
+      await tx.$executeRaw`UPDATE payments SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP WHERE invoice_id = ${invoice1.invoice_id}`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE invoice_id IN (${overdue.invoice_id}, ${invoice2.invoice_id})`;
+      await tx.$executeRaw`UPDATE invoices SET expires_at = CURRENT_TIMESTAMP + INTERVAL '1 minute' WHERE invoice_id = ${active.invoice_id}`;
+      const snapshot = await tx.invoice.findMany({ orderBy: { invoice_id: "asc" } });
+
+      for (const group_by of ["day", "trip", "departure"]) {
+        const report = await readRevenue(tx, adminUser, { ...query, group_by });
+        assert.equal(report.totals.pending, 1, group_by);
+        assert.equal(report.totals.expired, 3, group_by);
+        assert.equal(report.totals.paid, 1, group_by);
+        assert.equal(report.groups.length, 1, group_by);
+        assert.equal(report.groups[0].expired, 3, group_by);
+      }
+      assert.deepEqual(await tx.invoice.findMany({ orderBy: { invoice_id: "asc" } }), snapshot);
+
+      await tx.invoice.update({ where: { invoice_id: invoice1.invoice_id }, data: { status: "Expired" } });
+      const afterCleanup = await readRevenue(tx, adminUser, query);
+      assert.equal(afterCleanup.totals.pending, 1);
+      assert.equal(afterCleanup.totals.expired, 3);
+      assert.equal(afterCleanup.totals.paid, 1);
+    }, { timeout: 20000 });
+  });
+
+  test("Q01 rejects calendar dates whose Vietnam-day boundaries PostgreSQL cannot represent", async () => {
+    for (const query of [
+      { from_date: "0000-01-01", to_date: "2020-01-01" },
+      { from_date: "0000-01-01", to_date: "0000-12-31" },
+      { from_date: "0001-01-01", to_date: "2020-01-01" },
+    ]) {
+      await assert.rejects(readRevenue(db, adminUser, query), { code: "INVALID_INPUT", status: 422 });
+    }
+    const earliest = await readRevenue(db, adminUser, { from_date: "0001-01-02", to_date: "0001-01-02" });
+    const latest = await readRevenue(db, adminUser, { from_date: "9999-12-31", to_date: "9999-12-31" });
+    assert.equal(earliest.totals.ticket_revenue, "0");
+    assert.equal(latest.totals.ticket_revenue, "0");
+  });
+
+  test("Q01 groups current invoice status by creation day and revenue by receipt day", async () => {
+    await db.$executeRaw`UPDATE invoices SET created_at = ${"2020-01-01T03:00:00Z"}::timestamptz WHERE invoice_id = ${invoice2.invoice_id}`;
+    await db.$executeRaw`UPDATE payments SET created_at = ${"2020-01-02T03:00:00Z"}::timestamptz WHERE payment_id = ${paymentOverpaidSuccess.payment_id}`;
+    const creationDay = await readRevenue(db, adminUser, { from_date: "2020-01-01", to_date: "2020-01-01" });
+    const receiptDay = await readRevenue(db, adminUser, { from_date: "2020-01-02", to_date: "2020-01-02" });
+    assert.equal(creationDay.totals.paid, 1);
+    assert.equal(creationDay.totals.ticket_revenue, "0");
+    assert.equal(receiptDay.totals.paid, 0);
+    assert.equal(receiptDay.totals.ticket_revenue, "2000000");
+    assert.equal(receiptDay.totals.received, "2100000");
+    assert.equal(receiptDay.totals.surplus, "100000");
+  });
+
   beforeEach(async () => {
     await database.sql.exec("TRUNCATE users, trips, vehicles, staff, invoices, invoice_details, payments, audit_logs RESTART IDENTITY CASCADE");
 

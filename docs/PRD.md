@@ -588,6 +588,8 @@ WHERE dep_seat_id = $seat_id
 MVP v2 báo cáo doanh thu từ payment Success được đối soát, không cộng NeedsReview. Công thức trừ refund và lãi/lỗ bên dưới giữ để giải thích dữ liệu legacy/giai đoạn sau, không phải yêu cầu xây module chi phí/hoàn tiền hiện tại.
 
 Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn hơn hóa đơn. **Doanh thu vé tính theo `SUM(INVOICES.total_amount)` của hóa đơn `Paid`**; phần thu thừa `PAYMENTS.amount - INVOICES.total_amount` là chênh lệch thu, theo dõi riêng ở đối soát Admin và không cộng vào doanh thu vé. Công thức doanh thu thuần bên dưới dùng `PAYMENTS.amount` nên chỉ phản ánh tiền thực nhận, không phải doanh thu vé.
+- Q01/SCRUM-45: doanh thu vé được ghi nhận một lần theo thời điểm ghi payment `Success` đầu tiên; số thực nhận, chênh lệch thu và NeedsReview được nhóm theo ngày ghi payment. Lọc ngày theo `Asia/Ho_Chi_Minh`.
+- Số `Pending`/`Paid`/`Expired` đếm các hóa đơn được **tạo trong kỳ**, theo trạng thái hiệu lực khi xem báo cáo. `Pending` có `expires_at` đến hoặc trước mốc đọc tính là `Expired`, dù cron chưa cập nhật DB; `Paid` không đổi. Đây không phải số đơn vừa thanh toán trong kỳ hay ảnh chụp trạng thái lịch sử. Khi hiển thị phải ghi rõ hai mốc này; không sửa dữ liệu khi đọc.
 - Số Leader tối thiểu = `CEIL(COUNT(INVOICE_DETAILS WHERE status = 'Valid') / LEADER_RATIO)`.
 - Doanh thu thuần chuyến = `SUM(PAYMENTS.amount WHERE status = 'Success')` − `SUM(REFUNDS.amount WHERE status = 'Completed')`.
 - Lãi/lỗ chuyến = doanh thu thuần − `SUM(DEPARTURE_COSTS.amount)`. Chi phí bảo dưỡng xe dài hạn không trừ vào một chuyến.
