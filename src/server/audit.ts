@@ -4,7 +4,7 @@ import type { AuthDatabase } from "./auth/authorization";
 import { userRoles } from "@/schemas/auth";
 import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
-import { insertAudit } from "./repositories/audit";
+import { insertAudit, insertAudits } from "./repositories/audit";
 
 const id = z.number().int().positive().max(2147483647);
 const departureStatuses = ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"] as const;
@@ -46,4 +46,15 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
           : (value.action === "SupplyReceived" || value.action === "SupplyIssued" || value.action === "SupplyReturned") ? "supply_transactions" : "users";
   await insertAudit(tx, { user_id: actorId, action: value.action, table_name,
     record_id: String(value.record_id), description: JSON.stringify(value) });
+}
+
+// Only this narrowly defined event may be attributed to the scheduler, never to an invented user.
+export async function writeCronDeparturesClosed(tx: AuthDatabase, events: { record_id: number; reason: "deadline" | "sold_out" }[]): Promise<void> {
+  const parsed = z.array(z.strictObject({ record_id: id, reason: z.enum(["deadline", "sold_out"]) })).min(1).max(50).safeParse(events);
+  if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
+  const data = parsed.data.map(event => {
+    const value = { action: "DepartureStatusChanged", record_id: event.record_id, from: "Open", to: "Closed", source: "cron", reason: event.reason };
+    return { user_id: null, action: value.action, table_name: "departures", record_id: String(value.record_id), description: JSON.stringify(value) };
+  });
+  await insertAudits(tx, data);
 }

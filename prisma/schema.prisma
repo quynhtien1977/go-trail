@@ -162,13 +162,13 @@ model SystemSetting {
 
 model AuditLog {
   log_id      Int      @id @default(autoincrement())
-  user_id     Int
+  user_id     Int?
   action      String
   table_name  String
   record_id   String
   description String
   created_at  DateTime @default(now()) @db.Timestamptz(6)
-  user        User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  user        User?    @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
 
   @@index([user_id])
   @@index([table_name, record_id, created_at])
