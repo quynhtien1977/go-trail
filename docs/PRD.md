@@ -462,6 +462,7 @@ erDiagram
         varchar category "Food, Drink, Gear, Medical"
         nvarchar unit "One counted unit, e.g. chai 500ml"
         bit is_active "Retire instead of delete"
+        int low_stock_threshold "Nullable, non-negative"
         datetime created_at
     }
 
@@ -550,6 +551,7 @@ erDiagram
 
 - Migration `20261114000000_inventory_ledger` tạo `supply_items`, `supply_transactions`, enum `SupplyCategory`/`SupplyTransactionType`, index FK, RLS và thu hồi quyền table/sequence/function của `PUBLIC`, `anon`, `authenticated`, `service_role`. Chỉ thêm bảng mới, không sửa dữ liệu hay migration cũ; `prisma migrate diff` từ DB đã chạy migration sang `schema.prisma` rỗng.
 - I03 bổ sung migration `20261124000100_supply_recipient`: thêm `recipient_staff_id` nullable, FK RESTRICT tới `STAFF`; không sửa hay xóa phiếu cũ. Mỗi DB development cần áp dụng migration này trước khi chạy code I03, kể cả luồng nhập kho I02 dùng Prisma Client mới.
+- Q02 bổ sung migration `20261124000200_supply_threshold`: thêm `low_stock_threshold` nullable, CHECK không âm; vật tư cũ giữ `NULL`, không tự gán ngưỡng hoặc sửa sổ vật tư. Supabase development của Tiến An đã áp dụng ngày 27/11/2026 theo ủy quyền; các thành viên khác áp dụng trên DB riêng sau khi PR #55 được merge và trước khi dùng Prisma Client mới.
 - Seed development thêm 4 vật tư mẫu, mỗi vật tư một phiếu nhập và 3 phiếu cấp cho chuyến demo Closed, do HRMgr demo ghi; khóa idempotency cố định nên chạy lại không thêm dòng. Chưa áp dụng lên Supabase/DB riêng của thành viên.
 
 ## 7. Quy tắc dữ liệu và đồng thời
@@ -684,6 +686,7 @@ Theo quyết định B04 (10/11/2026), một payment `Success` có thể lớn h
 - I03 (`SCRUM-69`, quyết định 27/11/2026): chỉ Issue mới cho chuyến `Draft`, `Open`, `Closed`, `Confirmed` hoặc `Running`; không cấp mới cho `Ended` và trạng thái legacy `Cancelled`/`Rescheduled`. Return được phép sau khi kết thúc hoặc với chuyến legacy nếu vẫn còn số dư đã cấp. Issue yêu cầu nhân sự Active được phân công vào chuyến; Return chấp nhận người vẫn được phân công hoặc đã từng nhận đúng vật tư đó của chuyến theo ledger, kể cả khi hồ sơ đã Inactive hoặc đã thay phân công. Khóa chuyến trước vật tư để việc kết thúc chuyến và cấp mới không vượt qua nhau. Retry của phiếu đã ghi vẫn trả kết quả cũ khi trạng thái chuyến, vật tư hoặc nhân sự đã thay đổi.
 - Quyền theo ma trận 3.2: HRMgr/Admin ghi; RouteMgr chỉ đọc vật tư chuyến mình phụ trách; Leader chỉ đọc chuyến được phân công với hồ sơ Leader Active, trong `Confirmed`, `Running` hoặc `Ended`. I03 hiện trả tổng cấp/hoàn/tồn của từng vật tư theo chuyến, chưa cung cấp API/UI xem từng phiếu lịch sử; không coi khả năng tra cứu lịch sử là đã hoàn tất chỉ vì ledger đã lưu dữ liệu.
 - I02 (`SCRUM-68`): `GET/POST /api/staff/supplies`, `GET/PATCH /api/staff/supplies/:id`, `POST /api/staff/supplies/receive`, chỉ HRMgr/Admin (đọc toàn bộ danh mục/tồn cũng vậy; RouteMgr/Leader đọc vật tư theo chuyến ở I03). Không có DELETE: ngừng dùng bằng `is_active=false`. Tồn = tổng ledger, không cột cache. Nhập kho bắt buộc `idempotency_key`: khóa item `FOR UPDATE` rồi mới tra key, nên retry đồng thời cùng key trả đúng phiếu đầu (test đua PostgreSQL), cùng key khác payload trả 409. Audit `SupplyItemCreated`/`SupplyItemUpdated`/`SupplyReceived` cùng transaction.
+- Q02 dùng ngưỡng `low_stock_threshold` tùy chọn theo từng vật tư; HRMgr/Admin có thể tạo hoặc cập nhật qua I02 bằng số nguyên không âm hoặc `null`. Vật tư Active chưa có ngưỡng (`NULL`) vẫn được cảnh báo khi tồn bằng hoặc dưới 0; có ngưỡng riêng thì cảnh báo khi tồn bằng hoặc dưới ngưỡng đó. Dashboard trả ngưỡng đã lưu (`null` nếu chưa cấu hình), không ghi giá trị mặc định vào DB. UI danh mục hiện chưa có trường chỉnh ngưỡng; không giả định người dùng đã cấu hình các vật tư cũ.
 
 ## 8. Thanh toán và hoàn tiền
 
@@ -768,6 +771,7 @@ Quy ước mã nguồn: logic nghiệp vụ nằm trong `src/server/services/*` 
 | `POST /api/departures/:id/assignments` | Phân công xe, nhân sự | HRMgr, Admin |
 | `GET /api/staff/customers` | Danh bạ khách hàng: tìm theo tên/email/SĐT, lọc trạng thái tài khoản, phân trang; mỗi dòng có số hóa đơn và lần đặt gần nhất trong phạm vi người đọc | Admin toàn bộ; RouteMgr chỉ khách của hóa đơn mình phụ trách |
 | `GET /api/staff/customers/:id` | Hồ sơ khách và lịch sử đặt vé chỉ đọc (hóa đơn, vé, ghế, snapshot nhân viên phụ trách), tối đa 50 hóa đơn mới nhất; ngoài phạm vi trả `404` | Admin toàn bộ; RouteMgr chỉ hóa đơn mình phụ trách |
+| `GET /api/staff/dashboard` | Q02: `from_date`/`to_date` theo ngày Việt Nam, lọc tùy chọn theo tuyến/chuyến; số chuyến theo ngày khởi hành, vật tư cấp/hoàn theo ngày ghi phiếu, danh sách vật tư tồn thấp là tồn hiện tại toàn kho và không lọc theo kỳ/tuyến/chuyến. Hai danh sách vật tư phân trang riêng bằng `supplies_after`/`stock_after`, tối đa 50 dòng. Chỉ số tổng hợp không trả PII; doanh thu Admin khớp Q01 theo 7.3 | Admin toàn bộ; RouteMgr số vận hành/khách/vật tư thuộc chuyến mình phụ trách; HRMgr số vận hành và vật tư, không doanh thu/khách |
 | `GET /api/staff/invoices`, `GET /api/staff/invoices/:id` | M01: hóa đơn theo trạng thái/chuyến/khoảng ngày/tìm theo mã thanh toán, tên hoặc SĐT khách, phân trang ≤ 100; chi tiết gồm vé (ghế, hành khách, SĐT, liên hệ khẩn cấp, điểm đón, trạng thái vé và check-in tách riêng) và thanh toán ở mức trạng thái (số tiền, trạng thái, thời gian). Không trả `ticket_code`, cam kết sức khỏe, mã giao dịch/tham chiếu ngân hàng hay raw payload (Admin xem ở P03). Chỉ đọc, ngoài phạm vi trả 404 | Admin toàn bộ; RouteMgr chỉ hóa đơn có `responsible_user_id` của mình |
 | `GET /api/staff/tickets` | M01: tra cứu vé theo chuyến, tên/SĐT hành khách, trạng thái vé/check-in; `ticket_code` chỉ khớp **đúng nguyên mã** (không phân biệt hoa thường) và không bao giờ được trả về | Admin toàn bộ; RouteMgr vé của hóa đơn mình phụ trách hoặc chuyến mình phụ trách |
 | `GET /api/account/bookings` | Lịch sử đặt vé của chính mình, tối đa 50 hóa đơn mới nhất, không có `ticket_code` | Customer (chỉ dữ liệu của mình) |

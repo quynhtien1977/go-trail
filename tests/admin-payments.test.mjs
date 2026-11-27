@@ -1,3 +1,4 @@
+import { readDashboard } from "../src/server/services/dashboard.ts";
 import { readRevenue } from "../src/server/services/revenue.ts";
 import assert from "node:assert/strict";
 import { describe, before, beforeEach, after, test } from "node:test";
@@ -7,6 +8,7 @@ import {
   readAdminPayment,
 } from "../src/server/services/admin-payments.ts";
 import { recordSepayPayment } from "../src/server/services/payments.ts";
+import { updateSupplyItem } from "../src/server/services/inventory.ts";
 import { SEPAY_TEST_KEY, sepayAuth } from "./helpers/sepay.mjs";
 
 let database, db, adminUser, routeMgrUser, customerUser;
@@ -23,6 +25,112 @@ after(async () => {
 // P03 (SCRUM-33). Hooks live inside describe because `npm test` runs with --test-isolation=none,
 // where a top-level beforeEach would rebuild this fixture before every test of every file.
 describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
+  test("Q02 dashboard matches Q01 for expired Pending invoices and rejects invalid dates", async () => {
+    const period = { from_date: "2000-01-01", to_date: "2099-12-31", trip_id: String(trip.trip_id) };
+    await db.$executeRaw`UPDATE invoices SET expires_at = ${"2020-01-01T00:00:00Z"}::timestamptz WHERE invoice_id IN (${invoice1.invoice_id}, ${invoice2.invoice_id})`;
+    const before = await db.invoice.findMany({ orderBy: { invoice_id: "asc" } });
+    const report = await readRevenue(db, adminUser, period);
+    const dashboard = await readDashboard(db, adminUser, period);
+    assert.deepEqual(dashboard.revenue, report.totals);
+    assert.equal(dashboard.revenue.pending, 0);
+    assert.equal(dashboard.revenue.expired, 1);
+    assert.equal(dashboard.revenue.paid, 1);
+    assert.deepEqual(await db.invoice.findMany({ orderBy: { invoice_id: "asc" } }), before);
+    for (const from_date of ["0000-01-01", "0001-01-01"]) {
+      await assert.rejects(readDashboard(db, adminUser, { from_date, to_date: "2020-01-01" }), { code: "INVALID_INPUT", status: 422 });
+    }
+  });
+
+  test("Q02 scopes departure and supply totals to each RouteMgr without exposing personal data", async () => {
+    const otherManager = await db.user.create({ data: { role: "RouteMgr", email: "other-manager@q02.example.test",
+      password_hash: "fixture", full_name: "Other manager", phone: "0902222211" } });
+    const otherTrip = await db.trip.create({ data: { name: "Other trail", city: "Test", location_name: "Test",
+      length_km: "5", base_price: "2000000", description: "Test", schedule_content: "Test" } });
+    const otherDeparture = await db.departure.create({ data: { trip_id: otherTrip.trip_id,
+      departure_date: new Date("2035-11-28T08:00:00Z"), booking_deadline: new Date("2035-11-27T18:00:00Z"),
+      min_passengers: 1, status: "Open", invoice_owner_user_id: otherManager.user_id } });
+    const item = await db.supplyItem.create({ data: { name: "Scoped supply", category: "Drink", unit: "bottle" } });
+    await db.$executeRaw`INSERT INTO supply_transactions (item_id, created_by_user_id, txn_type, quantity, departure_id, idempotency_key, created_at) VALUES
+      (${item.item_id}, ${adminUser.user_id}, 'Receive', 10, NULL, 'q02-scoped-receive', ${"2035-11-28T03:00:00Z"}::timestamptz),
+      (${item.item_id}, ${adminUser.user_id}, 'Issue', 2, ${departure.departure_id}, 'q02-scoped-issue-first', ${"2035-11-28T03:00:00Z"}::timestamptz),
+      (${item.item_id}, ${adminUser.user_id}, 'Issue', 7, ${otherDeparture.departure_id}, 'q02-scoped-issue-other', ${"2035-11-28T03:00:00Z"}::timestamptz)`;
+    await db.$executeRaw`UPDATE departures SET departure_date = ${"2035-11-28T03:00:00Z"}::timestamptz`;
+    const period = { from_date: "2035-11-28", to_date: "2035-11-28" };
+    const first = await readDashboard(db, routeMgrUser, period);
+    const otherActor = { user_id: otherManager.user_id, role: "RouteMgr", auth_version: 0 };
+    const second = await readDashboard(db, otherActor, period);
+    const admin = await readDashboard(db, adminUser, period);
+    assert.deepEqual([first.operations.departures, second.operations.departures, admin.operations.departures], [1, 1, 2]);
+    assert.deepEqual([first.supplies_in_period.items[0].issued, second.supplies_in_period.items[0].issued,
+      admin.supplies_in_period.items[0].issued], [2, 7, 9]);
+    for (const result of [first, second]) {
+      assert.ok(!("revenue" in result) && !("warehouse_low_stock_now" in result));
+      assert.doesNotMatch(JSON.stringify(result), /customer_id|full_name|phone|email|payment_code/i);
+    }
+    await assert.rejects(readDashboard(db, routeMgrUser, { ...period, departure_id: String(otherDeparture.departure_id) }),
+      { code: "NOT_FOUND", status: 404 });
+  });
+
+  test("Q02 pages warehouse alerts by item and restricts HR to resources", async () => {
+    const hr = await db.user.create({ data: { role: "HRMgr", email: "warehouse@test.invalid",
+      password_hash: "unused", full_name: "Warehouse", phone: "0901111112" } });
+    await db.supplyItem.createMany({ data: Array.from({ length: 51 }, (_, index) => ({
+      name: `Alert ${index}`, category: "Gear", unit: "box", low_stock_threshold: 0,
+    })) });
+    const period = { from_date: "2035-11-28", to_date: "2035-11-28" };
+    const item = await db.supplyItem.findFirstOrThrow({ where: { name: "Alert 0" } });
+    const base = { item_id: item.item_id, created_by_user_id: hr.user_id };
+    await db.supplyTransaction.createMany({ data: [
+      { ...base, txn_type: "Receive", quantity: 10, idempotency_key: "dashboard-receive", created_at: new Date("2035-11-25T12:00:00Z") },
+      { ...base, txn_type: "Issue", departure_id: departure.departure_id, quantity: 4, idempotency_key: "dashboard-issue-1", created_at: new Date("2035-11-28T12:00:00Z") },
+      { ...base, txn_type: "Return", departure_id: departure.departure_id, quantity: 1, idempotency_key: "dashboard-return-1", created_at: new Date("2035-11-28T12:00:00Z") },
+    ] });
+    await db.supplyItem.update({ where: { item_id: item.item_id }, data: { low_stock_threshold: 7 } });
+    const first = await readDashboard(db, hr, period);
+    const allocation = first.supplies_in_period.items.find(row => row.item_id === item.item_id);
+    assert.deepEqual([allocation.issued, allocation.returned], [4, 1]);
+    assert.equal(first.warehouse_low_stock_now.items.find(row => row.item_id === item.item_id).on_hand, 7);
+    assert.ok(!("revenue" in first) && !("passengers" in first));
+    assert.equal(first.warehouse_low_stock_now.items.length, 50);
+    const after = first.warehouse_low_stock_now.next_cursor;
+    const next = await readDashboard(db, hr, { ...period, stock_after: String(after) });
+    assert.equal(next.warehouse_low_stock_now.items.length, 1);
+    assert.ok(next.warehouse_low_stock_now.items[0].item_id > after);
+    assert.equal(next.warehouse_low_stock_now.next_cursor, null);
+    await assert.rejects(readDashboard(db, customerUser, period), { code: "FORBIDDEN" });
+  });
+
+  test("Q02 alerts for unconfigured items only when empty and respects a custom threshold", async () => {
+    const item = (name, threshold, active = true) => db.supplyItem.create({ data: {
+      name, category: "Drink", unit: "bottle", low_stock_threshold: threshold, is_active: active,
+    } });
+    const empty = await item("Unset empty", null);
+    const stocked = await item("Unset stocked", null);
+    const atLimit = await item("At custom limit", 2);
+    const aboveLimit = await item("Above custom limit", 2);
+    const zero = await item("Explicit zero", 0);
+    const retired = await item("Retired empty", null, false);
+    await db.supplyTransaction.createMany({ data: [
+      { item_id: stocked.item_id, quantity: 1, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-stocked" },
+      { item_id: atLimit.item_id, quantity: 2, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-at-limit" },
+      { item_id: aboveLimit.item_id, quantity: 3, txn_type: "Receive", created_by_user_id: adminUser.user_id, idempotency_key: "q02-receive-above-limit" },
+    ] });
+    const period = { from_date: "2000-01-01", to_date: "2099-12-31" };
+    const before = await db.supplyItem.findMany({ orderBy: { item_id: "asc" } });
+    const first = (await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items;
+    assert.deepEqual(first.map(row => row.item_id), [empty.item_id, atLimit.item_id, zero.item_id]);
+    assert.deepEqual([first[0].low_stock_threshold, first[0].on_hand], [null, 0]);
+    assert.deepEqual([first[1].low_stock_threshold, first[1].on_hand], [2, 2]);
+    assert.deepEqual([first[2].low_stock_threshold, first[2].on_hand], [0, 0]);
+    assert.ok(!first.some(row => [stocked.item_id, aboveLimit.item_id, retired.item_id].includes(row.item_id)));
+    assert.deepEqual(await db.supplyItem.findMany({ orderBy: { item_id: "asc" } }), before);
+
+    await updateSupplyItem(db, adminUser, stocked.item_id, { low_stock_threshold: 1 });
+    assert.ok((await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items.some(row => row.item_id === stocked.item_id));
+    await updateSupplyItem(db, adminUser, stocked.item_id, { low_stock_threshold: null });
+    assert.ok(!(await readDashboard(db, adminUser, period)).warehouse_low_stock_now.items.some(row => row.item_id === stocked.item_id));
+  });
+
   test("Q01 counts each paid fare once, separates surplus and respects local midnight", async () => {
     const date = new Date("2035-11-27T17:00:00Z");
     await db.invoice.update({ where: { invoice_id: invoice1.invoice_id }, data: { status: "Paid" } });
@@ -31,6 +139,19 @@ describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
     const query = { from_date: "2035-11-28", to_date: "2035-11-28", trip_id: String(trip.trip_id) };
     await db.$executeRaw`UPDATE payments SET created_at = ${date.toISOString()}::timestamptz WHERE invoice_id IS NOT NULL`;
     const report = await readRevenue(db, adminUser, query);
+    const adminDashboard = await readDashboard(db, adminUser, query);
+    assert.deepEqual(adminDashboard.revenue, report.totals);
+    assert.equal(adminDashboard.operations.departures, 1);
+    const item = await db.supplyItem.create({ data: { name: "Water", category: "Drink", unit: "bottle", low_stock_threshold: 2 } });
+    const lowStock = (await readDashboard(db, adminUser, query)).warehouse_low_stock_now;
+    assert.equal(lowStock.items.find(row => row.item_id === item.item_id).on_hand, 0);
+    const manager = await readDashboard(db, routeMgrUser, { ...query, departure_id: String(departure.departure_id) });
+    assert.ok(!("revenue" in manager) && !("warehouse_low_stock_now" in manager));
+    await db.departure.update({ where: { departure_id: departure.departure_id }, data: { invoice_owner_user_id: null } });
+    await assert.rejects(readDashboard(db, routeMgrUser, { ...query, departure_id: String(departure.departure_id) }), { code: "NOT_FOUND" });
+    const empty = await readDashboard(db, routeMgrUser, query);
+    assert.equal(empty.operations.seats, 0);
+    assert.equal(empty.operations.departures, 0);
     assert.equal(report.totals.ticket_revenue, "4000000");
     assert.equal(report.totals.received, "4100000");
     assert.equal(report.totals.surplus, "100000");
@@ -108,7 +229,7 @@ describe("P03 Admin payment reconciliation (SCRUM-33)", () => {
   });
 
   beforeEach(async () => {
-    await database.sql.exec("TRUNCATE users, trips, vehicles, staff, invoices, invoice_details, payments, audit_logs RESTART IDENTITY CASCADE");
+    await database.sql.exec("TRUNCATE supply_items, users, trips, vehicles, staff, invoices, invoice_details, payments, audit_logs RESTART IDENTITY CASCADE");
 
     const admin = await db.user.create({
       data: { email: "admin@payments.test", password_hash: "hash", full_name: "Admin User", phone: "0901111111", role: "Admin" },

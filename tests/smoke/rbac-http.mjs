@@ -198,6 +198,7 @@ try {
     for (const [method, body] of Object.entries(methods)) endpoints.push({ route, path, allowed, method, body,
       success: method === "POST" ? 201 : 200 });
   }
+  route("staff/dashboard", "/api/staff/dashboard?from_date=2030-01-01&to_date=2030-01-31", ["RouteMgr", "HRMgr", "Admin"], { GET: undefined });
   route("account/me", "/api/account/me", roles, { GET: undefined });
   route("invoices/[id]", `/api/invoices/${invoice.invoice_id}`, ["Customer", "Admin"], { GET: undefined });
   route("leader/departures", "/api/leader/departures", ["Leader", "Admin"], { GET: undefined });
@@ -380,6 +381,29 @@ try {
     expect(await request({ ...revenueRead, path }, actors.get("Admin")), 422, "INVALID_INPUT");
   }
   console.log("PASS: Q01 rejects unsupported Vietnam-day boundaries as invalid input over HTTP.");
+
+  const dashboardRead = endpoints.find(e => e.route === "staff/dashboard");
+  for (const fromDate of ["0000-01-01", "0001-01-01"]) {
+    const path = `/api/staff/dashboard?from_date=${fromDate}&to_date=2020-01-01`;
+    for (const role of ["RouteMgr", "HRMgr", "Admin"]) {
+      expect(await request({ ...dashboardRead, path }, actors.get(role)), 422, "INVALID_INPUT");
+    }
+  }
+  console.log("PASS: Q02 rejects unsupported Vietnam-day boundaries over HTTP for all allowed roles.");
+
+  const unconfiguredStock = await db.supplyItem.create({ data: { name: "Q02 empty stock fixture", category: "Drink", unit: "bottle" } });
+  for (const role of ["HRMgr", "Admin"]) {
+    const result = await request(dashboardRead, actors.get(role));
+    expect(result, 200);
+    const alert = result.body.data.warehouse_low_stock_now.items.find(item => item.item_id === unconfiguredStock.item_id);
+    assert.equal(alert?.on_hand, 0);
+    assert.equal(alert.low_stock_threshold, null);
+  }
+  const routeDashboard = await request(dashboardRead, actors.get("RouteMgr"));
+  expect(routeDashboard, 200);
+  assert.ok(!("warehouse_low_stock_now" in routeDashboard.body.data) && !("revenue" in routeDashboard.body.data));
+  assert.equal((await db.supplyItem.findUniqueOrThrow({ where: { item_id: unconfiguredStock.item_id } })).low_stock_threshold, null);
+  console.log("PASS: Q02 exposes unconfigured empty stock to HR/Admin without changing its threshold or leaking warehouse data to RouteMgr.");
 
   const assignmentRead = endpoints.find(e => e.route === "staff/departures/[id]/assignments");
   expect(await request(assignmentRead, actors.get("OtherLeader")), 403, "FORBIDDEN");

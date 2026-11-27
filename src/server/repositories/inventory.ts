@@ -1,6 +1,8 @@
 import "server-only";
-import type { Prisma, SupplyCategory } from "@/generated/prisma/client";
+import { Prisma, type SupplyCategory } from "@/generated/prisma/client";
 import type { DataClient, Transaction } from "./database";
+
+export const stockDelta = Prisma.sql`CASE WHEN txn_type IN ('Receive', 'Return') THEN quantity ELSE -quantity END`;
 
 export function isUniqueConflict(error: unknown): boolean {
   return !!error && typeof error === "object" && "code" in error && error.code === "P2002";
@@ -39,7 +41,7 @@ export function updateSupplyItem(tx: Transaction, itemId: number, data: Prisma.S
 
 export async function getItemStock(db: DataClient, itemId: number): Promise<number> {
   const rows = await db.$queryRaw<{ on_hand: number | null }[]>`
-    SELECT COALESCE(SUM(CASE WHEN txn_type IN ('Receive', 'Return') THEN quantity ELSE -quantity END), 0)::int AS on_hand
+    SELECT COALESCE(SUM(${stockDelta}), 0)::int AS on_hand
     FROM supply_transactions
     WHERE item_id = ${itemId}
   `;
@@ -66,7 +68,7 @@ export async function pageSupplyItems(
   const stockMap: Record<number, number> = {};
   if (itemIds.length > 0) {
     const stockRows = await db.$queryRaw<{ item_id: number; on_hand: number }[]>`
-      SELECT item_id, COALESCE(SUM(CASE WHEN txn_type IN ('Receive', 'Return') THEN quantity ELSE -quantity END), 0)::int AS on_hand
+      SELECT item_id, COALESCE(SUM(${stockDelta}), 0)::int AS on_hand
       FROM supply_transactions
       WHERE item_id = ANY(${itemIds})
       GROUP BY item_id

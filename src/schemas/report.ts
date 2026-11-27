@@ -14,10 +14,14 @@ const revenueQuery = reportFilters.extend({ group_by: z.enum(["day", "trip", "de
 export type ReportPeriod = { start: Date; end: Date; tripId?: number; departureId?: number };
 export function parseReport(input: unknown, revenue: boolean) {
   const parsed = (revenue ? revenueQuery : reportFilters).safeParse(input);
-  if (!parsed.success || parsed.data.from_date > parsed.data.to_date) throw new AppError("INVALID_INPUT", 422);
+  if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
   const data = parsed.data;
+  const group = "group_by" in data ? data.group_by as "day" | "trip" | "departure" : "day";
+  return { period: reportPeriod(data), group };
+}
+export function reportPeriod(data: z.infer<typeof reportFilters>): ReportPeriod {
+  if (data.from_date > data.to_date) throw new AppError("INVALID_INPUT", 422);
   const start = new Date(data.from_date + "T00:00:00+07:00");
   const end = new Date(new Date(data.to_date + "T00:00:00+07:00").getTime() + 86400000);
-  const group = "group_by" in data ? data.group_by as "day" | "trip" | "departure" : "day";
-  return { period: { start, end, tripId: data.trip_id, departureId: data.departure_id }, group };
+  return { start, end, tripId: data.trip_id, departureId: data.departure_id };
 }
