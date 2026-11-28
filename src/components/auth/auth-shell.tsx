@@ -19,19 +19,22 @@ export function AuthShell({ portal = "customer", children }: { portal?: AuthPort
           (staff ? "bg-[#186734]" : "bg-[#1b2a1f]")
         }
       >
-        <Image
-          src={mountain}
-          alt=""
-          fill
-          priority
-          sizes="(min-width: 1280px) 50vw, (min-width: 1024px) 42vw, 100vw"
-          placeholder="blur"
-          className={staff ? "-z-10 object-cover opacity-45 mix-blend-multiply" : "-z-20 object-cover"}
-        />
-        {!staff && (
-          // Scrim keeps white text readable over the photo.
-          <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgba(0,0,0,0.75)_0%,rgba(0,0,0,0.3)_50%,rgba(0,0,0,0.6)_100%)]" />
-        )}
+        {/* Absolute layer gives next/image a positioned parent even when the panel is sticky on desktop. */}
+        <div aria-hidden="true" className={"absolute inset-0 -z-10 " + (staff ? "bg-[#186734]" : "bg-[#1b2a1f]")}>
+          <Image
+            src={mountain}
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1280px) 50vw, (min-width: 1024px) 42vw, 100vw"
+            placeholder="blur"
+            className={staff ? "object-cover opacity-45 mix-blend-multiply" : "object-cover"}
+          />
+          {!staff && (
+            // Scrim keeps white text readable over the photo.
+            <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.75)_0%,rgba(0,0,0,0.3)_50%,rgba(0,0,0,0.6)_100%)]" />
+          )}
+        </div>
 
         {staff ? (
           <Link href="/" className="flex w-fit items-center gap-3 rounded-[5px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#FEBB02]">
