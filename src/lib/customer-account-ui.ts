@@ -183,7 +183,7 @@ export function describeFailure(code: string, status: number, action: "read" | "
 
 // ---------- Browser client (C03 customers, A01 access) ----------
 
-async function request<T>(url: string, signal?: AbortSignal, body?: unknown): Promise<T> {
+export async function request<T>(url: string, signal?: AbortSignal, body?: unknown): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url, {

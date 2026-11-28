@@ -4,7 +4,7 @@ import { AuditLog } from "@/components/admin/audit-log";
 
 export const metadata: Metadata = { title: "Nhật ký hoạt động — Go-Trail" };
 
-// Q04 audit log: Admin only (the proxy blocks other roles from /admin). Demo entries until an audit list API exists.
+// Q04 audit log: Admin only (the proxy blocks other roles from /admin). Reads GET /api/admin/audit.
 export default function AdminAuditPage() {
   return (
     <BackOfficeShell active="audit" title="Nhật ký hoạt động">
