@@ -14,6 +14,8 @@ Job Quality trên Ubuntu đã checkout commit trên, dùng phiên bản Node tro
 | 12 | Ma trận phân quyền HTTP của 5 role trên bản build | Đạt |
 | 13 | Audit dependency theo policy của repo | Đạt |
 
+Kiểm chứng lại tại máy bàn giao ngày 28/11/2026 sau khi cài từ lockfile: production build thành công, HTTP smoke đạt 1.705 lượt kiểm tra cho 64 phương thức được bảo vệ và qua kiểm tra cron. Bài booking concurrency đạt 25 nhóm trên PostgreSQL 18 riêng ở cả hai lần chạy. `rtk npm run audit:check` trả mã 0 và báo 0 advisory tại thời điểm chạy. Lint, typecheck độc lập, toàn bộ unit/integration và concurrency phân công lấy bằng chứng từ job CI nêu trên.
+
 Không có bước nào trong job báo blocker/critical cần sửa. Trạng thái audit có nghĩa là đạt [baseline đã duyệt](../../.github/security-audit-baseline.json). Ngoại lệ công cụ development phải được review lại trước production hoặc hạn 02/12/2026, tùy mốc nào đến trước.
 
 ## Chạy lại khi sửa lỗi hoặc đổi SHA
