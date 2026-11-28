@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, type ReactNode, type RefObject } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, Info, Loader2, X, XCircle } from "lucide-react";
 import type { Role } from "@/schemas/auth";
 import { cn } from "@/lib/utils";
@@ -64,12 +64,14 @@ export const buttonDanger = cn(buttonBase, "bg-[#C62828] font-bold text-white ho
 export const buttonGreen = cn(buttonBase, "bg-[#186734] font-bold text-white hover:bg-[#125228]");
 export const smallButton = "min-h-9 px-3 text-xs";
 
-export function StatTile({ label, value, tone }: { label: string; value: number | null; tone?: "success" | "danger" }) {
+export function StatTile({ label, value, tone, loading }: { label: string; value: number | null; tone?: "success" | "danger"; loading: boolean }) {
   return (
     <div className="rounded-[5px] border border-[#E0E0E0] bg-white p-4">
       <p className="text-sm font-medium text-[#5C636A]">{label}</p>
       <p className={cn("mt-1 text-2xl font-bold tabular-nums", tone === "success" ? "text-[#186734]" : tone === "danger" ? "text-[#C62828]" : "text-[#212529]")}>
-        {value === null ? <span className="inline-block h-7 w-16 animate-pulse rounded-[5px] bg-neutral-200" /> : formatCount(value)}
+        {value !== null ? formatCount(value) : loading
+          ? <span aria-label="Đang tải" className="inline-block h-7 w-16 animate-pulse rounded-[5px] bg-neutral-200" />
+          : <span aria-label="Không có dữ liệu">—</span>}
       </p>
     </div>
   );
@@ -106,26 +108,56 @@ export function Pagination({ page, totalPages, totalItems, pageSize, noun, onPag
 
 // Locks page scroll while an overlay is open. The removed scrollbar's width is added back as padding,
 // so the page behind the overlay does not shift sideways when it opens or closes.
-let overlayDepth = 0;
-function useOverlay(onClose: () => void, locked: boolean) {
+const overlayStack: symbol[] = [];
+let originalBodyStyle: { overflow: string; paddingRight: string } | null = null;
+function useOverlay(panelRef: RefObject<HTMLDivElement | null>, onClose: () => void, locked: boolean) {
   const close = useEffectEvent(() => { if (!locked) onClose(); });
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
-    document.addEventListener("keydown", onKey);
+    const id = Symbol("overlay");
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const body = document.body;
-    const previous = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
-    if (overlayDepth === 0) {
+    if (overlayStack.length === 0) {
+      originalBodyStyle = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
       const scrollbar = window.innerWidth - document.documentElement.clientWidth;
-      if (scrollbar > 0) body.style.paddingRight = `${parseFloat(getComputedStyle(body).paddingRight) + scrollbar}px`;
+      if (scrollbar > 0) body.style.paddingRight = `${(parseFloat(getComputedStyle(body).paddingRight) || 0) + scrollbar}px`;
       body.style.overflow = "hidden";
     }
-    overlayDepth += 1;
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      overlayDepth -= 1;
-      if (overlayDepth === 0) { body.style.overflow = previous.overflow; body.style.paddingRight = previous.paddingRight; }
+    overlayStack.push(id);
+    const onKey = (event: KeyboardEvent) => {
+      if (overlayStack.at(-1) !== id) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        close();
+        return;
+      }
+      const panel = panelRef.current;
+      if (event.key !== "Tab" || !panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getClientRects().length > 0 && !element.closest('[aria-hidden="true"]'));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+      } else if (!panel.contains(document.activeElement) || (event.shiftKey && document.activeElement === focusable[0])
+        || (!event.shiftKey && document.activeElement === focusable[focusable.length - 1])) {
+        event.preventDefault();
+        (event.shiftKey ? focusable[focusable.length - 1] : focusable[0]).focus();
+      }
     };
-  }, []);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      const index = overlayStack.indexOf(id);
+      if (index !== -1) overlayStack.splice(index, 1);
+      if (overlayStack.length === 0 && originalBodyStyle) {
+        body.style.overflow = originalBodyStyle.overflow;
+        body.style.paddingRight = originalBodyStyle.paddingRight;
+        originalBodyStyle = null;
+      }
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [panelRef]);
 }
 
 // Right drawer on desktop, bottom sheet on mobile (Stitch C04 detail screens).
@@ -133,12 +165,13 @@ export function Drawer({ title, onClose, children, footer, labelledBy }: {
   title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; labelledBy: string;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  useOverlay(onClose, false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useOverlay(panelRef, onClose, false);
   useEffect(() => { closeRef.current?.focus(); }, []);
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/50 duration-200 animate-in fade-in motion-reduce:animate-none md:items-stretch md:justify-end"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby={labelledBy}
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1}
         className="flex max-h-[88dvh] w-full flex-col rounded-t-[8px] border border-[#E0E0E0] bg-white duration-200 ease-out animate-in slide-in-from-bottom motion-reduce:animate-none md:max-h-none md:w-[440px] md:rounded-none md:border-y-0 md:border-r-0 md:slide-in-from-bottom-0 md:slide-in-from-right">
         <div className="flex items-start justify-between gap-3 border-b border-[#E0E0E0] p-4">
           <div className="min-w-0 flex-1">{title}</div>
@@ -157,12 +190,12 @@ export function Dialog({ title, onClose, children, actions, busy, labelledBy }: 
   title: ReactNode; onClose: () => void; children: ReactNode; actions: ReactNode; busy: boolean; labelledBy: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useOverlay(onClose, busy);
+  useOverlay(panelRef, onClose, busy);
   useEffect(() => { panelRef.current?.querySelector<HTMLElement>("button, input")?.focus(); }, []);
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 duration-150 animate-in fade-in motion-reduce:animate-none sm:items-center sm:p-4"
       onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy}
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1}
         className="max-h-[90dvh] w-full overflow-y-auto rounded-t-[8px] border border-[#E0E0E0] bg-white duration-200 ease-out animate-in slide-in-from-bottom motion-reduce:animate-none sm:max-w-[480px] sm:rounded-[8px] sm:slide-in-from-bottom-0 sm:zoom-in-95">
         <div className="flex items-center justify-between gap-2 border-b border-[#E0E0E0] px-5 py-3">
           <h2 id={labelledBy} className="flex items-center gap-2 text-lg font-bold">{title}</h2>

@@ -2,7 +2,7 @@ import "server-only";
 
 export type ErrorCode = "INVALID_INPUT" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND"
   | "REGISTRATION_UNAVAILABLE" | "RATE_LIMITED" | "ACCESS_CONFLICT" | "AUTH_UNAVAILABLE"
-  | "RESOURCE_CONFLICT" | "VEHICLE_UNAVAILABLE" | "BOOKING_UNAVAILABLE"
+  | "RESOURCE_CONFLICT" | "VEHICLE_UNAVAILABLE" | "BOOKING_UNAVAILABLE" | "CRON_UNAVAILABLE"
   | "TICKET_NOT_FOUND" | "TICKET_NOT_VALID" | "TICKET_WRONG_DEPARTURE" | "CHECKIN_CLOSED" | "ALREADY_CHECKED_IN";
 
 const messages: Record<ErrorCode, string> = {
@@ -17,6 +17,7 @@ const messages: Record<ErrorCode, string> = {
   RESOURCE_CONFLICT: "Dữ liệu bị trùng hoặc xung đột với trạng thái hiện tại.",
   VEHICLE_UNAVAILABLE: "Xe đang bảo dưỡng, ngừng hoạt động hoặc đã được phân công trong thời gian này.",
   BOOKING_UNAVAILABLE: "Dịch vụ đặt vé tạm thời không khả dụng. Vui lòng thử lại sau.",
+  CRON_UNAVAILABLE: "Tác vụ nền tạm thời không khả dụng. Vui lòng thử lại sau.",
   TICKET_NOT_FOUND: "Không tìm thấy vé với mã này.",
   TICKET_NOT_VALID: "Vé chưa được thanh toán hoặc đã bị hủy, không thể check-in.",
   TICKET_WRONG_DEPARTURE: "Vé này thuộc chuyến khác, không phải chuyến đang check-in.",

@@ -26,7 +26,7 @@ function assertId(id: number) {
   if (!Number.isInteger(id) || id < 1 || id > 2147483647) throw new AppError("INVALID_INPUT", 422);
 }
 
-function itemDto(item: { item_id: number; name: string; category: string; unit: string; is_active: boolean; created_at: Date }, onHand: number): SupplyItemDto {
+function itemDto(item: { item_id: number; name: string; category: string; unit: string; is_active: boolean; low_stock_threshold: number | null; created_at: Date }, onHand: number): SupplyItemDto {
   return {
     item_id: item.item_id,
     name: item.name,
@@ -34,6 +34,7 @@ function itemDto(item: { item_id: number; name: string; category: string; unit: 
     unit: item.unit,
     is_active: item.is_active,
     on_hand: onHand,
+    low_stock_threshold: item.low_stock_threshold,
     created_at: item.created_at.toISOString(),
   };
 }

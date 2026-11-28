@@ -15,8 +15,14 @@ export function findDeparture(db: DataClient, departureId: number) {
   return db.departure.findUnique({ where: { departure_id: departureId }, select: departureSelect });
 }
 export async function lockDeparture(tx: Transaction, departureId: number) {
+  // Crew checks use the current Leader ratio; changes to that ratio serialize before departure locks.
+  // Shared locking still lets independent departure transactions proceed together.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(717049)::text`;
   await tx.$queryRaw`SELECT departure_id FROM departures WHERE departure_id = ${departureId} FOR UPDATE`;
   return findDeparture(tx, departureId);
+}
+export async function lockLeaderRatioChange(tx: Transaction) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(717049)::text`;
 }
 export async function lockTrip(tx: Transaction, tripId: number) {
   const rows = await tx.$queryRaw<{ is_active: boolean }[]>`SELECT is_active FROM trips WHERE trip_id = ${tripId} FOR SHARE`;

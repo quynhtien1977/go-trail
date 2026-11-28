@@ -4,12 +4,15 @@ import type { AuthDatabase } from "./auth/authorization";
 import { userRoles } from "@/schemas/auth";
 import { vehicleStatuses } from "@/schemas/fleet";
 import { AppError } from "./errors";
-import { insertAudit } from "./repositories/audit";
+import { insertAudit, insertAudits } from "./repositories/audit";
+
+import { settingKeys } from "@/schemas/admin";
 
 const id = z.number().int().positive().max(2147483647);
 const departureStatuses = ["Draft", "Open", "Closed", "Confirmed", "Running", "Ended", "Cancelled", "Rescheduled"] as const;
 const amount = z.string().regex(/^(0|[1-9]\d{0,13})$/);
 const eventSchema = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("SettingChanged"), record_id: z.enum(settingKeys), from: z.string().max(20), to: z.string().max(20) }),
   z.strictObject({ action: z.literal("RoleChanged"), record_id: id, from: z.enum(userRoles), to: z.enum(userRoles) }),
   z.strictObject({ action: z.literal("AccountStatusChanged"), record_id: id,
     from: z.enum(["Active", "Locked"]), to: z.enum(["Active", "Locked"]) }),
@@ -26,9 +29,23 @@ const eventSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("TripAvailabilityChanged"), record_id: id, from: z.boolean(), to: z.boolean() }),
   z.strictObject({ action: z.literal("SupplyItemCreated"), record_id: id }),
   z.strictObject({ action: z.literal("SupplyItemUpdated"), record_id: id }),
+  z.strictObject({ action: z.literal("SupplyIssued"), record_id: id, item_id: id, departure_id: id, quantity: id }),
+  z.strictObject({ action: z.literal("SupplyReturned"), record_id: id, item_id: id, departure_id: id, quantity: id }),
   z.strictObject({ action: z.literal("SupplyReceived"), record_id: id, item_id: id, quantity: z.number().int().positive() }),
 ]);
 export type AuditEvent = z.infer<typeof eventSchema>;
+const cronDepartureEventSchema = z.strictObject({ action: z.literal("DepartureStatusChanged"), record_id: id,
+  from: z.literal("Open"), to: z.literal("Closed"), source: z.literal("cron"), reason: z.enum(["deadline", "sold_out"]) });
+
+export function readAuditEvent(description: string) {
+  try {
+    const value: unknown = JSON.parse(description);
+    const cronEvent = cronDepartureEventSchema.safeParse(value);
+    if (cronEvent.success) return cronEvent.data;
+    const event = eventSchema.safeParse(value);
+    return event.success ? event.data : null;
+  } catch { return null; }
+}
 
 // Call with the same transaction as the business change. Do not call after commit.
 // Allowlisted structured events cannot carry passwords, banking details or request dumps.
@@ -38,10 +55,22 @@ export async function writeAudit(tx: AuthDatabase, actorId: number, input: Audit
   const value = event.data;
   const table_name = value.action === "MoneyRecorded" ? value.table_name
     : value.action === "DepartureStatusChanged" || value.action === "DepartureOwnerChanged" ? "departures"
+      : value.action === "SettingChanged" ? "system_settings"
       : value.action === "VehicleStatusChanged" ? "vehicles"
       : value.action === "TripCreated" || value.action === "TripPriceChanged" || value.action === "TripAvailabilityChanged" ? "trips"
         : value.action === "SupplyItemCreated" || value.action === "SupplyItemUpdated" ? "supply_items"
-          : value.action === "SupplyReceived" ? "supply_transactions" : "users";
+          : (value.action === "SupplyReceived" || value.action === "SupplyIssued" || value.action === "SupplyReturned") ? "supply_transactions" : "users";
   await insertAudit(tx, { user_id: actorId, action: value.action, table_name,
     record_id: String(value.record_id), description: JSON.stringify(value) });
+}
+
+// Only this narrowly defined event may be attributed to the scheduler, never to an invented user.
+export async function writeCronDeparturesClosed(tx: AuthDatabase, events: { record_id: number; reason: "deadline" | "sold_out" }[]): Promise<void> {
+  const parsed = z.array(z.strictObject({ record_id: id, reason: z.enum(["deadline", "sold_out"]) })).min(1).max(50).safeParse(events);
+  if (!parsed.success) throw new AppError("INVALID_INPUT", 422);
+  const data = parsed.data.map(event => {
+    const value = { action: "DepartureStatusChanged", record_id: event.record_id, from: "Open", to: "Closed", source: "cron", reason: event.reason };
+    return { user_id: null, action: value.action, table_name: "departures", record_id: String(value.record_id), description: JSON.stringify(value) };
+  });
+  await insertAudits(tx, data);
 }

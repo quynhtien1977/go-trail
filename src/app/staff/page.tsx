@@ -4,7 +4,7 @@ import { AppError } from "@/server/errors";
 import { redirect } from "next/navigation";
 import { BackOfficeShell } from "@/components/accounts/back-office-shell";
 import { RoleBadge } from "@/components/ui/role-badge";
-import { StaffCatalogManager } from "@/components/catalog/staff-catalog-manager";
+import { StaffOperations } from "@/components/staff-ops/staff-operations";
 import type { Role } from "@/schemas/auth";
 import Link from "next/link";
 
@@ -58,7 +58,7 @@ export default async function StaffPage() {
   const resp = getRoleResponsibilities(user.role);
 
   return (
-    <BackOfficeShell active="overview" title="Tổng quan vận hành">
+    <BackOfficeShell active={user.role === "Admin" ? "operations" : "overview"} title="Tổng quan vận hành">
       <div className="space-y-8">
         {/* Header Staff */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm">
@@ -134,13 +134,13 @@ export default async function StaffPage() {
           </div>
 
           <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
-            * Phân hệ CRUD danh mục tuyến và điểm đón đã sẵn sàng bên dưới dành cho RouteMgr và Admin.
+            * Các phân hệ bên dưới hiển thị theo vai trò; mọi thao tác đều được máy chủ kiểm tra quyền lại.
           </div>
         </div>
 
-        {/* Phân hệ Quản lý Tuyến & Điểm đón xe */}
-        <StaffCatalogManager actorRole={user.role as Role} />
-      </div>
+        {/* Phân hệ vận hành theo vai trò: chuyến, tuyến, đội xe, nhân sự (O06) */}
+        <StaffOperations actorRole={user.role as Role} />
+    </div>
     </BackOfficeShell>
   );
 }
